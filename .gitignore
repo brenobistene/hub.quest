@@ -1,0 +1,41 @@
+# Environment variables - NEVER commit these
+.env
+.env.local
+.env.*.local
+
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Editor
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# Python DB (local SQLite)
+*.db
+*.sqlite
+
+# Google OAuth2 - NEVER commit these
+credentials.json
+token.json
+
+# Vite cache
+.vite/
