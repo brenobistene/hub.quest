@@ -1085,7 +1085,9 @@ function PlannerDrawer({
                       maxHeight: 180, overflowY: 'auto',
                       paddingRight: 2,
                     }}>
-                      {periodItems.map(item => (
+                      {periodItems.map(item => {
+                        const itemDone = itemIsDone(item)
+                        return (
                         <div
                           key={item.id}
                           draggable
@@ -1122,11 +1124,15 @@ function PlannerDrawer({
                             gap: 6, cursor: 'grab',
                             fontSize: 11, color: 'var(--color-text-secondary)',
                             transition: 'opacity 0.15s, border-color 0.15s',
+                            opacity: itemDone ? 0.5 : 1,
                           }}
-                          onMouseEnter={e => (e.currentTarget.style.opacity = '0.85')}
-                          onMouseLeave={e => (e.currentTarget.style.opacity = '1')}
+                          onMouseEnter={e => (e.currentTarget.style.opacity = itemDone ? '0.65' : '0.85')}
+                          onMouseLeave={e => (e.currentTarget.style.opacity = itemDone ? '0.5' : '1')}
                         >
-                          <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          <span style={{
+                            flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                            textDecoration: itemDone ? 'line-through' : 'none',
+                          }}>
                             {item.title}
                           </span>
                           <button
@@ -1145,7 +1151,7 @@ function PlannerDrawer({
                             ✕
                           </button>
                         </div>
-                      ))}
+                      )})}
                     </div>
                   ) : (
                     <div style={{
@@ -1402,6 +1408,12 @@ function OverdueTasksBanner({ tasks, onToToday, onReschedule, onDiscard }: {
 
 // ─── AvailableCard ─────────────────────────────────────────────────────────
 
+function itemIsDone(item: any): boolean {
+  if (item?.isTask) return !!item.done
+  if (item?.isRoutine) return !!item.done
+  return item?.status === 'done'
+}
+
 function AvailableCard({ item, areas, quests, delivsByProject, onDragStart, onDragEnd }: {
   item: any
   areas: Area[]
@@ -1412,6 +1424,7 @@ function AvailableCard({ item, areas, quests, delivsByProject, onDragStart, onDr
 }) {
   const isRoutine = !!item.isRoutine
   const isTask = !!item.isTask
+  const done = itemIsDone(item)
   const area = !isTask && !isRoutine
     ? areas.find(a => a.slug === (item as Quest).area_slug)
     : null
@@ -1442,7 +1455,8 @@ function AvailableCard({ item, areas, quests, delivsByProject, onDragStart, onDr
         border: '1px solid var(--color-border)',
         borderLeft: `3px solid ${color}`,
         borderRadius: 3, padding: '8px 10px',
-        cursor: 'grab', transition: 'background 0.15s, border-color 0.15s',
+        cursor: 'grab', transition: 'background 0.15s, border-color 0.15s, opacity 0.15s',
+        opacity: done ? 0.5 : 1,
       }}
       onMouseEnter={e => {
         e.currentTarget.style.background = 'var(--color-bg-primary)'
@@ -1456,6 +1470,7 @@ function AvailableCard({ item, areas, quests, delivsByProject, onDragStart, onDr
       <div style={{
         fontSize: 12, color: 'var(--color-text-primary)', fontWeight: 500,
         overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+        textDecoration: done ? 'line-through' : 'none',
       }}>
         {item.title}
       </div>
