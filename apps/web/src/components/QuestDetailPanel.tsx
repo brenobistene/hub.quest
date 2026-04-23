@@ -14,7 +14,7 @@ import { InlineText } from './ui/InlineText'
 import { Label } from './ui/Label'
 import { StatusDropdown } from './StatusDropdown'
 import { PrioritySelect } from './PrioritySelect'
-import { AutoGrowTextarea } from './AutoGrowTextarea'
+import { BlockEditor, isBlockDocEmpty } from './BlockEditor'
 
 type Deliverable = {
   id: string
@@ -52,6 +52,9 @@ export function QuestDetailPanel({ quest, onClose, onUpdate, allQuests, onQuestC
   const [sessionsByQuest, setSessionsByQuest] = useState<Record<string, { started_at: string; ended_at: string | null }[]>>({})
   // Draft local para descrição de cada quest — salva com debounce.
   const [descriptionDraft, setDescriptionDraft] = useState<Record<string, string>>({})
+  // Draft local pras "informações detalhadas" (notes) do projeto — mesma
+  // lógica de debounce, mas escopado num único campo só.
+  const [notesDraft, setNotesDraft] = useState<string | null>(null)
   // Drag-and-drop state para reordenação de entregáveis
   const [draggedId, setDraggedId] = useState<string | null>(null)
   const [dragOverId, setDragOverId] = useState<string | null>(null)
@@ -90,7 +93,8 @@ export function QuestDetailPanel({ quest, onClose, onUpdate, allQuests, onQuestC
     return () => { cancelled = true }
   }, [subtasks.map(s => s.id).join(',')])
 
-  // Auto-save descrição com debounce quando o draft mudar
+  // Auto-save descrição com debounce quando o draft mudar. Trata doc-vazio
+  // do BlockEditor como `null` pra não poluir o banco com JSON vazio.
   useEffect(() => {
     const timeoutIds: Record<string, ReturnType<typeof setTimeout>> = {}
     const keys = Object.keys(descriptionDraft)
@@ -101,16 +105,29 @@ export function QuestDetailPanel({ quest, onClose, onUpdate, allQuests, onQuestC
 
       if (draft !== (current ?? '')) {
         timeoutIds[questId] = setTimeout(() => {
-          const newVal = draft.trim() || null
+          const newVal = isBlockDocEmpty(draft) ? null : draft
           if (newVal !== current) {
             handleUpdate(questId, { description: newVal })
           }
-        }, 800) // 800ms debounce
+        }, 800)
       }
     })
 
     return () => Object.values(timeoutIds).forEach(t => clearTimeout(t))
   }, [descriptionDraft, subtasks])
+
+  // Auto-save dos notes do projeto com a mesma lógica. Dispara só quando
+  // `notesDraft` é não-nulo (ou seja, o usuário editou nesta sessão).
+  useEffect(() => {
+    if (notesDraft === null) return
+    const current = quest.notes ?? null
+    if (notesDraft === (current ?? '')) return
+    const t = setTimeout(() => {
+      const newVal = isBlockDocEmpty(notesDraft) ? null : notesDraft
+      if (newVal !== current) onUpdate(quest.id, { notes: newVal })
+    }, 800)
+    return () => clearTimeout(t)
+  }, [notesDraft, quest.notes, quest.id, onUpdate])
 
   const handleUpdate = (id: string, patch: Partial<Quest>) => {
     setSubtasks(sts => sts.map(st => st.id === id ? { ...st, ...patch } : st))
@@ -1069,12 +1086,12 @@ export function QuestDetailPanel({ quest, onClose, onUpdate, allQuests, onQuestC
                           {expanded && (
                             <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--color-border)', display: 'flex', flexDirection: 'column', gap: 6 }}>
                               <div>
-                                <span style={{ fontSize: 9, color: 'var(--color-text-muted)', letterSpacing: '0.1em', textTransform: 'uppercase', marginRight: 6 }}>Descrição:</span>
-                                <AutoGrowTextarea
-                                  value={descriptionDraft[q.id] ?? (q.description ?? '')}
+                                <span style={{ fontSize: 9, color: 'var(--color-text-muted)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 4, display: 'block' }}>Descrição:</span>
+                                <BlockEditor
+                                  value={descriptionDraft[q.id] ?? q.description ?? ''}
                                   onChange={v => setDescriptionDraft(prev => ({ ...prev, [q.id]: v }))}
-                                  placeholder="Adicione informações rápidas…"
-                                  minHeight={32}
+                                  placeholder="Digite / pra ver os blocos…"
+                                  minHeight={80}
                                 />
                               </div>
                               <div>
@@ -1236,12 +1253,14 @@ export function QuestDetailPanel({ quest, onClose, onUpdate, allQuests, onQuestC
       {!quest.parent_id && (
         <div style={{ marginTop: 40, paddingTop: 28, borderTop: '1px solid var(--color-divider)' }}>
           <Label>informações detalhadas</Label>
-          <AutoGrowTextarea
-            value={quest.notes || ''}
-            onChange={v => onUpdate(quest.id, { notes: v || null })}
-            placeholder="Adicione notas detalhadas sobre este projeto…"
-            minHeight={160}
-          />
+          <div style={{ marginTop: 10 }}>
+            <BlockEditor
+              value={notesDraft ?? quest.notes ?? ''}
+              onChange={setNotesDraft}
+              placeholder="Digite / pra escolher o tipo de bloco…"
+              minHeight={200}
+            />
+          </div>
         </div>
       )}
 
