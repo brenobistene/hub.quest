@@ -162,11 +162,12 @@ def init_db() -> None:
         );
         """)
 
-        # Garante que existe 1 linha de profile. Começa vazio — o usuário edita
-        # pelo ProfileEditModal no primeiro uso. INSERT OR IGNORE = idempotente.
+        # Garante que existe 1 linha de profile. Nome default é piada — o usuário
+        # edita pelo ProfileEditModal no primeiro uso. INSERT OR IGNORE =
+        # idempotente, então instâncias existentes não são sobrescritas.
         conn.execute(
             "INSERT OR IGNORE INTO user_profile(id, name, role, avatar_url) VALUES (1, ?, ?, ?)",
-            ("", "", ""),
+            ("John No Arms", "", ""),
         )
 
         for slug, name, desc, order, color in AREAS:

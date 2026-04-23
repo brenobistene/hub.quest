@@ -1,12 +1,13 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import type { Profile } from '../types'
 import { updateProfile } from '../api'
 import { Label } from './ui/Label'
 
 /**
  * Modal reached from the Dashboard profile block. Edits name, role and
- * avatar URL. Avatar accepts both relative paths (`/file.jpg` resolved
- * from `public/`) and full URLs.
+ * avatar. Avatar aceita tanto um upload local (lido como data URL base64)
+ * quanto um path relativo `/file.jpg` (resolvido de `public/`) ou URL
+ * completa `https://…`.
  */
 export function ProfileEditModal({ profile, onClose, onSave }: {
   profile: Profile
@@ -17,6 +18,20 @@ export function ProfileEditModal({ profile, onClose, onSave }: {
   const [role, setRole] = useState(profile.role)
   const [avatarUrl, setAvatarUrl] = useState(profile.avatar_url)
   const [saving, setSaving] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  function handleFilePick(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0]
+    if (!f) return
+    if (!f.type.startsWith('image/')) { alert('Selecione uma imagem.'); return }
+    if (f.size > 2 * 1024 * 1024) { alert('Imagem grande demais (máx 2 MB).'); return }
+    const reader = new FileReader()
+    reader.onload = () => {
+      const result = reader.result
+      if (typeof result === 'string') setAvatarUrl(result)
+    }
+    reader.readAsDataURL(f)
+  }
 
   async function handleSave() {
     setSaving(true)
@@ -76,8 +91,41 @@ export function ProfileEditModal({ profile, onClose, onSave }: {
               onError={e => { (e.currentTarget.style.visibility = 'hidden') }}
             />
           )}
-          <div style={{ flex: 1, fontSize: 10, color: 'var(--color-text-tertiary)' }}>
-            Use <code>/arquivo.jpg</code> (em <code>apps/web/public/</code>) ou uma URL completa <code>https://…</code>
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              onChange={handleFilePick}
+              style={{ display: 'none' }}
+            />
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                style={{
+                  background: 'var(--color-bg-primary)', border: '1px solid var(--color-border)', cursor: 'pointer',
+                  color: 'var(--color-text-secondary)', fontSize: 10, padding: '6px 10px', borderRadius: 3,
+                  letterSpacing: '0.1em', textTransform: 'uppercase', fontWeight: 600,
+                }}
+              >
+                Enviar foto
+              </button>
+              {avatarUrl && (
+                <button
+                  onClick={() => setAvatarUrl('')}
+                  style={{
+                    background: 'none', border: '1px solid var(--color-border)', cursor: 'pointer',
+                    color: 'var(--color-text-tertiary)', fontSize: 10, padding: '6px 10px', borderRadius: 3,
+                    letterSpacing: '0.1em', textTransform: 'uppercase',
+                  }}
+                >
+                  Remover
+                </button>
+              )}
+            </div>
+            <div style={{ fontSize: 9, color: 'var(--color-text-tertiary)' }}>
+              Ou preencha um path/URL no campo abaixo. Limite do upload: 2 MB.
+            </div>
           </div>
         </div>
 
