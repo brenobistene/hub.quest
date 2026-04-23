@@ -2,9 +2,11 @@ import { useEffect, useState } from 'react'
 import type { ActiveSession, Area, Quest } from '../types'
 import {
   fetchSessions, fetchTaskSessions, fetchRoutineSessions,
-  patchQuest, updateTask, toggleRoutine,
+  patchQuest, updateTask, updateRoutine, toggleRoutine,
+  reportApiError,
 } from '../api'
 import { RunnableControls } from './RunnableControls'
+import { BlockEditor, isBlockDocEmpty } from './BlockEditor'
 
 /**
  * Row usado dentro dos períodos (manhã/tarde/noite) da tela Dia.
@@ -25,9 +27,30 @@ export function PlannedItemRow({ item, areas, activeSession, onSessionUpdate, on
   onOpen?: () => void
 }) {
   const [showDescription, setShowDescription] = useState(false)
+  const [descDraft, setDescDraft] = useState<string | null>(null)
   const isRoutine = !!item?.isRoutine
   const isTask = !!item?.isTask
   const kind: 'quest' | 'task' | 'routine' = isRoutine ? 'routine' : isTask ? 'task' : 'quest'
+
+  // Auto-save da descrição com debounce de 800ms. Cada tipo tem endpoint
+  // próprio: quests via patchQuest, tasks via updateTask, routines via
+  // updateRoutine. Doc-vazio do BlockEditor é gravado como null.
+  useEffect(() => {
+    if (descDraft === null) return
+    const current = item?.description ?? null
+    if (descDraft === (current ?? '')) return
+    const t = setTimeout(() => {
+      const newVal = isBlockDocEmpty(descDraft) ? null : descDraft
+      if (newVal === current) return
+      const save = kind === 'quest'
+        ? patchQuest(item.id, { description: newVal })
+        : kind === 'task'
+          ? updateTask(item.id, { description: newVal })
+          : updateRoutine(item.id, { description: newVal })
+      save.catch(err => reportApiError(`PlannedItemRow.save(${kind})`, err))
+    }, 800)
+    return () => clearTimeout(t)
+  }, [descDraft, item?.description, item?.id, kind])
 
   const itemColor = isTask
     ? 'var(--color-gold)'
@@ -93,35 +116,40 @@ export function PlannedItemRow({ item, areas, activeSession, onSessionUpdate, on
           >
             {item.title}
           </div>
-          {item.description && kind === 'quest' && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation()
-                setShowDescription(!showDescription)
-              }}
-              title={showDescription ? 'Ocultar descrição' : 'Mostrar descrição'}
-              style={{
-                background: 'none', border: 'none', cursor: 'pointer',
-                color: 'var(--color-text-tertiary)', fontSize: 10, padding: '2px 4px',
-                display: 'inline-flex', alignItems: 'center', gap: 3,
-                transition: 'color 0.15s', flexShrink: 0,
-              }}
-              onMouseEnter={e => (e.currentTarget.style.color = 'var(--color-accent-light)')}
-              onMouseLeave={e => (e.currentTarget.style.color = 'var(--color-text-tertiary)')}
-            >
-              <span style={{ fontSize: 9 }}>{showDescription ? '▼' : '▶'}</span>
-              <span style={{ fontSize: 9, letterSpacing: '0.05em', textTransform: 'uppercase' }}>info</span>
-            </button>
-          )}
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              setShowDescription(!showDescription)
+            }}
+            title={item?.description ? (showDescription ? 'Ocultar descrição' : 'Ver descrição') : 'Adicionar descrição'}
+            style={{
+              background: 'none', border: 'none', cursor: 'pointer',
+              color: item?.description ? 'var(--color-accent-light)' : 'var(--color-text-tertiary)',
+              fontSize: 10, padding: '2px 4px',
+              display: 'inline-flex', alignItems: 'center', gap: 3,
+              transition: 'color 0.15s', flexShrink: 0,
+              opacity: item?.description ? 1 : 0.6,
+            }}
+            onMouseEnter={e => (e.currentTarget.style.color = 'var(--color-accent-light)')}
+            onMouseLeave={e => (e.currentTarget.style.color = item?.description ? 'var(--color-accent-light)' : 'var(--color-text-tertiary)')}
+          >
+            <span style={{ fontSize: 9 }}>{showDescription ? '▼' : '▶'}</span>
+            <span style={{ fontSize: 9, letterSpacing: '0.05em', textTransform: 'uppercase' }}>info</span>
+          </button>
         </div>
-        {showDescription && item.description && kind === 'quest' && (
-          <div style={{
-            marginTop: 8, padding: '8px 10px', background: 'var(--color-bg-tertiary)',
-            borderLeft: '2px solid var(--color-accent-light)', borderRadius: 2,
-            fontSize: 11, color: 'var(--color-text-secondary)', lineHeight: 1.4,
-            wordBreak: 'break-word',
-          }}>
-            {item.description}
+        {showDescription && (
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              marginTop: 8, width: '100%',
+            }}
+          >
+            <BlockEditor
+              value={descDraft ?? item?.description ?? ''}
+              onChange={setDescDraft}
+              placeholder="Digite / pra ver os blocos…"
+              minHeight={80}
+            />
           </div>
         )}
         {(parentTitle || deliverableTitle) && (

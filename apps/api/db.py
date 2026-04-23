@@ -201,6 +201,11 @@ def init_db() -> None:
         # Campo de descrição rápida em quests (separado de notes)
         _try_add_column(conn, "ALTER TABLE quests ADD COLUMN description TEXT")
 
+        # Mesma descrição (notion-style blocks) em tasks e routines —
+        # editável pelo dropdown "info" do PlannedItemRow na página Dia.
+        _try_add_column(conn, "ALTER TABLE tasks ADD COLUMN description TEXT")
+        _try_add_column(conn, "ALTER TABLE routines ADD COLUMN description TEXT")
+
         # Prioridade também em tasks e routines (quests já tinha). Obrigatória
         # na criação nova, mas as linhas antigas ficam com 'critical' como
         # carimbo neutro — user vai limpar dados reais assim que começar a usar.

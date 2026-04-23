@@ -570,6 +570,7 @@ class RoutineOut(BaseModel):
     calendar_event_id: Optional[str] = None
     done: bool = False
     priority: str = "critical"
+    description: Optional[str] = None
 
 
 PRIORITIES_VALID = {"critical", "high", "medium", "low"}
@@ -607,6 +608,7 @@ class RoutineCreate(BaseModel):
     start_time: Optional[str] = None
     end_time: Optional[str] = None
     estimated_minutes: Optional[int] = None
+    description: Optional[str] = None
 
     @field_validator("days_of_week")
     @classmethod
@@ -627,6 +629,7 @@ class RoutineUpdate(BaseModel):
     end_time: Optional[str] = None
     estimated_minutes: Optional[int] = None
     priority: Optional[str] = None
+    description: Optional[str] = None
 
     @field_validator("days_of_week")
     @classmethod
@@ -838,8 +841,8 @@ def create_routine(body: RoutineCreate):
     with get_conn() as conn:
         conn.execute("""
             INSERT INTO routines
-            (id, title, recurrence, days_of_week, day_of_month, start_time, end_time, estimated_minutes, priority)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (id, title, recurrence, days_of_week, day_of_month, start_time, end_time, estimated_minutes, priority, description)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             routine_id,
             body.title,
@@ -850,6 +853,7 @@ def create_routine(body: RoutineCreate):
             body.end_time,
             body.estimated_minutes,
             body.priority,
+            body.description,
         ))
         conn.commit()
         row = conn.execute("SELECT * FROM routines WHERE id = ?", (routine_id,)).fetchone()
@@ -1561,6 +1565,7 @@ class TaskOut(BaseModel):
     completed_at: Optional[str] = None
     sort_order: int = 0
     priority: str = "critical"
+    description: Optional[str] = None
 
 
 class TaskCreate(BaseModel):
@@ -1570,6 +1575,7 @@ class TaskCreate(BaseModel):
     start_time: Optional[str] = None
     end_time: Optional[str] = None
     duration_minutes: Optional[int] = None
+    description: Optional[str] = None
 
     @field_validator("priority")
     @classmethod
@@ -1584,6 +1590,7 @@ class TaskUpdate(BaseModel):
     duration_minutes: Optional[int] = None
     done: Optional[bool] = None
     priority: Optional[str] = None
+    description: Optional[str] = None
 
     @field_validator("priority")
     @classmethod
@@ -1601,7 +1608,7 @@ def list_tasks(
     done: Optional[bool] = None,
     scheduled_date: Optional[str] = Query(None, alias="date"),
 ):
-    sql = "SELECT id, title, scheduled_date, start_time, end_time, duration_minutes, done, completed_at, sort_order, priority FROM tasks WHERE 1=1"
+    sql = "SELECT id, title, scheduled_date, start_time, end_time, duration_minutes, done, completed_at, sort_order, priority, description FROM tasks WHERE 1=1"
     params: list = []
     if done is not None:
         sql += " AND done = ?"
@@ -1626,13 +1633,13 @@ def create_task(body: TaskCreate):
         sort_order = (max_sort["m"] or 0) + 1
         conn.execute(
             """INSERT INTO tasks
-               (id, title, scheduled_date, start_time, end_time, duration_minutes, sort_order, priority)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-            (task_id, title, body.scheduled_date, body.start_time, body.end_time, body.duration_minutes, sort_order, body.priority),
+               (id, title, scheduled_date, start_time, end_time, duration_minutes, sort_order, priority, description)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (task_id, title, body.scheduled_date, body.start_time, body.end_time, body.duration_minutes, sort_order, body.priority, body.description),
         )
         conn.commit()
         row = conn.execute(
-            "SELECT id, title, scheduled_date, start_time, end_time, duration_minutes, done, completed_at, sort_order, priority FROM tasks WHERE id = ?",
+            "SELECT id, title, scheduled_date, start_time, end_time, duration_minutes, done, completed_at, sort_order, priority, description FROM tasks WHERE id = ?",
             (task_id,),
         ).fetchone()
     return _row_to_task(row)
@@ -1669,7 +1676,7 @@ def update_task(task_id: str, body: TaskUpdate):
         )
         conn.commit()
         row = conn.execute(
-            "SELECT id, title, scheduled_date, start_time, end_time, duration_minutes, done, completed_at, sort_order, priority FROM tasks WHERE id = ?",
+            "SELECT id, title, scheduled_date, start_time, end_time, duration_minutes, done, completed_at, sort_order, priority, description FROM tasks WHERE id = ?",
             (task_id,),
         ).fetchone()
     return _row_to_task(row)
@@ -1793,7 +1800,7 @@ def task_stop_session(task_id: str):
         )
         conn.commit()
         row = conn.execute(
-            "SELECT id, title, scheduled_date, start_time, end_time, duration_minutes, done, completed_at, sort_order, priority FROM tasks WHERE id = ?",
+            "SELECT id, title, scheduled_date, start_time, end_time, duration_minutes, done, completed_at, sort_order, priority, description FROM tasks WHERE id = ?",
             (task_id,),
         ).fetchone()
     return _row_to_task(row)
@@ -1814,7 +1821,7 @@ def toggle_task(task_id: str):
         )
         conn.commit()
         row = conn.execute(
-            "SELECT id, title, scheduled_date, start_time, end_time, duration_minutes, done, completed_at, sort_order, priority FROM tasks WHERE id = ?",
+            "SELECT id, title, scheduled_date, start_time, end_time, duration_minutes, done, completed_at, sort_order, priority, description FROM tasks WHERE id = ?",
             (task_id,),
         ).fetchone()
     return _row_to_task(row)

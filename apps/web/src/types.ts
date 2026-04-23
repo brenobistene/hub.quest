@@ -53,6 +53,8 @@ export interface Routine {
   done: boolean
   /** 'critical' | 'high' | 'medium' | 'low' — obrigatório na criação. */
   priority: string
+  /** Notas em formato BlockNote (JSON serializado). */
+  description?: string | null
 }
 
 export interface DayData {
@@ -117,4 +119,6 @@ export interface Task {
   sort_order: number
   /** 'critical' | 'high' | 'medium' | 'low' — obrigatório na criação. */
   priority: string
+  /** Notas em formato BlockNote (JSON serializado). */
+  description?: string | null
 }

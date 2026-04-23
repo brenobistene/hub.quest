@@ -100,6 +100,7 @@ export async function updateTask(id: string, patch: Partial<{
   end_time: string | null
   duration_minutes: number | null
   done: boolean
+  description: string | null
 }>): Promise<Task> {
   const res = await fetch(`${BASE}/api/tasks/${id}`, {
     method: 'PATCH',
