@@ -39,3 +39,8 @@ token.json
 
 # Vite cache
 .vite/
+
+# Personal avatar images served locally from public/ — não vão pro repo público
+apps/web/public/foto.jpg
+apps/web/public/breno-perfil.jpg
+apps/web/public/*.personal.*
