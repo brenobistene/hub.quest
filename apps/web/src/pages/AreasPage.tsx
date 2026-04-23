@@ -1,24 +1,23 @@
 import { useEffect, useState } from 'react'
 import { Link, Navigate, useNavigate, useParams } from 'react-router-dom'
-import type { Area, Quest, Deliverable } from '../types'
-import { createArea, createQuest, deleteQuest, fetchDeliverables, reportApiError } from '../api'
+import type { Area, Project, Quest, Deliverable } from '../types'
+import { createArea, createProject, deleteProject, fetchDeliverables, reportApiError } from '../api'
 import type { DateRange } from '../utils/dateRange'
 import { computeRange, isInRange } from '../utils/dateRange'
 import { Label } from '../components/ui/Label'
 import { ColorPickerPopover } from '../components/ColorPickerPopover'
 import { AreaRow } from '../components/AreaRow'
 import { DateRangeFilter } from '../components/DateRangeFilter'
-import { QuestRow } from '../components/QuestRow'
 import { QuestDetailPanel } from '../components/QuestDetailPanel'
 import { PRIORITIES } from '../components/PrioritySelect'
 
 /**
- * `/areas` — lista editável de áreas (create/update/delete). Um clique numa
- * linha navega pra `/areas/:slug` (handled by `AreaDetailRoute`).
+ * `/areas` — lista editável de áreas. Um clique numa linha navega pra
+ * `/areas/:slug` (handled by `AreaDetailRoute`).
  */
-export function AreasView({ areas, quests, onAreaCreate, onAreaUpdate, onAreaDelete }: {
+export function AreasView({ areas, projects, onAreaCreate, onAreaUpdate, onAreaDelete }: {
   areas: Area[]
-  quests: Quest[]
+  projects: Project[]
   onAreaCreate: (a: Area) => void
   onAreaUpdate: (slug: string, patch: Partial<Area>) => void
   onAreaDelete: (slug: string) => void
@@ -30,7 +29,7 @@ export function AreasView({ areas, quests, onAreaCreate, onAreaUpdate, onAreaDel
   const [showNewPicker, setShowNewPicker] = useState(false)
 
   const countBySlug: Record<string, number> = {}
-  for (const q of quests) countBySlug[q.area_slug] = (countBySlug[q.area_slug] ?? 0) + 1
+  for (const p of projects) countBySlug[p.area_slug] = (countBySlug[p.area_slug] ?? 0) + 1
 
   async function handleCreate() {
     const name = newName.trim()
@@ -64,7 +63,7 @@ export function AreasView({ areas, quests, onAreaCreate, onAreaUpdate, onAreaDel
             fontSize: 15, fontWeight: 600, letterSpacing: '-0.01em',
             color: 'var(--color-text-primary)', lineHeight: 1.2,
           }}>
-            {areas.length} {areas.length === 1 ? 'área' : 'áreas'} · {quests.length} {quests.length === 1 ? 'quest' : 'quests'}
+            {areas.length} {areas.length === 1 ? 'área' : 'áreas'} · {projects.length} {projects.length === 1 ? 'projeto' : 'projetos'}
           </div>
         </div>
         {!creating && (
@@ -188,35 +187,43 @@ export function AreasView({ areas, quests, onAreaCreate, onAreaUpdate, onAreaDel
 }
 
 /**
- * Wrapper da rota `/areas/:slug`. Lê slug do URL, valida `selectedQuestId`
- * contra a área aberta, renderiza botão "voltar" + `AreaDetailView`.
+ * Wrapper da rota `/areas/:slug`. Lê slug, valida selectedProjectId contra
+ * a área aberta, renderiza botão "voltar" + AreaDetailView.
  */
-export function AreaDetailRoute({ areas, quests, selectedQuestId, onSelectQuest, onQuestUpdate, onSessionUpdate, onQuestCreate, onQuestDelete }: {
+export function AreaDetailRoute({
+  areas, projects, quests,
+  selectedProjectId, onSelectProject,
+  onProjectUpdate, onProjectCreate, onProjectDelete,
+  onQuestUpdate, onQuestCreate, onQuestDelete,
+  onSessionUpdate,
+}: {
   areas: Area[]
+  projects: Project[]
   quests: Quest[]
-  selectedQuestId: string | null
-  onSelectQuest: (id: string | null) => void
+  selectedProjectId: string | null
+  onSelectProject: (id: string | null) => void
+  onProjectUpdate: (id: string, patch: Partial<Project>) => void
+  onProjectCreate: (p: Project) => void
+  onProjectDelete: (id: string) => void
   onQuestUpdate: (id: string, patch: Partial<Quest>) => void
-  onSessionUpdate: () => void
   onQuestCreate: (q: Quest) => void
   onQuestDelete: (id: string) => void
+  onSessionUpdate: () => void
 }) {
   const { slug } = useParams<{ slug: string }>()
 
   if (!slug) return <Navigate to="/areas" replace />
 
-  // Só usa o `selectedQuestId` persistido se ele pertencer a essa área — se
-  // for de outra área (stale), ignora sem mexer no state. Assim o F5 dentro
-  // de um projeto mantém o painel aberto.
-  const validQuestId = selectedQuestId && quests.find(q => q.id === selectedQuestId && q.area_slug === slug)
-    ? selectedQuestId
+  // Só usa o `selectedProjectId` persistido se ele pertencer a essa área.
+  const validProjectId = selectedProjectId && projects.find(p => p.id === selectedProjectId && p.area_slug === slug)
+    ? selectedProjectId
     : null
 
   return (
     <>
       <Link
         to="/areas"
-        onClick={() => onSelectQuest(null)}
+        onClick={() => onSelectProject(null)}
         style={{
           background: 'none', border: '1px solid transparent', cursor: 'pointer',
           color: 'var(--color-text-tertiary)', fontSize: 11, marginBottom: 24,
@@ -239,33 +246,47 @@ export function AreaDetailRoute({ areas, quests, selectedQuestId, onSelectQuest,
         key={slug}
         areaSlug={slug}
         areas={areas}
+        projects={projects}
         quests={quests}
+        selectedProjectId={validProjectId}
+        onSelectProject={onSelectProject}
+        onProjectUpdate={onProjectUpdate}
+        onProjectCreate={onProjectCreate}
+        onProjectDelete={onProjectDelete}
         onQuestUpdate={onQuestUpdate}
-        selectedQuestId={validQuestId}
-        onSelectQuest={onSelectQuest}
-        onSessionUpdate={onSessionUpdate}
         onQuestCreate={onQuestCreate}
         onQuestDelete={onQuestDelete}
+        onSessionUpdate={onSessionUpdate}
       />
     </>
   )
 }
 
 /**
- * Painel da área individual. Mostra projetos (quests sem parent) com barra de
- * progresso, permite criar projeto inline, abre `QuestDetailPanel` em
- * overlay fullscreen quando um é selecionado.
+ * Painel da área individual. Mostra projetos da área com barra de progresso,
+ * permite criar projeto inline, abre `QuestDetailPanel` em overlay quando
+ * um projeto é selecionado.
  */
-function AreaDetailView({ areaSlug, areas, quests, onQuestUpdate, selectedQuestId, onSelectQuest, onSessionUpdate, onQuestCreate, onQuestDelete }: {
+function AreaDetailView({
+  areaSlug, areas, projects, quests,
+  selectedProjectId, onSelectProject,
+  onProjectUpdate, onProjectCreate, onProjectDelete,
+  onQuestUpdate, onQuestCreate, onQuestDelete,
+  onSessionUpdate,
+}: {
   areaSlug: string
   areas: Area[]
+  projects: Project[]
   quests: Quest[]
+  selectedProjectId: string | null
+  onSelectProject: (id: string | null) => void
+  onProjectUpdate: (id: string, patch: Partial<Project>) => void
+  onProjectCreate: (p: Project) => void
+  onProjectDelete: (id: string) => void
   onQuestUpdate: (id: string, patch: Partial<Quest>) => void
-  selectedQuestId: string | null
-  onSelectQuest: (id: string | null) => void
-  onSessionUpdate?: () => void
   onQuestCreate: (q: Quest) => void
   onQuestDelete: (id: string) => void
+  onSessionUpdate: () => void
 }) {
   const area = areas.find(a => a.slug === areaSlug)
   const [showDone, setShowDone] = useState(false)
@@ -276,11 +297,11 @@ function AreaDetailView({ areaSlug, areas, quests, onQuestUpdate, selectedQuestI
   const [creatingProject, setCreatingProject] = useState(false)
   const [delivsByProject, setDelivsByProject] = useState<Record<string, Deliverable[]>>({})
 
-  const aqs = quests.filter(q => q.area_slug === areaSlug && !q.parent_id)
-  const projectIds = aqs.map(q => q.id).sort().join(',')
+  const areaProjects = projects.filter(p => p.area_slug === areaSlug)
+  const projectIdsKey = areaProjects.map(p => p.id).sort().join(',')
 
   useEffect(() => {
-    const ids = projectIds ? projectIds.split(',') : []
+    const ids = projectIdsKey ? projectIdsKey.split(',') : []
     if (ids.length === 0) { setDelivsByProject({}); return }
     let cancelled = false
     Promise.all(ids.map(pid =>
@@ -292,65 +313,63 @@ function AreaDetailView({ areaSlug, areas, quests, onQuestUpdate, selectedQuestI
       setDelivsByProject(map)
     })
     return () => { cancelled = true }
-  }, [projectIds])
+  }, [projectIdsKey])
 
   if (!area) return <div style={{ color: 'var(--color-text-tertiary)' }}>Área não encontrada</div>
-  const doing = aqs.filter(q => q.status === 'doing').length
-  const pending = aqs.filter(q => q.status === 'pending').length
-  const done = aqs.filter(q => q.status === 'done').length
-  const cancelled = aqs.filter(q => q.status === 'cancelled').length
-  // Barra = progresso em relação a tudo já "fechado" (done + cancelled). Se
-  // não há nada em andamento, a barra estoura em 100% mesmo quando o que fechou
-  // foi por cancelamento.
+  const doing = areaProjects.filter(p => p.status === 'doing').length
+  const pending = areaProjects.filter(p => p.status === 'pending').length
+  const done = areaProjects.filter(p => p.status === 'done').length
+  const cancelled = areaProjects.filter(p => p.status === 'cancelled').length
   const closed = done + cancelled
-  const total = aqs.length
+  const total = areaProjects.length
 
-  const active = aqs.filter(q => q.status !== 'done' && q.status !== 'cancelled')
-  const doneQuestsAll = aqs.filter(q => q.status === 'done')
-  const doneQuests = doneQuestsAll.filter(q => isInRange(q.completed_at, doneRange))
-  const cancelledQuestsAll = aqs.filter(q => q.status === 'cancelled')
-  const cancelledQuests = cancelledQuestsAll.filter(q => isInRange(q.completed_at, cancelledRange))
-  const selectedQuest = selectedQuestId ? aqs.find(q => q.id === selectedQuestId) : null
+  const active = areaProjects.filter(p => p.status !== 'done' && p.status !== 'cancelled')
+  const doneAll = areaProjects.filter(p => p.status === 'done')
+  const doneInRange = doneAll.filter(p => isInRange(p.completed_at, doneRange))
+  const cancelledAll = areaProjects.filter(p => p.status === 'cancelled')
+  const cancelledInRange = cancelledAll.filter(p => isInRange(p.completed_at, cancelledRange))
+  const selectedProject = selectedProjectId ? areaProjects.find(p => p.id === selectedProjectId) : null
 
   const handleCreateProject = () => {
     if (!newProjectTitle.trim()) return
-    createQuest({
+    createProject({
       title: newProjectTitle,
       area_slug: areaSlug,
-      parent_id: undefined,
+      priority: 'critical',
     })
-      .then(q => {
+      .then(p => {
         setNewProjectTitle('')
         setCreatingProject(false)
-        onQuestCreate(q)
+        onProjectCreate(p)
       })
-      .catch(err => reportApiError('AreasPage', err))
+      .catch(err => reportApiError('AreasPage.createProject', err))
   }
 
-  const handleDeleteQuest = (questId: string) => {
-    if (window.confirm('Tem certeza que deseja excluir este projeto? Todas as quests dentro dele também serão excluídas.')) {
-      deleteQuest(questId)
+  const handleDeleteProject = (projectId: string) => {
+    if (window.confirm('Tem certeza que deseja excluir este projeto? Todos os entregáveis e quests dentro dele também serão excluídos.')) {
+      deleteProject(projectId)
         .then(() => {
-          if (selectedQuestId === questId) onSelectQuest(null)
-          onQuestDelete(questId)
+          if (selectedProjectId === projectId) onSelectProject(null)
+          onProjectDelete(projectId)
         })
-        .catch(err => reportApiError('AreasPage', err))
+        .catch(err => reportApiError('AreasPage.deleteProject', err))
     }
   }
 
-  // Detalhe de um projeto substitui a lista inline em vez de abrir como
-  // modal flutuante — garante que sidebar e botão "voltar" continuem
-  // clicáveis, e evita o loop de z-index que prendia o usuário na página.
-  if (selectedQuest) {
+  // Painel de detalhe ocupa a tela inteira da área quando um projeto está
+  // selecionado (mesma convenção anterior).
+  if (selectedProject) {
     return (
       <QuestDetailPanel
-        quest={selectedQuest}
-        onClose={() => onSelectQuest(null)}
-        onUpdate={onQuestUpdate}
-        allQuests={aqs}
+        project={selectedProject}
+        onClose={() => onSelectProject(null)}
+        onProjectUpdate={onProjectUpdate}
+        onQuestUpdate={onQuestUpdate}
         area={area}
+        quests={quests}
         onQuestCreate={onQuestCreate}
         onQuestDelete={onQuestDelete}
+        onSessionUpdate={onSessionUpdate}
       />
     )
   }
@@ -361,7 +380,7 @@ function AreaDetailView({ areaSlug, areas, quests, onQuestUpdate, selectedQuestI
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginBottom: 12 }}>
           <h2 style={{ color: 'var(--color-text-primary)', fontSize: 16, fontWeight: 600, margin: 0 }}>{area.name}</h2>
           <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>
-            {total} quest{total !== 1 ? 's' : ''}
+            {total} projeto{total !== 1 ? 's' : ''}
           </span>
         </div>
         {area.description && (
@@ -451,22 +470,22 @@ function AreaDetailView({ areaSlug, areas, quests, onQuestUpdate, selectedQuestI
 
       {active.length > 0 && (
         <div style={{ marginTop: 16 }}>
-          {active.map(q => (
+          {active.map(p => (
             <AreaProjectRow
-              key={q.id}
-              project={q}
-              delivs={delivsByProject[q.id] ?? []}
-              subtasks={quests.filter(x => x.parent_id === q.id)}
+              key={p.id}
+              project={p}
+              delivs={delivsByProject[p.id] ?? []}
+              subtasks={quests.filter(q => q.project_id === p.id)}
               areaColor={area.color}
-              isSelected={selectedQuestId === q.id}
-              onOpen={() => onSelectQuest(q.id)}
-              onDelete={() => handleDeleteQuest(q.id)}
+              isSelected={selectedProjectId === p.id}
+              onOpen={() => onSelectProject(p.id)}
+              onDelete={() => handleDeleteProject(p.id)}
             />
           ))}
         </div>
       )}
 
-      {doneQuestsAll.length > 0 && (
+      {doneAll.length > 0 && (
         <div style={{ marginTop: 24 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <button onClick={() => setShowDone(o => !o)} style={{
@@ -475,29 +494,27 @@ function AreaDetailView({ areaSlug, areas, quests, onQuestUpdate, selectedQuestI
               textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 6,
             }}>
               <span style={{ fontSize: 9 }}>{showDone ? '▼' : '▶'}</span>
-              {doneQuests.length} concluída{doneQuests.length !== 1 ? 's' : ''}
+              {doneInRange.length} concluído{doneInRange.length !== 1 ? 's' : ''}
             </button>
             <DateRangeFilter value={doneRange} onChange={setDoneRange} />
           </div>
-          {showDone && doneQuests.length === 0 && (
+          {showDone && doneInRange.length === 0 && (
             <div style={{ marginTop: 12, fontSize: 11, color: 'var(--color-text-muted)', fontStyle: 'italic' }}>
-              Nenhuma concluída no período ({doneQuestsAll.length} no total).
+              Nenhum concluído no período ({doneAll.length} no total).
             </div>
           )}
-          {showDone && doneQuests.length > 0 && (
+          {showDone && doneInRange.length > 0 && (
             <div style={{ marginTop: 12, opacity: 0.5 }}>
-              {doneQuests.map(q => (
-                <QuestRow
-                  key={q.id}
-                  q={q}
-                  onUpdate={onQuestUpdate}
-                  onClick={() => onSelectQuest(q.id)}
-                  isSelected={selectedQuestId === q.id}
-                  quests={quests}
-                  areas={areas}
-                  onSessionUpdate={onSessionUpdate}
-                  hideTimer={!q.parent_id}
-                  onDelete={handleDeleteQuest}
+              {doneInRange.map(p => (
+                <AreaProjectRow
+                  key={p.id}
+                  project={p}
+                  delivs={delivsByProject[p.id] ?? []}
+                  subtasks={quests.filter(q => q.project_id === p.id)}
+                  areaColor={area.color}
+                  isSelected={selectedProjectId === p.id}
+                  onOpen={() => onSelectProject(p.id)}
+                  onDelete={() => handleDeleteProject(p.id)}
                 />
               ))}
             </div>
@@ -505,7 +522,7 @@ function AreaDetailView({ areaSlug, areas, quests, onQuestUpdate, selectedQuestI
         </div>
       )}
 
-      {cancelledQuestsAll.length > 0 && (
+      {cancelledAll.length > 0 && (
         <div style={{ marginTop: 20 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <button onClick={() => setShowCancelled(o => !o)} style={{
@@ -514,29 +531,27 @@ function AreaDetailView({ areaSlug, areas, quests, onQuestUpdate, selectedQuestI
               textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 6,
             }}>
               <span style={{ fontSize: 9 }}>{showCancelled ? '▼' : '▶'}</span>
-              {cancelledQuests.length} cancelada{cancelledQuests.length !== 1 ? 's' : ''}
+              {cancelledInRange.length} cancelado{cancelledInRange.length !== 1 ? 's' : ''}
             </button>
             <DateRangeFilter value={cancelledRange} onChange={setCancelledRange} />
           </div>
-          {showCancelled && cancelledQuests.length === 0 && (
+          {showCancelled && cancelledInRange.length === 0 && (
             <div style={{ marginTop: 12, fontSize: 11, color: 'var(--color-text-muted)', fontStyle: 'italic' }}>
-              Nenhuma cancelada no período ({cancelledQuestsAll.length} no total).
+              Nenhum cancelado no período ({cancelledAll.length} no total).
             </div>
           )}
-          {showCancelled && cancelledQuests.length > 0 && (
+          {showCancelled && cancelledInRange.length > 0 && (
             <div style={{ marginTop: 12, opacity: 0.4 }}>
-              {cancelledQuests.map(q => (
-                <QuestRow
-                  key={q.id}
-                  q={q}
-                  onUpdate={onQuestUpdate}
-                  onClick={() => onSelectQuest(q.id)}
-                  isSelected={selectedQuestId === q.id}
-                  quests={quests}
-                  areas={areas}
-                  onSessionUpdate={onSessionUpdate}
-                  hideTimer={!q.parent_id}
-                  onDelete={handleDeleteQuest}
+              {cancelledInRange.map(p => (
+                <AreaProjectRow
+                  key={p.id}
+                  project={p}
+                  delivs={delivsByProject[p.id] ?? []}
+                  subtasks={quests.filter(q => q.project_id === p.id)}
+                  areaColor={area.color}
+                  isSelected={selectedProjectId === p.id}
+                  onOpen={() => onSelectProject(p.id)}
+                  onDelete={() => handleDeleteProject(p.id)}
                 />
               ))}
             </div>
@@ -571,12 +586,12 @@ function urgencyText(daysAway: number): string {
 }
 
 /**
- * Row compacto usado na visão de área — mostra o projeto com metadados úteis
- * (prioridade, deadline, tempo previsto, próximo item a executar, contagem de
- * entregas concluídas) sem precisar abrir o painel de detalhe.
+ * Row compacto de um projeto na visão de área — mostra prioridade, deadline,
+ * tempo previsto (soma dos child quests), contagem de entregáveis e próximo
+ * item a executar.
  */
 function AreaProjectRow({ project, delivs, subtasks, areaColor, isSelected, onOpen, onDelete }: {
-  project: Quest
+  project: Project
   delivs: Deliverable[]
   subtasks: Quest[]
   areaColor: string
@@ -587,9 +602,6 @@ function AreaProjectRow({ project, delivs, subtasks, areaColor, isSelected, onOp
   const totalEstMin = subtasks.reduce((s, q) => s + (q.estimated_minutes ?? 0), 0)
   const openDelivs = delivs.filter(d => !d.done)
   const doneCount = delivs.length - openDelivs.length
-  // API retorna deliverables ordenadas por sort_order. Pega a primeira aberta
-  // como "próxima entrega", e a primeira quest não-feita amarrada a ela como
-  // "próxima quest".
   const nextDeliv = openDelivs[0] ?? null
   const nextQuest = nextDeliv
     ? subtasks.find(q => q.deliverable_id === nextDeliv.id && q.status !== 'done')

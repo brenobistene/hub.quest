@@ -38,6 +38,19 @@ def get_conn() -> sqlite3.Connection:
 
 def init_db() -> None:
     with get_conn() as conn:
+        # Detectar se estamos num DB pré-split (antes de projects virar entidade
+        # própria). Usamos a presença da coluna `quest_id` em `deliverables`
+        # como sinal — ela só existia no schema antigo. Se `project_id` já
+        # existe, já migrou.
+        needs_project_split = False
+        existing_deliv = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='deliverables'"
+        ).fetchone()
+        if existing_deliv:
+            cols = {c["name"] for c in conn.execute("PRAGMA table_info(deliverables)").fetchall()}
+            if "quest_id" in cols and "project_id" not in cols:
+                needs_project_split = True
+
         conn.executescript("""
         CREATE TABLE IF NOT EXISTS areas (
             id       INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -48,9 +61,25 @@ def init_db() -> None:
             color    TEXT DEFAULT '#6b7280'
         );
 
+        CREATE TABLE IF NOT EXISTS projects (
+            id                TEXT PRIMARY KEY,
+            title             TEXT NOT NULL,
+            area_slug         TEXT NOT NULL REFERENCES areas(slug),
+            status            TEXT NOT NULL DEFAULT 'pending',
+            priority          TEXT NOT NULL DEFAULT 'critical',
+            deadline          TEXT,
+            notes             TEXT,
+            calendar_event_id TEXT,
+            completed_at      TEXT,
+            sort_order        INTEGER DEFAULT 0,
+            created_at        TEXT DEFAULT (datetime('now')),
+            updated_at        TEXT DEFAULT (datetime('now'))
+        );
+
         CREATE TABLE IF NOT EXISTS quests (
             id               TEXT PRIMARY KEY,
-            parent_id        TEXT REFERENCES quests(id) ON DELETE CASCADE,
+            project_id       TEXT REFERENCES projects(id) ON DELETE CASCADE,
+            parent_id        TEXT,
             title            TEXT NOT NULL,
             area_slug        TEXT NOT NULL REFERENCES areas(slug),
             status           TEXT NOT NULL DEFAULT 'pending',
@@ -106,12 +135,13 @@ def init_db() -> None:
 
         CREATE TABLE IF NOT EXISTS deliverables (
             id                  TEXT PRIMARY KEY,
-            quest_id            TEXT NOT NULL REFERENCES quests(id) ON DELETE CASCADE,
+            project_id          TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
             title               TEXT NOT NULL,
             done                INTEGER NOT NULL DEFAULT 0,
             sort_order          INTEGER DEFAULT 0,
             estimated_minutes   INTEGER,
-            minutes_worked      INTEGER DEFAULT 0
+            minutes_worked      INTEGER DEFAULT 0,
+            deadline            TEXT
         );
 
         CREATE TABLE IF NOT EXISTS micro_tasks (
@@ -224,3 +254,76 @@ def init_db() -> None:
             "DELETE FROM quests WHERE parent_id IS NOT NULL AND deliverable_id IS NULL"
         )
         conn.commit()
+
+        # ─── Project/Quest split migration (one-shot) ──────────────────────
+        # Pré-split: projetos eram quests com parent_id NULL; deliverables
+        # tinham quest_id apontando pra esses. Agora `projects` é tabela
+        # própria e `quests` só contém trabalho granular (subtarefas).
+        #
+        # Steps:
+        #   1. ALTER quests ADD COLUMN project_id (idempotente)
+        #   2. Copia quests parent-null → projects
+        #   3. Seta quests.project_id = parent_id nas subtarefas
+        #   4. DELETE nos quests parent-null (agora vivem em projects)
+        #   5. Recria deliverables com FK project_id → projects
+        #   6. Limpa parent_id órfão (refs dangling nos subtasks restantes)
+        #
+        # FKs ficam OFF durante a migration pra evitar cascade delete quando
+        # removemos os quests-projeto. Detecção: presença de `quest_id` em
+        # deliverables antes de rodar o CREATE TABLE IF NOT EXISTS deste init.
+        _try_add_column(conn, "ALTER TABLE quests ADD COLUMN project_id TEXT")
+
+        if needs_project_split:
+            conn.execute("PRAGMA foreign_keys=OFF")
+            try:
+                # Copia project-quests (parent_id NULL) pra projects mantendo id.
+                conn.execute("""
+                    INSERT OR IGNORE INTO projects
+                      (id, title, area_slug, status, priority, deadline, notes,
+                       calendar_event_id, completed_at, sort_order,
+                       created_at, updated_at)
+                    SELECT id, title, area_slug, status, priority, deadline, notes,
+                           calendar_event_id, completed_at, sort_order,
+                           created_at, updated_at
+                    FROM quests
+                    WHERE parent_id IS NULL
+                """)
+
+                # Subtask quests: project_id = parent_id
+                conn.execute("""
+                    UPDATE quests SET project_id = parent_id
+                    WHERE parent_id IS NOT NULL
+                      AND (project_id IS NULL OR project_id = '')
+                """)
+
+                # Apaga os quests-projeto (vivem em projects agora)
+                conn.execute("DELETE FROM quests WHERE parent_id IS NULL")
+
+                # Limpa parent_id (dangling: apontava pros quests-projeto agora deletados)
+                conn.execute("UPDATE quests SET parent_id = NULL")
+
+                # Recria deliverables trocando FK quest_id → project_id
+                conn.execute("""
+                    CREATE TABLE deliverables_new (
+                        id                  TEXT PRIMARY KEY,
+                        project_id          TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                        title               TEXT NOT NULL,
+                        done                INTEGER NOT NULL DEFAULT 0,
+                        sort_order          INTEGER DEFAULT 0,
+                        estimated_minutes   INTEGER,
+                        minutes_worked      INTEGER DEFAULT 0,
+                        deadline            TEXT
+                    )
+                """)
+                conn.execute("""
+                    INSERT INTO deliverables_new
+                      (id, project_id, title, done, sort_order, estimated_minutes, minutes_worked, deadline)
+                    SELECT id, quest_id, title, done, sort_order, estimated_minutes, minutes_worked, deadline
+                    FROM deliverables
+                """)
+                conn.execute("DROP TABLE deliverables")
+                conn.execute("ALTER TABLE deliverables_new RENAME TO deliverables")
+
+                conn.commit()
+            finally:
+                conn.execute("PRAGMA foreign_keys=ON")

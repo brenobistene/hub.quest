@@ -32,6 +32,8 @@ venv/
 # Python DB (local SQLite)
 *.db
 *.sqlite
+*.db.bak
+*.db.pre-refactor*.bak
 
 # Google OAuth2 - NEVER commit these
 credentials.json

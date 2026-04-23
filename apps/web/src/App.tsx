@@ -2,14 +2,14 @@ import { useEffect, useRef, useState } from 'react'
 import { Sun, CalendarDays, Target, Layers, AlertTriangle, RotateCcw, Clock, LayoutGrid, ListTodo } from 'lucide-react'
 import { Routes, Route, NavLink, Navigate, useNavigate, useLocation } from 'react-router-dom'
 import {
-  fetchQuests, fetchAreas, fetchProfile, fetchActiveSession,
-  patchQuest,
+  fetchQuests, fetchProjects, fetchAreas, fetchProfile, fetchActiveSession,
+  patchQuest, patchProject,
   fetchSessions, pauseSession, resumeSession,
   fetchTaskSessions, pauseTaskSession, resumeTaskSession, stopTaskSession,
   fetchRoutineSessions, pauseRoutineSession, resumeRoutineSession, stopRoutineSession,
   reportApiError,
 } from './api'
-import type { Quest, Area, ActiveSession, Profile } from './types'
+import type { Project, Quest, Area, ActiveSession, Profile } from './types'
 import { parseIsoAsUtc, sumClosedSessionsSeconds, formatHMS } from './utils/datetime'
 import { SessionHistoryModal } from './components/SessionHistoryModal'
 import { DashboardView } from './pages/DashboardPage'
@@ -37,6 +37,7 @@ const NAV: { path: string; label: string; Icon: React.FC<{ size?: number; stroke
 export default function App() {
   const navigate = useNavigate()
   const location = useLocation()
+  const [projects, setProjects] = useState<Project[]>([])
   const [quests, setQuests] = useState<Quest[]>([])
   const [areas, setAreas] = useState<Area[]>([])
   const [profile, setProfile] = useState<Profile>({ name: '', role: '', avatar_url: '' })
@@ -54,6 +55,16 @@ export default function App() {
       return nav.questId || null
     } catch {
       return localStorage.getItem('hq-selectedQuestId')
+    }
+  })
+  // Qual projeto está com o painel de detalhe aberto. Substitui o uso antigo
+  // de selectedQuestId pra "selecionar um projeto" (quando projeto era quest).
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(() => {
+    try {
+      const nav = JSON.parse(localStorage.getItem('hq-navigation') || '{}')
+      return nav.projectId || null
+    } catch {
+      return null
     }
   })
   const [sessionUpdateTrigger, setSessionUpdateTrigger] = useState(0)
@@ -105,11 +116,11 @@ export default function App() {
     refreshActiveSession()
   }, [])
 
-  // Fetch active session + refresh quests when update is triggered
+  // Fetch active session + refresh quests/projects when update is triggered
   useEffect(() => {
     refreshActiveSession()
-    // Also refresh quests so status changes (done/doing) propagate across surfaces
     fetchQuests().then(setQuests).catch(err => reportApiError('App', err))
+    fetchProjects().then(setProjects).catch(err => reportApiError('App', err))
   }, [sessionUpdateTrigger])
 
   // Keep banner synced with periodic checks
@@ -219,6 +230,7 @@ export default function App() {
 
   useEffect(() => {
     fetchQuests().then(setQuests).catch(err => reportApiError('App', err))
+    fetchProjects().then(setProjects).catch(err => reportApiError('App', err))
     fetchAreas().then(setAreas).catch(err => reportApiError('App', err))
     fetchProfile().then(setProfile).catch(err => reportApiError('App', err))
 
@@ -238,10 +250,11 @@ export default function App() {
     return () => { document.head.removeChild(style) }
   }, [])
 
-  // Refetch quests when entering /quests (URL-driven)
+  // Refetch quests+projects when entering /quests (URL-driven)
   useEffect(() => {
     if (location.pathname.startsWith('/quests')) {
       fetchQuests().then(setQuests).catch(err => reportApiError('App', err))
+      fetchProjects().then(setProjects).catch(err => reportApiError('App', err))
     }
   }, [location.pathname])
 
@@ -552,21 +565,21 @@ export default function App() {
       }}>
         <Routes>
           <Route path="/" element={<Navigate to="/dia" replace />} />
-          <Route path="/dashboard" element={<DashboardView quests={quests} areas={areas} profile={profile} onProfileUpdate={setProfile} onSelectQuest={setSelectedQuestId} />} />
-          <Route path="/dia" element={<DiaView quests={quests} areas={areas} activeSession={activeSession} onSessionUpdate={onSessionUpdate} onSelectQuest={setSelectedQuestId} />} />
-          <Route path="/calendario" element={<CalendarView quests={quests} areas={areas} sessionUpdateTrigger={sessionUpdateTrigger} />} />
-          <Route path="/quests" element={<QuestsView quests={quests} areas={areas} onSessionUpdate={onSessionUpdate} sessionUpdateTrigger={sessionUpdateTrigger} onQuestUpdate={(id, patch) => {
+          <Route path="/dashboard" element={<DashboardView projects={projects} quests={quests} areas={areas} profile={profile} onProfileUpdate={setProfile} onSelectProject={setSelectedProjectId} />} />
+          <Route path="/dia" element={<DiaView projects={projects} quests={quests} areas={areas} activeSession={activeSession} onSessionUpdate={onSessionUpdate} onSelectProject={setSelectedProjectId} />} />
+          <Route path="/calendario" element={<CalendarView projects={projects} quests={quests} areas={areas} sessionUpdateTrigger={sessionUpdateTrigger} />} />
+          <Route path="/quests" element={<QuestsView projects={projects} quests={quests} areas={areas} onSessionUpdate={onSessionUpdate} sessionUpdateTrigger={sessionUpdateTrigger} onQuestUpdate={(id, patch) => {
             setQuests(qs => qs.map(q => q.id === id ? { ...q, ...patch } : q))
             patchQuest(id, patch).catch(err => reportApiError('App', err))
           }} />} />
           <Route path="/rotinas" element={<RoutinesView />} />
           <Route path="/tarefas" element={<TasksView activeSession={activeSession} onSessionUpdate={onSessionUpdate} sessionUpdateTrigger={sessionUpdateTrigger} />} />
-          <Route path="/micro-dump" element={<MicroDumpView areas={areas} quests={quests} onArchive={(idea) => setArchivedIdeas([...archivedIdeas, idea])} />} />
+          <Route path="/micro-dump" element={<MicroDumpView areas={areas} projects={projects} onArchive={(idea) => setArchivedIdeas([...archivedIdeas, idea])} />} />
           <Route path="/arquivados" element={<ArquivadosView archivedIdeas={archivedIdeas} onDelete={(id) => setArchivedIdeas(prev => prev.filter(i => i.id !== id))} />} />
           <Route path="/areas" element={
             <AreasView
               areas={areas}
-              quests={quests}
+              projects={projects}
               onAreaCreate={(a) => setAreas(prev => [...prev, a])}
               onAreaUpdate={(slug, patch) => setAreas(prev => prev.map(x => x.slug === slug ? { ...x, ...patch } : x))}
               onAreaDelete={(slug) => setAreas(prev => prev.filter(x => x.slug !== slug))}
@@ -575,14 +588,21 @@ export default function App() {
           <Route path="/areas/:slug" element={
             <AreaDetailRoute
               areas={areas}
+              projects={projects}
               quests={quests}
-              selectedQuestId={selectedQuestId}
-              onSelectQuest={setSelectedQuestId}
+              selectedProjectId={selectedProjectId}
+              onSelectProject={setSelectedProjectId}
+              onProjectUpdate={(id, patch) => {
+                setProjects(ps => ps.map(p => p.id === id ? { ...p, ...patch } : p))
+                patchProject(id, patch).catch(err => reportApiError('App', err))
+              }}
               onQuestUpdate={(id, patch) => {
                 setQuests(qs => qs.map(q => q.id === id ? { ...q, ...patch } : q))
                 patchQuest(id, patch).catch(err => reportApiError('App', err))
               }}
               onSessionUpdate={onSessionUpdate}
+              onProjectCreate={(p) => setProjects(ps => [p, ...ps])}
+              onProjectDelete={(id) => setProjects(ps => ps.filter(p => p.id !== id))}
               onQuestCreate={(q) => setQuests(qs => [q, ...qs])}
               onQuestDelete={(id) => setQuests(qs => qs.filter(q => q.id !== id))}
             />

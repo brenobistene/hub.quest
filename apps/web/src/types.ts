@@ -1,6 +1,31 @@
+/**
+ * Project — container estratégico. Agrupa deliverables e quests.
+ * Antes da refatoração, projetos eram quests com parent_id=null; agora
+ * são entidade própria (tabela `projects`). Hierarquia explícita:
+ *
+ *   Área > Projeto > Entregável > Quest
+ */
+export interface Project {
+  id: string
+  title: string
+  area_slug: string
+  status: string
+  priority: string
+  deadline: string | null
+  /** Anotações longas em formato BlockNote (JSON serializado). */
+  notes: string | null
+  calendar_event_id: string | null
+  completed_at: string | null
+  sort_order: number
+}
+
+/**
+ * Quest — item de trabalho (subtarefa). Toda quest pertence a um projeto
+ * (`project_id`) e a uma entrega desse projeto (`deliverable_id`).
+ */
 export interface Quest {
   id: string
-  parent_id: string | null
+  project_id: string | null
   title: string
   area_slug: string
   status: string
@@ -9,9 +34,7 @@ export interface Quest {
   estimated_minutes: number | null
   next_action: string | null
   description?: string | null
-  notes?: string | null
   deliverable_id?: string | null
-  calendar_event_id?: string | null
   completed_at?: string | null
   /** Soma das sessões fechadas (em minutos), independente de status. */
   worked_minutes?: number
@@ -67,7 +90,7 @@ export interface DayData {
 
 export interface Deliverable {
   id: string
-  quest_id: string
+  project_id: string
   title: string
   done: boolean
   sort_order: number

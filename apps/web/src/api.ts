@@ -1,4 +1,4 @@
-import type { DayData, Quest, Area, Routine, MicroTask, Profile, Task } from './types'
+import type { DayData, Project, Quest, Area, Routine, MicroTask, Profile, Task, Deliverable } from './types'
 
 // URL base do backend. Default aponta pro backend local padrão; pode ser
 // sobrescrito em build via `VITE_API_URL` (ex: `.env` com `VITE_API_URL=http://192.168.x.y:8001`).
@@ -19,10 +19,67 @@ async function get<T>(path: string): Promise<T> {
 }
 
 export const fetchToday = () => get<DayData>('/api/day/today')
+
+// ─── Quests (work items — subtarefas) ──────────────────────────────────────
+// Quest não é mais projeto. Toda quest tem project_id + deliverable_id.
+
 export const fetchQuests = (area?: string) =>
   get<Quest[]>(area ? `/api/quests?area=${area}` : '/api/quests')
-export const fetchSubtasks = (parentId: string) =>
-  get<Quest[]>(`/api/quests?parent_id=${parentId}`)
+
+/** Quests (subtarefas) de um projeto específico. */
+export const fetchQuestsByProject = (projectId: string) =>
+  get<Quest[]>(`/api/quests?project_id=${encodeURIComponent(projectId)}`)
+
+/** @deprecated use fetchQuestsByProject — nome antigo quando projeto era quest. */
+export const fetchSubtasks = fetchQuestsByProject
+
+// ─── Projects (containers estratégicos) ────────────────────────────────────
+
+export const fetchProjects = (area?: string) =>
+  get<Project[]>(area ? `/api/projects?area=${encodeURIComponent(area)}` : '/api/projects')
+
+export const fetchProject = (id: string) => get<Project>(`/api/projects/${id}`)
+
+export async function createProject(body: {
+  title: string
+  area_slug: string
+  priority?: string
+  status?: string
+  deadline?: string | null
+  notes?: string | null
+}): Promise<Project> {
+  const res = await fetch(`${BASE}/api/projects`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) {
+    const text = await res.text()
+    let detail: string | undefined
+    try { detail = JSON.parse(text).detail } catch {}
+    const err: any = new Error(detail || `API error ${res.status}`)
+    err.status = res.status
+    err.detail = detail
+    throw err
+  }
+  return res.json()
+}
+
+export async function patchProject(id: string, patch: Partial<Project>): Promise<Project> {
+  const res = await fetch(`${BASE}/api/projects/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch),
+  })
+  if (!res.ok) throw new Error(`API error ${res.status}`)
+  return res.json()
+}
+
+export async function deleteProject(id: string): Promise<void> {
+  const res = await fetch(`${BASE}/api/projects/${id}`, { method: 'DELETE' })
+  if (!res.ok) throw new Error(`API error ${res.status}`)
+}
+
 export const fetchAreas = () => get<Area[]>('/api/areas')
 
 export async function createArea(body: { name: string; description?: string; color?: string; slug?: string }): Promise<Area> {
@@ -240,7 +297,17 @@ export async function deleteRoutine(id: string): Promise<void> {
 }
 
 
-export async function createQuest(body: { title: string; area_slug: string; priority?: string; parent_id?: string; deliverable_id?: string; estimated_minutes?: number; description?: string | null }): Promise<Quest> {
+export async function createQuest(body: {
+  title: string
+  area_slug: string
+  project_id: string
+  deliverable_id: string
+  priority?: string
+  estimated_minutes?: number
+  description?: string | null
+  deadline?: string | null
+  next_action?: string | null
+}): Promise<Quest> {
   const res = await fetch(`${BASE}/api/quests`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -333,21 +400,14 @@ export async function resumeSession(questId: string): Promise<QuestSession> {
   return res.json()
 }
 
-// Deliverables
-export interface Deliverable {
-  id: string
-  quest_id: string
-  title: string
-  done: boolean
-  sort_order: number
-  estimated_minutes?: number
-  minutes_worked?: number
-}
+// ─── Deliverables ──────────────────────────────────────────────────────────
+// Deliverables agora são filhos de Project (não mais de Quest).
 
-export const fetchDeliverables = (questId: string) => get<Deliverable[]>(`/api/quests/${questId}/deliverables`)
+export const fetchDeliverables = (projectId: string) =>
+  get<Deliverable[]>(`/api/projects/${projectId}/deliverables`)
 
 export async function createDeliverable(
-  questId: string,
+  projectId: string,
   title: string,
   opts?: { estimatedMinutes?: number; deadline?: string | null },
 ): Promise<Deliverable> {
@@ -355,7 +415,7 @@ export async function createDeliverable(
   if (opts?.estimatedMinutes !== undefined) payload.estimated_minutes = opts.estimatedMinutes
   if (opts?.deadline !== undefined) payload.deadline = opts.deadline
 
-  const res = await fetch(`${BASE}/api/quests/${questId}/deliverables`, {
+  const res = await fetch(`${BASE}/api/projects/${projectId}/deliverables`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
@@ -393,8 +453,8 @@ export async function deleteDeliverable(delivId: string): Promise<void> {
   }
 }
 
-export async function reorderDeliverables(questId: string, delivIds: string[]): Promise<any> {
-  const res = await fetch(`${BASE}/api/quests/${questId}/deliverables/reorder`, {
+export async function reorderDeliverables(projectId: string, delivIds: string[]): Promise<any> {
+  const res = await fetch(`${BASE}/api/projects/${projectId}/deliverables/reorder`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ deliv_ids: delivIds }),

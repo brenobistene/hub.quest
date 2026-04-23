@@ -181,11 +181,208 @@ def delete_area(slug: str):
     return None
 
 
+# ─── Projects ────────────────────────────────────────────────────────────────
+# Projects são containers estratégicos que agrupam deliverables e quests.
+# Antes compartilhavam tabela com quests (eram quests com parent_id NULL); agora
+# são entidade própria, com hierarquia explícita: Área > Projeto > Entregável > Quest.
+
+class ProjectOut(BaseModel):
+    id: str
+    title: str
+    area_slug: str
+    status: str
+    priority: str
+    deadline: Optional[str] = None
+    notes: Optional[str] = None
+    calendar_event_id: Optional[str] = None
+    completed_at: Optional[str] = None
+    sort_order: int = 0
+
+
+class ProjectCreate(BaseModel):
+    title: str
+    area_slug: str
+    priority: str = 'critical'  # obrigatório na criação mas tem default
+    status: str = 'pending'
+    deadline: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class ProjectUpdate(BaseModel):
+    title: Optional[str] = None
+    area_slug: Optional[str] = None
+    status: Optional[str] = None
+    priority: Optional[str] = None
+    deadline: Optional[str] = None
+    notes: Optional[str] = None
+    calendar_event_id: Optional[str] = None
+    completed_at: Optional[str] = None
+
+
+_PROJECT_COLUMNS = """id, title, area_slug, status, priority, deadline, notes,
+                     calendar_event_id, completed_at, sort_order"""
+
+
+@app.get("/api/projects", response_model=list[ProjectOut])
+def list_projects(area: Optional[str] = None, status: Optional[str] = None):
+    """Lista projetos. Filtros opcionais por área e status."""
+    sql = f"SELECT {_PROJECT_COLUMNS} FROM projects WHERE 1=1"
+    params: list = []
+    if area is not None:
+        sql += " AND area_slug = ?"
+        params.append(area)
+    if status is not None:
+        sql += " AND status = ?"
+        params.append(status)
+    sql += " ORDER BY sort_order ASC, created_at ASC"
+    with get_conn() as conn:
+        rows = conn.execute(sql, params).fetchall()
+    return [dict(r) for r in rows]
+
+
+@app.get("/api/projects/{project_id}", response_model=ProjectOut)
+def get_project(project_id: str):
+    with get_conn() as conn:
+        row = conn.execute(
+            f"SELECT {_PROJECT_COLUMNS} FROM projects WHERE id = ?",
+            (project_id,),
+        ).fetchone()
+    if not row:
+        raise HTTPException(404, detail="Project not found")
+    return dict(row)
+
+
+@app.post("/api/projects", response_model=ProjectOut, status_code=201)
+def create_project(body: ProjectCreate):
+    title = body.title.strip()
+    if not title:
+        raise HTTPException(400, detail="title is required")
+    project_id = str(uuid.uuid4())[:8]
+    now = _utcnow_iso_z()
+    with get_conn() as conn:
+        area = conn.execute("SELECT slug FROM areas WHERE slug = ?", (body.area_slug,)).fetchone()
+        if not area:
+            raise HTTPException(400, detail=f"area '{body.area_slug}' not found")
+        max_sort = conn.execute("SELECT COALESCE(MAX(sort_order), 0) AS m FROM projects").fetchone()
+        sort_order = (max_sort["m"] or 0) + 1
+        conn.execute(
+            """INSERT INTO projects
+                 (id, title, area_slug, status, priority, deadline, notes,
+                  sort_order, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (project_id, title, body.area_slug, body.status, body.priority,
+             body.deadline, body.notes, sort_order, now, now),
+        )
+        conn.commit()
+        row = conn.execute(
+            f"SELECT {_PROJECT_COLUMNS} FROM projects WHERE id = ?",
+            (project_id,),
+        ).fetchone()
+    return dict(row)
+
+
+@app.patch("/api/projects/{project_id}", response_model=ProjectOut)
+def update_project(project_id: str, body: ProjectUpdate):
+    fields: dict = {}
+    for name in body.model_fields_set:
+        fields[name] = getattr(body, name)
+    if not fields:
+        raise HTTPException(400, detail="Nothing to update")
+
+    with get_conn() as conn:
+        existing = conn.execute(
+            "SELECT status FROM projects WHERE id = ?",
+            (project_id,),
+        ).fetchone()
+        if not existing:
+            raise HTTPException(404, detail="Project not found")
+
+        # completed_at tracking on status transitions to/from 'done'
+        if "status" in fields:
+            if fields["status"] == "done" and existing["status"] != "done":
+                fields["completed_at"] = _utcnow_iso_z()
+            elif fields["status"] != "done" and existing["status"] == "done":
+                fields["completed_at"] = None
+
+        fields["updated_at"] = _utcnow_iso_z()
+        set_clause = ", ".join(f"{k} = ?" for k in fields)
+        values = list(fields.values()) + [project_id]
+        conn.execute(f"UPDATE projects SET {set_clause} WHERE id = ?", values)
+
+        # Se a área mudou, propaga pro area_slug denormalizado das quests filhas
+        if "area_slug" in fields:
+            conn.execute(
+                "UPDATE quests SET area_slug = ? WHERE project_id = ?",
+                (fields["area_slug"], project_id),
+            )
+
+        conn.commit()
+
+        # Sync do Google Calendar (só se habilitado). Mesma lógica que ficava em
+        # update_quest — migrou pra cá porque calendar_event_id é campo de projeto.
+        if cal_svc and "deadline" in fields:
+            proj_row = conn.execute(
+                "SELECT title, deadline, calendar_event_id FROM projects WHERE id = ?",
+                (project_id,),
+            ).fetchone()
+            if proj_row:
+                new_deadline = proj_row["deadline"]
+                event_id = proj_row["calendar_event_id"]
+                if new_deadline:
+                    d = date.fromisoformat(new_deadline)
+                    d_end = d + timedelta(days=1)
+                    if event_id:
+                        try:
+                            cal_svc.update_event(event_id, summary=proj_row["title"], start_at=d, end_at=d_end)
+                        except Exception as e:
+                            print(f"Failed to update calendar event: {e}")
+                    else:
+                        try:
+                            ev = cal_svc.create_event(summary=proj_row["title"], start_at=d, end_at=d_end)
+                            conn.execute(
+                                "UPDATE projects SET calendar_event_id = ? WHERE id = ?",
+                                (ev.event_id, project_id),
+                            )
+                            conn.commit()
+                        except Exception as e:
+                            print(f"Failed to create calendar event: {e}")
+                elif event_id:
+                    try:
+                        cal_svc.delete_event(event_id)
+                        conn.execute(
+                            "UPDATE projects SET calendar_event_id = NULL WHERE id = ?",
+                            (project_id,),
+                        )
+                        conn.commit()
+                    except Exception as e:
+                        print(f"Failed to delete calendar event: {e}")
+
+        row = conn.execute(
+            f"SELECT {_PROJECT_COLUMNS} FROM projects WHERE id = ?",
+            (project_id,),
+        ).fetchone()
+    return dict(row)
+
+
+@app.delete("/api/projects/{project_id}", status_code=204)
+def delete_project(project_id: str):
+    """Apaga o projeto. ON DELETE CASCADE remove deliverables e quests dele."""
+    with get_conn() as conn:
+        res = conn.execute("DELETE FROM projects WHERE id = ?", (project_id,))
+        if res.rowcount == 0:
+            raise HTTPException(404, detail="Project not found")
+        conn.commit()
+    return None
+
+
 # ─── Quests ──────────────────────────────────────────────────────────────────
+# Quests agora são SEMPRE work items (subtarefas) — nunca projetos. Toda quest
+# tem `project_id` obrigatório (pertence a um projeto) e `deliverable_id`
+# obrigatório na criação (pertence a uma entrega do projeto).
 
 class QuestOut(BaseModel):
     id: str
-    parent_id: Optional[str]
+    project_id: Optional[str] = None
     title: str
     area_slug: str
     status: str
@@ -194,9 +391,7 @@ class QuestOut(BaseModel):
     estimated_minutes: Optional[int]
     next_action: Optional[str]
     description: Optional[str] = None
-    notes: Optional[str] = None
     deliverable_id: Optional[str] = None
-    calendar_event_id: Optional[str] = None
     completed_at: Optional[str] = None
     # Soma de minutos das sessões fechadas (independente de status done/doing).
     # Usado pelo Dashboard pra calcular pressão ("quanto já queimei do budget").
@@ -206,14 +401,14 @@ class QuestOut(BaseModel):
 class QuestCreate(BaseModel):
     title: str
     area_slug: str
+    project_id: str  # obrigatório: toda quest pertence a um projeto
+    deliverable_id: str  # obrigatório: toda quest pertence a uma entrega
     status: str = 'pending'
     priority: str = 'medium'
     deadline: Optional[str] = None
     estimated_minutes: Optional[int] = None
     next_action: Optional[str] = None
     description: Optional[str] = None
-    parent_id: Optional[str] = None
-    deliverable_id: Optional[str] = None
 
 
 class QuestUpdate(BaseModel):
@@ -224,9 +419,7 @@ class QuestUpdate(BaseModel):
     estimated_minutes: Optional[int] = None
     next_action: Optional[str] = None
     description: Optional[str] = None
-    notes: Optional[str] = None
     deliverable_id: Optional[str] = None
-    calendar_event_id: Optional[str] = None
     completed_at: Optional[str] = None
 
 
@@ -333,9 +526,19 @@ def _utcnow_iso_z() -> str:
 
 
 @app.get("/api/quests", response_model=list[QuestOut])
-def list_quests(area: Optional[str] = None, status: Optional[str] = None, parent_id: Optional[str] = None):
+def list_quests(
+    area: Optional[str] = None,
+    status: Optional[str] = None,
+    project_id: Optional[str] = None,
+    deliverable_id: Optional[str] = None,
+):
+    """Lista quests (work items — subtarefas). Projetos têm endpoint próprio em
+    /api/projects. Filtros por área, status, projeto e entregável."""
     with get_conn() as conn:
-        sql = "SELECT * FROM quests WHERE 1=1"
+        sql = """SELECT id, project_id, title, area_slug, status, priority, deadline,
+                        estimated_minutes, next_action, description, deliverable_id,
+                        completed_at, sort_order
+                 FROM quests WHERE 1=1"""
         params: list = []
         if area:
             sql += " AND area_slug = ?"
@@ -343,12 +546,16 @@ def list_quests(area: Optional[str] = None, status: Optional[str] = None, parent
         if status:
             sql += " AND status = ?"
             params.append(status)
-        if parent_id:
-            sql += " AND parent_id = ?"
-            params.append(parent_id)
+        if project_id:
+            sql += " AND project_id = ?"
+            params.append(project_id)
+        if deliverable_id:
+            sql += " AND deliverable_id = ?"
+            params.append(deliverable_id)
 
-        # Order by sort_order for quests in a project, otherwise by priority/deadline
-        if parent_id:
+        # Quando filtrando por projeto/entrega, ordena por sort_order (usuário
+        # arrastou); senão ordena por prioridade + deadline (triagem geral).
+        if project_id or deliverable_id:
             sql += " ORDER BY sort_order ASC"
         else:
             sql += (
@@ -384,79 +591,88 @@ def list_quests(area: Optional[str] = None, status: Optional[str] = None, parent
 
 @app.post("/api/quests", response_model=QuestOut, status_code=201)
 def create_quest(body: QuestCreate):
-    # Regra nova: toda subtarefa (parent_id != null) precisa estar amarrada
-    # a um entregável. Projetos (parent_id=null) seguem sem deliverable.
-    if body.parent_id and not body.deliverable_id:
-        raise HTTPException(
-            422,
-            detail="Quest dentro de um projeto precisa ser amarrada a um entregável.",
-        )
+    """Cria uma quest (work item). project_id e deliverable_id são obrigatórios
+    — toda quest pertence a um projeto e a uma entrega desse projeto."""
     quest_id = str(uuid.uuid4())[:8]
     now = _utcnow_iso_z()
     with get_conn() as conn:
-        # Se deliverable_id foi passado, valida que pertence ao mesmo projeto
-        # (não deixa amarrar a entregável de outro projeto).
-        if body.deliverable_id and body.parent_id:
-            deliv = conn.execute(
-                "SELECT quest_id FROM deliverables WHERE id = ?",
-                (body.deliverable_id,),
-            ).fetchone()
-            if not deliv or deliv["quest_id"] != body.parent_id:
-                raise HTTPException(
-                    422,
-                    detail="O entregável escolhido não pertence a esse projeto.",
-                )
+        # Valida que o projeto existe
+        project = conn.execute(
+            "SELECT id FROM projects WHERE id = ?", (body.project_id,)
+        ).fetchone()
+        if not project:
+            raise HTTPException(
+                422, detail=f"Project '{body.project_id}' not found"
+            )
+        # Valida que o entregável pertence ao projeto
+        deliv = conn.execute(
+            "SELECT project_id FROM deliverables WHERE id = ?",
+            (body.deliverable_id,),
+        ).fetchone()
+        if not deliv:
+            raise HTTPException(
+                422, detail=f"Deliverable '{body.deliverable_id}' not found"
+            )
+        if deliv["project_id"] != body.project_id:
+            raise HTTPException(
+                422, detail="O entregável escolhido não pertence a esse projeto.",
+            )
         conn.execute(
             """INSERT INTO quests
-               (id,parent_id,title,area_slug,status,priority,deadline,estimated_minutes,next_action,description,deliverable_id,created_at,updated_at)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-            (quest_id, body.parent_id, body.title, body.area_slug, body.status, body.priority,
-             body.deadline, body.estimated_minutes, body.next_action, body.description, body.deliverable_id, now, now),
+               (id, project_id, title, area_slug, status, priority, deadline,
+                estimated_minutes, next_action, description, deliverable_id,
+                created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (quest_id, body.project_id, body.title, body.area_slug, body.status,
+             body.priority, body.deadline, body.estimated_minutes,
+             body.next_action, body.description, body.deliverable_id, now, now),
         )
         conn.commit()
-        row = conn.execute("SELECT * FROM quests WHERE id = ?", (quest_id,)).fetchone()
-    return dict(row)
+        row = conn.execute(
+            """SELECT id, project_id, title, area_slug, status, priority, deadline,
+                      estimated_minutes, next_action, description, deliverable_id,
+                      completed_at, sort_order
+               FROM quests WHERE id = ?""",
+            (quest_id,),
+        ).fetchone()
+    d = dict(row)
+    d["worked_minutes"] = 0
+    return d
 
 
 @app.patch("/api/quests/{quest_id}", response_model=QuestOut)
 def update_quest(quest_id: str, body: QuestUpdate):
-    # Get all fields that were explicitly set in the request
-    # (Pydantic's model_fields_set tracks which fields were provided)
-    fields = {}
+    """Atualiza uma quest (subtarefa). Campos de projeto (notes, calendar_event_id)
+    não existem mais aqui — vão no endpoint de projects."""
+    fields: dict = {}
     for field_name in body.model_fields_set:
-        value = getattr(body, field_name)
-        fields[field_name] = value
+        fields[field_name] = getattr(body, field_name)
     if not fields:
         raise HTTPException(400, detail="Nothing to update")
     fields["updated_at"] = _utcnow_iso_z()
     with get_conn() as conn:
-        # Regra: subtarefa sempre tem deliverable. Se tentar setar
-        # deliverable_id=None numa subtarefa existente, recusa.
+        # Subtarefa sempre tem deliverable — não pode virar `None`.
         if "deliverable_id" in fields and fields["deliverable_id"] is None:
-            current = conn.execute(
-                "SELECT parent_id FROM quests WHERE id = ?", (quest_id,)
-            ).fetchone()
-            if current and current["parent_id"]:
-                raise HTTPException(
-                    422,
-                    detail="Essa quest é subtarefa de um projeto — não dá pra remover o entregável.",
-                )
-        # Se trocando pra um deliverable_id, valida que pertence ao mesmo
-        # projeto pai da quest.
+            raise HTTPException(
+                422, detail="Quest precisa estar amarrada a um entregável.",
+            )
+        # Se trocando pra outro deliverable_id, valida que pertence ao
+        # mesmo projeto da quest (não pode mudar de projeto por atalho).
         if "deliverable_id" in fields and fields["deliverable_id"]:
             current = conn.execute(
-                "SELECT parent_id FROM quests WHERE id = ?", (quest_id,)
+                "SELECT project_id FROM quests WHERE id = ?", (quest_id,)
             ).fetchone()
-            if current and current["parent_id"]:
+            if current:
                 deliv = conn.execute(
-                    "SELECT quest_id FROM deliverables WHERE id = ?",
+                    "SELECT project_id FROM deliverables WHERE id = ?",
                     (fields["deliverable_id"],),
                 ).fetchone()
-                if not deliv or deliv["quest_id"] != current["parent_id"]:
+                if not deliv or deliv["project_id"] != current["project_id"]:
                     raise HTTPException(
                         422,
                         detail="O entregável escolhido não pertence a esse projeto.",
                     )
+
         # Track status transitions to maintain completed_at. 'done' e 'cancelled'
         # são ambos estados terminais — qualquer transição pra um deles carimba o
         # completed_at; sair de qualquer um limpa.
@@ -466,7 +682,7 @@ def update_quest(quest_id: str, body: QuestUpdate):
             prev_status = current["status"] if current else None
             new_status = fields["status"]
             if new_status in TERMINAL and prev_status not in TERMINAL:
-                fields["completed_at"] = datetime.utcnow().isoformat() + "Z"
+                fields["completed_at"] = _utcnow_iso_z()
                 # Auto-update estimated_minutes to actual duration when completing quest
                 if new_status == "done":
                     actual_minutes = calculate_quest_duration(conn, quest_id)
@@ -475,11 +691,6 @@ def update_quest(quest_id: str, body: QuestUpdate):
             elif new_status not in TERMINAL and prev_status in TERMINAL:
                 fields["completed_at"] = None
 
-        # Nota: antes aqui incrementávamos `deliverables.minutes_worked` no
-        # momento em que a quest ficava done. Agora `executed_minutes` é
-        # computado on-demand (soma das sessões de quests done) — o campo
-        # legado continua no DB mas não é mais tocado.
-
         set_clause = ", ".join(f"{k} = ?" for k in fields)
         conn.execute(
             f"UPDATE quests SET {set_clause} WHERE id = ?",
@@ -487,47 +698,33 @@ def update_quest(quest_id: str, body: QuestUpdate):
         )
         conn.commit()
 
-        # Handle Google Calendar integration for project deadlines
-        if cal_svc:
-            quest_row = conn.execute("SELECT * FROM quests WHERE id = ?", (quest_id,)).fetchone()
-            if quest_row and not quest_row["parent_id"]:  # is a project
-                new_deadline = quest_row["deadline"]
-                event_id = quest_row["calendar_event_id"]
-
-                if new_deadline:
-                    from datetime import timedelta
-                    d = date.fromisoformat(new_deadline)
-                    d_end = d + timedelta(days=1)
-                    if event_id:
-                        # Update existing event
-                        try:
-                            cal_svc.update_event(event_id, summary=quest_row["title"], start_at=d, end_at=d_end)
-                            print(f"Updated calendar event {event_id} for quest {quest_id}")
-                        except Exception as e:
-                            print(f"Failed to update calendar event: {e}")
-                    else:
-                        # Create new event
-                        try:
-                            ev = cal_svc.create_event(summary=quest_row["title"], start_at=d, end_at=d_end)
-                            conn.execute("UPDATE quests SET calendar_event_id = ? WHERE id = ?", (ev.event_id, quest_id))
-                            conn.commit()
-                            print(f"Created calendar event {ev.event_id} for quest {quest_id}")
-                        except Exception as e:
-                            print(f"Failed to create calendar event: {e}")
-                elif event_id:
-                    # Deadline was removed, delete event
-                    try:
-                        cal_svc.delete_event(event_id)
-                        conn.execute("UPDATE quests SET calendar_event_id = NULL WHERE id = ?", (quest_id,))
-                        conn.commit()
-                        print(f"Deleted calendar event {event_id} for quest {quest_id}")
-                    except Exception as e:
-                        print(f"Failed to delete calendar event: {e}")
-
-        row = conn.execute("SELECT * FROM quests WHERE id = ?", (quest_id,)).fetchone()
+        row = conn.execute(
+            """SELECT id, project_id, title, area_slug, status, priority, deadline,
+                      estimated_minutes, next_action, description, deliverable_id,
+                      completed_at, sort_order
+               FROM quests WHERE id = ?""",
+            (quest_id,),
+        ).fetchone()
     if not row:
         raise HTTPException(404)
-    return dict(row)
+    d = dict(row)
+    # worked_minutes derivado das sessões fechadas
+    with get_conn() as conn2:
+        sessions = conn2.execute(
+            "SELECT started_at, ended_at FROM quest_sessions WHERE quest_id = ? AND ended_at IS NOT NULL",
+            (quest_id,),
+        ).fetchall()
+    total_sec = 0
+    for s in sessions:
+        try:
+            st = _parse_iso(s["started_at"]).timestamp()
+            en = _parse_iso(s["ended_at"]).timestamp()
+            if en > st:
+                total_sec += int(en - st)
+        except Exception:
+            continue
+    d["worked_minutes"] = total_sec // 60
+    return d
 
 
 @app.delete("/api/quests/{quest_id}", status_code=204)
@@ -1273,11 +1470,11 @@ def get_active_session(
     if row["type"] == "quest":
         with get_conn() as conn:
             ctx = conn.execute(
-                """SELECT q.parent_id, q.deliverable_id,
+                """SELECT q.project_id, q.deliverable_id,
                           p.title AS parent_title,
                           d.title AS deliverable_title
                    FROM quests q
-                   LEFT JOIN quests p ON p.id = q.parent_id
+                   LEFT JOIN projects p ON p.id = q.project_id
                    LEFT JOIN deliverables d ON d.id = q.deliverable_id
                    WHERE q.id = ?""",
                 (row["id"],),
@@ -1378,10 +1575,12 @@ def resume_session(quest_id: str):
 
 
 # ─── Deliverables ───────────────────────────────────────────────────────────
+# Deliverables agora são filhos de Project (não mais de Quest). URL base:
+# /api/projects/{project_id}/deliverables.
 
 class DeliverableOut(BaseModel):
     id: str
-    quest_id: str
+    project_id: str
     title: str
     done: bool
     sort_order: int
@@ -1425,16 +1624,21 @@ def _executed_minutes_for_deliverable(conn, deliv_id: str) -> int:
     return total_seconds // 60
 
 
-@app.get("/api/quests/{quest_id}/deliverables", response_model=list[DeliverableOut])
-def list_deliverables(quest_id: str):
+_DELIV_COLUMNS = (
+    "id, project_id, title, done, sort_order, estimated_minutes, deadline, minutes_worked"
+)
+
+
+@app.get("/api/projects/{project_id}/deliverables", response_model=list[DeliverableOut])
+def list_deliverables(project_id: str):
     """Lista entregáveis de um projeto com `executed_minutes` já somado.
     Bulk: uma query pros entregáveis, outra pras sessões agrupadas — em vez de
     fazer 1 query por entregável (o antigo N+1)."""
     with get_conn() as conn:
         rows = conn.execute(
-            "SELECT id, quest_id, title, done, sort_order, estimated_minutes, deadline, minutes_worked "
-            "FROM deliverables WHERE quest_id = ? ORDER BY sort_order ASC",
-            (quest_id,),
+            f"SELECT {_DELIV_COLUMNS} FROM deliverables "
+            "WHERE project_id = ? ORDER BY sort_order ASC",
+            (project_id,),
         ).fetchall()
         # Sessões fechadas das quests `done` desse projeto, agregadas por deliverable.
         session_rows = conn.execute(
@@ -1443,11 +1647,11 @@ def list_deliverables(quest_id: str):
             FROM quest_sessions s
             JOIN quests q ON q.id = s.quest_id
             JOIN deliverables d ON d.id = q.deliverable_id
-            WHERE d.quest_id = ?
+            WHERE d.project_id = ?
               AND q.status = 'done'
               AND s.ended_at IS NOT NULL
             """,
-            (quest_id,),
+            (project_id,),
         ).fetchall()
 
     by_deliv: dict[str, int] = {}
@@ -1468,23 +1672,30 @@ def list_deliverables(quest_id: str):
     return result
 
 
-@app.post("/api/quests/{quest_id}/deliverables", response_model=DeliverableOut, status_code=201)
-def create_deliverable(quest_id: str, body: DeliverableCreate):
+@app.post("/api/projects/{project_id}/deliverables", response_model=DeliverableOut, status_code=201)
+def create_deliverable(project_id: str, body: DeliverableCreate):
     deliv_id = str(uuid.uuid4())[:8]
     with get_conn() as conn:
-        # Get max sort_order for this quest
+        # Valida que o projeto existe
+        project = conn.execute("SELECT id FROM projects WHERE id = ?", (project_id,)).fetchone()
+        if not project:
+            raise HTTPException(404, detail=f"Project '{project_id}' not found")
+
         max_sort = conn.execute(
-            "SELECT MAX(sort_order) as num FROM deliverables WHERE quest_id = ?",
-            (quest_id,)
+            "SELECT MAX(sort_order) as num FROM deliverables WHERE project_id = ?",
+            (project_id,),
         ).fetchone()
         sort_order = (max_sort["num"] or 0) + 1
 
         conn.execute(
-            "INSERT INTO deliverables(id, quest_id, title, done, sort_order, estimated_minutes, deadline) VALUES(?,?,?,?,?,?,?)",
-            (deliv_id, quest_id, body.title, 0, sort_order, body.estimated_minutes, body.deadline)
+            "INSERT INTO deliverables(id, project_id, title, done, sort_order, estimated_minutes, deadline) VALUES(?,?,?,?,?,?,?)",
+            (deliv_id, project_id, body.title, 0, sort_order, body.estimated_minutes, body.deadline),
         )
         conn.commit()
-        row = conn.execute("SELECT * FROM deliverables WHERE id = ?", (deliv_id,)).fetchone()
+        row = conn.execute(
+            f"SELECT {_DELIV_COLUMNS} FROM deliverables WHERE id = ?",
+            (deliv_id,),
+        ).fetchone()
         d = dict(row)
         d["executed_minutes"] = 0  # acabou de criar
     return d
@@ -1508,7 +1719,10 @@ def update_deliverable(deliv_id: str, body: dict):
             [*fields.values(), deliv_id],
         )
         conn.commit()
-        row = conn.execute("SELECT * FROM deliverables WHERE id = ?", (deliv_id,)).fetchone()
+        row = conn.execute(
+            f"SELECT {_DELIV_COLUMNS} FROM deliverables WHERE id = ?",
+            (deliv_id,),
+        ).fetchone()
         if not row:
             raise HTTPException(404)
         d = dict(row)
@@ -1535,8 +1749,8 @@ def delete_deliverable(deliv_id: str):
     return None
 
 
-@app.post("/api/quests/{quest_id}/deliverables/reorder")
-def reorder_deliverables(quest_id: str, body: dict):
+@app.post("/api/projects/{project_id}/deliverables/reorder")
+def reorder_deliverables(project_id: str, body: dict):
     """Reorder deliverables by updating sort_order field"""
     deliv_ids = body.get("deliv_ids", [])
     if not deliv_ids:
