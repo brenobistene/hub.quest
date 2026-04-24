@@ -28,9 +28,7 @@ const schema = BlockNoteSchema.create({
     bulletListItem: defaultBlockSpecs.bulletListItem,
     numberedListItem: defaultBlockSpecs.numberedListItem,
     checkListItem: defaultBlockSpecs.checkListItem,
-    // divider não existe como bloco default; substituímos por um separador
-    // visual via heading/paragraph? BlockNote não tem divider nativo —
-    // deixamos de fora por enquanto (usuário pode digitar --- como parágrafo).
+    divider: defaultBlockSpecs.divider,
   },
 })
 
@@ -83,10 +81,15 @@ export function BlockEditor({ value, onChange, placeholder, minHeight = 120 }: {
   }, [editor, onChange])
 
   // Slash menu — restringe aos itens que batem com nosso schema.
+  // Filtro por `key` (estável, independe de locale) em vez de `title`.
+  const ALLOWED_KEYS = new Set([
+    'paragraph', 'heading', 'heading_2', 'heading_3',
+    'bullet_list', 'numbered_list', 'check_list', 'divider',
+  ])
   const getItems = async (query: string) =>
     filterSuggestionItems(
       getDefaultReactSlashMenuItems(editor).filter(item =>
-        ['Paragraph', 'Heading 1', 'Heading 2', 'Heading 3', 'Bullet List', 'Numbered List', 'Check List'].includes(item.title)
+        ALLOWED_KEYS.has((item as any).key)
       ),
       query,
     )
