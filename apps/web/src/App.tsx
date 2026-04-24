@@ -619,7 +619,17 @@ export default function App() {
               onSelectProject={setSelectedProjectId}
               onProjectUpdate={(id, patch) => {
                 setProjects(ps => ps.map(p => p.id === id ? { ...p, ...patch } : p))
-                patchProject(id, patch).catch(err => reportApiError('App', err))
+                patchProject(id, patch)
+                  .then(() => {
+                    // Arquivar/desarquivar um projeto muda quais quests o
+                    // backend devolve em /api/quests (filtra por archived_at
+                    // do projeto pai). Refetch pra o state global sair de
+                    // sincronia ou continuar sincronizado sem F5.
+                    if ('archived_at' in patch) {
+                      fetchQuests().then(setQuests).catch(err => reportApiError('App', err))
+                    }
+                  })
+                  .catch(err => reportApiError('App', err))
               }}
               onQuestUpdate={(id, patch) => {
                 setQuests(qs => qs.map(q => q.id === id ? { ...q, ...patch } : q))

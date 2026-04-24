@@ -16,6 +16,8 @@ export interface Project {
   notes: string | null
   calendar_event_id: string | null
   completed_at: string | null
+  /** ISO quando projeto foi arquivado (gaveta). Null = ativo. */
+  archived_at: string | null
   sort_order: number
 }
 

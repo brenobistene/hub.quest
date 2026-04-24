@@ -29,6 +29,32 @@ def list_projects(area: Optional[str] = None, status: Optional[str] = None):
     return [dict(r) for r in rows]
 
 
+@router.get("/api/projects/deliverables-summary")
+def deliverables_summary(area: Optional[str] = None):
+    """Resumo em massa de entregáveis por projeto — evita N+1 do frontend.
+
+    Retorna {project_id: {total, done}} para cada projeto (opcionalmente
+    filtrado por área). Usado pela lista de projetos pra calcular a barra
+    de progresso sem precisar buscar deliverables por projeto um-a-um.
+    """
+    sql = (
+        "SELECT d.project_id, "
+        "       COUNT(*) AS total, "
+        "       SUM(CASE WHEN d.done = 1 THEN 1 ELSE 0 END) AS done "
+        "FROM deliverables d "
+        "JOIN projects p ON p.id = d.project_id "
+        "WHERE 1=1"
+    )
+    params: list = []
+    if area is not None:
+        sql += " AND p.area_slug = ?"
+        params.append(area)
+    sql += " GROUP BY d.project_id"
+    with get_conn() as conn:
+        rows = conn.execute(sql, params).fetchall()
+    return {r["project_id"]: {"total": r["total"], "done": r["done"] or 0} for r in rows}
+
+
 @router.get("/api/projects/{project_id}", response_model=ProjectOut)
 def get_project(project_id: str):
     with get_conn() as conn:
@@ -80,7 +106,7 @@ def update_project(project_id: str, body: ProjectUpdate):
 
     with get_conn() as conn:
         existing = conn.execute(
-            "SELECT status FROM projects WHERE id = ?",
+            "SELECT status, archived_at FROM projects WHERE id = ?",
             (project_id,),
         ).fetchone()
         if not existing:
@@ -101,6 +127,23 @@ def update_project(project_id: str, body: ProjectUpdate):
             conn.execute(
                 "UPDATE quests SET area_slug = ? WHERE project_id = ?",
                 (fields["area_slug"], project_id),
+            )
+
+        # Ao arquivar, fecha qualquer sessão ativa das quests desse projeto —
+        # evita que o banner continue rodando timer de uma quest que sumiu
+        # das views. Só dispara na transição (era ativo, vira arquivado).
+        if (
+            "archived_at" in fields
+            and fields["archived_at"]
+            and not existing["archived_at"]
+        ):
+            now = utcnow_iso_z()
+            conn.execute(
+                """UPDATE quest_sessions
+                   SET ended_at = ?
+                   WHERE ended_at IS NULL
+                     AND quest_id IN (SELECT id FROM quests WHERE project_id = ?)""",
+                (now, project_id),
             )
 
         conn.commit()

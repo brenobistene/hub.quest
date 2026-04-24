@@ -233,7 +233,7 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger }: 
 
           <div style={{ overflow: 'auto', height: '80vh' }}>
             {(() => {
-              const dayProjects = projects.filter(p => p.deadline === dateIso)
+              const dayProjects = projects.filter(p => p.deadline === dateIso && !p.archived_at)
               if (!dayProjects.length) return null
               return (
                 <div style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--color-bg-secondary)', borderBottom: '1px solid var(--color-border)', padding: '2px 8px', marginBottom: 4, display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -790,7 +790,7 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger }: 
                   </button>
 
                   {(() => {
-                    const dayProjects = projects.filter(p => p.deadline === dayIso)
+                    const dayProjects = projects.filter(p => p.deadline === dayIso && !p.archived_at)
                     if (!dayProjects.length) return null
                     return (
                       <div style={{ position: 'sticky', top: 40, zIndex: 10, background: 'var(--color-bg-tertiary)', padding: '1px 2px', borderBottom: '1px solid var(--color-border)', display: 'flex', flexDirection: 'column', gap: 1 }}>

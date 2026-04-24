@@ -16,6 +16,7 @@ class ProjectOut(BaseModel):
     notes: Optional[str] = None
     calendar_event_id: Optional[str] = None
     completed_at: Optional[str] = None
+    archived_at: Optional[str] = None
     sort_order: int = 0
 
 
@@ -37,8 +38,11 @@ class ProjectUpdate(BaseModel):
     notes: Optional[str] = None
     calendar_event_id: Optional[str] = None
     completed_at: Optional[str] = None
+    # archived_at = ISO string pra arquivar, None pra desarquivar. Sentinel
+    # é detectado via `model_fields_set` no router.
+    archived_at: Optional[str] = None
 
 
 # Lista de colunas para SELECTs consistentes
 PROJECT_COLUMNS = """id, title, area_slug, status, priority, deadline, notes,
-                     calendar_event_id, completed_at, sort_order"""
+                     calendar_event_id, completed_at, archived_at, sort_order"""

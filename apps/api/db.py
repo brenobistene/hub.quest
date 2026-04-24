@@ -73,6 +73,7 @@ def init_db() -> None:
             notes             TEXT,
             calendar_event_id TEXT,
             completed_at      TEXT,
+            archived_at       TEXT,
             sort_order        INTEGER DEFAULT 0,
             created_at        TEXT DEFAULT (datetime('now')),
             updated_at        TEXT DEFAULT (datetime('now'))
@@ -202,11 +203,18 @@ def init_db() -> None:
             ("John No Arms", "", ""),
         )
 
-        for slug, name, desc, order, color in AREAS:
-            conn.execute(
-                "INSERT OR IGNORE INTO areas(slug,name,description,sort_order,color) VALUES(?,?,?,?,?)",
-                (slug, name, desc, order, color)
-            )
+        # Seed de áreas — só em instalação nova. Usamos `INSERT OR IGNORE`
+        # antes, o que recriava áreas deletadas a cada boot. Agora: se a
+        # tabela já tem qualquer linha, respeitamos o que o usuário fez
+        # (renomear, deletar, recolorir). Áreas do seed são só um ponto
+        # de partida pra quem acabou de instalar.
+        existing_areas = conn.execute("SELECT COUNT(*) AS n FROM areas").fetchone()["n"]
+        if existing_areas == 0:
+            for slug, name, desc, order, color in AREAS:
+                conn.execute(
+                    "INSERT INTO areas(slug,name,description,sort_order,color) VALUES(?,?,?,?,?)",
+                    (slug, name, desc, order, color),
+                )
 
         conn.commit()
 
@@ -245,6 +253,12 @@ def init_db() -> None:
         _try_add_column(conn, "ALTER TABLE routines ADD COLUMN priority TEXT DEFAULT 'critical'")
         conn.execute("UPDATE tasks SET priority = 'critical' WHERE priority IS NULL OR priority = ''")
         conn.execute("UPDATE routines SET priority = 'critical' WHERE priority IS NULL OR priority = ''")
+        conn.commit()
+
+        # Projeto "arquivado" (gaveta) — independente de status. Null = ativo,
+        # ISO timestamp = arquivado naquele momento. Oculta da lista principal
+        # sem apagar dado.
+        _try_add_column(conn, "ALTER TABLE projects ADD COLUMN archived_at TEXT")
         conn.commit()
 
         # One-shot cleanup: purge orphan subtasks (quest has parent but no

@@ -21,33 +21,45 @@ def list_quests(
     project_id: Optional[str] = None,
     deliverable_id: Optional[str] = None,
 ):
-    """Lista quests (work items). Filtros por área, status, projeto e entregável."""
+    """Lista quests (work items). Filtros por área, status, projeto e entregável.
+
+    Quando NÃO há `project_id` no filtro, exclui quests de projetos arquivados
+    (archived_at IS NOT NULL). Quando há project_id explícito, retorna as
+    quests do projeto mesmo se ele estiver arquivado — o painel do projeto
+    continua visualizando tudo quando o usuário abre a gaveta.
+    """
     with get_conn() as conn:
-        sql = """SELECT id, project_id, title, area_slug, status, priority, deadline,
-                        estimated_minutes, next_action, description, deliverable_id,
-                        completed_at, sort_order
-                 FROM quests WHERE 1=1"""
+        sql = """SELECT q.id, q.project_id, q.title, q.area_slug, q.status, q.priority, q.deadline,
+                        q.estimated_minutes, q.next_action, q.description, q.deliverable_id,
+                        q.completed_at, q.sort_order
+                 FROM quests q"""
+        # JOIN só é necessário quando vamos filtrar por archived_at do projeto.
+        if not project_id:
+            sql += " JOIN projects p ON p.id = q.project_id"
+        sql += " WHERE 1=1"
         params: list = []
+        if not project_id:
+            sql += " AND p.archived_at IS NULL"
         if area:
-            sql += " AND area_slug = ?"
+            sql += " AND q.area_slug = ?"
             params.append(area)
         if status:
-            sql += " AND status = ?"
+            sql += " AND q.status = ?"
             params.append(status)
         if project_id:
-            sql += " AND project_id = ?"
+            sql += " AND q.project_id = ?"
             params.append(project_id)
         if deliverable_id:
-            sql += " AND deliverable_id = ?"
+            sql += " AND q.deliverable_id = ?"
             params.append(deliverable_id)
 
         if project_id or deliverable_id:
-            sql += " ORDER BY sort_order ASC"
+            sql += " ORDER BY q.sort_order ASC"
         else:
             sql += (
-                " ORDER BY CASE priority"
+                " ORDER BY CASE q.priority"
                 " WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END,"
-                " deadline ASC NULLS LAST"
+                " q.deadline ASC NULLS LAST"
             )
         rows = conn.execute(sql, params).fetchall()
 

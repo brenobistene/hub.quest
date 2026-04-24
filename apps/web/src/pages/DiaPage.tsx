@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Sunrise, Sun, Moon, X, ArrowRight, Calendar as CalendarIcon, Trash2, AlertTriangle } from 'lucide-react'
+import { Sunrise, Sun, Moon, X, ArrowRight, Calendar as CalendarIcon, Trash2, AlertTriangle, Search } from 'lucide-react'
 import type { ActiveSession, Area, Deliverable, Project, Quest, Routine, Task } from '../types'
 import { fetchAllRoutines, fetchTasks, fetchQuests, fetchDeliverables, fetchRoutinesForDate, updateTask, deleteTask, reportApiError } from '../api'
 import { isoToLocalYmd } from '../utils/datetime'
@@ -23,6 +23,15 @@ function fmtHM(min: number): string {
   if (h > 0 && m > 0) return `${h}h ${m}m`
   if (h > 0) return `${h}h`
   return `${m}m`
+}
+
+/** Normaliza string pra busca: lowercase + remove acentos. Assim "sessao"
+ *  bate em "Sessão" sem o usuário precisar digitar o til. */
+function normalize(s: string): string {
+  return (s || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
 }
 
 function itemDurationMin(item: any): number {
@@ -845,11 +854,34 @@ function PlannerDrawer({
   dayPeriods: DayPeriods
   onClose: () => void
 }) {
-  const availableItems = filteredItems.filter(item =>
-    !dayPlan.morning.includes(item.id) &&
-    !dayPlan.afternoon.includes(item.id) &&
-    !dayPlan.evening.includes(item.id)
-  )
+  const [searchQuery, setSearchQuery] = useState('')
+
+  // Filtro textual: bate em título da quest/task/routine, no projeto pai
+  // (quando é quest) e no entregável pai. Case + accent insensitive.
+  const matchesSearch = (item: any): boolean => {
+    const q = normalize(searchQuery.trim())
+    if (!q) return true
+    if (normalize(item.title ?? '').includes(q)) return true
+    if (!item.isTask && !item.isRoutine) {
+      const quest = item as Quest
+      if (quest.project_id) {
+        const parent = projects.find(p => p.id === quest.project_id)
+        if (parent && normalize(parent.title).includes(q)) return true
+        const delivs = delivsByProject[quest.project_id] ?? []
+        const deliv = delivs.find(d => d.id === quest.deliverable_id)
+        if (deliv && normalize(deliv.title).includes(q)) return true
+      }
+    }
+    return false
+  }
+
+  const availableItems = filteredItems
+    .filter(item =>
+      !dayPlan.morning.includes(item.id) &&
+      !dayPlan.afternoon.includes(item.id) &&
+      !dayPlan.evening.includes(item.id)
+    )
+    .filter(matchesSearch)
   const draggedFromPeriod = draggedItem && (
     dayPlan.morning.includes(draggedItem.id) ||
     dayPlan.afternoon.includes(draggedItem.id) ||
@@ -878,7 +910,7 @@ function PlannerDrawer({
         position: 'fixed', bottom: 0, left: 0, right: 0,
         background: 'var(--color-bg-secondary)',
         borderTop: '1px solid var(--color-border)',
-        zIndex: 999, maxHeight: '82vh',
+        zIndex: 999, height: '92vh', maxHeight: '92vh',
         display: 'flex', flexDirection: 'column',
         animation: 'dia-slide-up 0.25s ease-out',
         boxShadow: '0 -4px 20px rgba(0, 0, 0, 0.5)',
@@ -888,6 +920,7 @@ function PlannerDrawer({
         <div style={{
           padding: '20px 32px', borderBottom: '1px solid var(--color-divider)',
           display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+          gap: 24,
         }}>
           <div>
             <div style={{
@@ -901,6 +934,51 @@ function PlannerDrawer({
               Distribuir itens pelos períodos do dia
             </div>
           </div>
+
+          {/* Busca textual — bate em título da quest/task/routine, projeto pai
+              e entregável pai. Case/accent insensitive. Esvazia ao fechar o
+              drawer (state é local a esta instância). */}
+          <div style={{
+            flex: '0 1 320px', minWidth: 180,
+            display: 'flex', alignItems: 'center', gap: 8,
+            background: 'var(--color-bg-tertiary)',
+            border: '1px solid var(--color-border)',
+            borderRadius: 4, padding: '6px 10px',
+            transition: 'border-color 0.15s',
+          }}>
+            <Search size={13} strokeWidth={1.8} style={{ color: 'var(--color-text-muted)', flexShrink: 0 }} />
+            <input
+              type="text"
+              name="planner-search"
+              aria-label="Buscar por quest, projeto ou entregável"
+              autoComplete="off"
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Escape') setSearchQuery('') }}
+              placeholder="buscar quest, projeto ou entregável…"
+              style={{
+                flex: 1, background: 'transparent', border: 'none', outline: 'none',
+                color: 'var(--color-text-primary)', fontSize: 12,
+              }}
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                title="Limpar busca"
+                style={{
+                  background: 'none', border: 'none', cursor: 'pointer',
+                  color: 'var(--color-text-muted)', padding: 2,
+                  display: 'inline-flex', alignItems: 'center',
+                  transition: 'color 0.15s',
+                }}
+                onMouseEnter={e => (e.currentTarget.style.color = 'var(--color-accent-light)')}
+                onMouseLeave={e => (e.currentTarget.style.color = 'var(--color-text-muted)')}
+              >
+                <X size={12} strokeWidth={1.8} />
+              </button>
+            )}
+          </div>
+
           <button
             onClick={onClose}
             style={{

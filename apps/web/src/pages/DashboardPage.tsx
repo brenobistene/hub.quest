@@ -171,9 +171,16 @@ export function DashboardView({ projects, quests, areas, profile, onProfileUpdat
     fetchTasks().then(setTasks).catch(err => reportApiError('DashboardPage', err))
   }, [])
 
-  const projectIds = useMemo(
-    () => projects.map(p => p.id).sort(),
+  // Projetos arquivados ficam fora de todos os cálculos do dashboard — o
+  // usuário arquivou pra tirar da vista. Filtro é centralizado aqui e
+  // reaproveitado abaixo via `activeFromPortfolio`.
+  const activeFromPortfolio = useMemo(
+    () => projects.filter(p => !p.archived_at),
     [projects],
+  )
+  const projectIds = useMemo(
+    () => activeFromPortfolio.map(p => p.id).sort(),
+    [activeFromPortfolio],
   )
   useEffect(() => {
     if (projectIds.length === 0) { setDelivsByProject({}); return }
@@ -283,7 +290,7 @@ export function DashboardView({ projects, quests, areas, profile, onProfileUpdat
   }
 
   const projectPressures: ProjectPressure[] = useMemo(() => {
-    const activeProjects = projects.filter(p => p.status !== 'done' && p.status !== 'cancelled')
+    const activeProjects = activeFromPortfolio.filter(p => p.status !== 'done' && p.status !== 'cancelled')
     return activeProjects.map(p => {
       const delivs = (delivsByProject[p.id] ?? []).filter(d => !d.done)
       let estimatedMin = 0
@@ -351,7 +358,7 @@ export function DashboardView({ projects, quests, areas, profile, onProfileUpdat
   // todos os projetos em dia se eu distribuir o esforço uniformemente".
   const todayQuotaMin = useMemo(() => {
     let quota = 0
-    for (const p of projects.filter(p => p.status !== 'done' && p.status !== 'cancelled')) {
+    for (const p of activeFromPortfolio.filter(p => p.status !== 'done' && p.status !== 'cancelled')) {
       for (const d of delivsByProject[p.id] ?? []) {
         if (d.done) continue
         const eff = effectiveDeliverableDeadline(d, p)
@@ -373,7 +380,7 @@ export function DashboardView({ projects, quests, areas, profile, onProfileUpdat
   // pra não duplicar o projeto.
   const mostUrgent = useMemo(() => {
     let best: { title: string; daysAway: number; type: 'projeto' | 'entregável' } | null = null
-    for (const p of projects.filter(p => p.status !== 'done' && p.status !== 'cancelled')) {
+    for (const p of activeFromPortfolio.filter(p => p.status !== 'done' && p.status !== 'cancelled')) {
       if (p.deadline) {
         const days = calendarDaysUntil(p.deadline)
         if (!best || days < best.daysAway) {

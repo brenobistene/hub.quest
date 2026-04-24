@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Link, Navigate, useNavigate, useParams } from 'react-router-dom'
+import { Archive, CheckCircle2, Trash2, ArchiveRestore } from 'lucide-react'
 import type { Area, Project, Quest, Deliverable } from '../types'
-import { createArea, createProject, deleteProject, fetchDeliverables, reportApiError } from '../api'
+import { createArea, createProject, deleteProject, fetchDeliverables, fetchDeliverablesSummary, reportApiError } from '../api'
 import type { DateRange } from '../utils/dateRange'
 import { computeRange, isInRange } from '../utils/dateRange'
 import { Label } from '../components/ui/Label'
@@ -293,9 +294,14 @@ function AreaDetailView({
   const [doneRange, setDoneRange] = useState<DateRange>(() => computeRange('7d'))
   const [showCancelled, setShowCancelled] = useState(false)
   const [cancelledRange, setCancelledRange] = useState<DateRange>(() => computeRange('7d'))
+  const [showArchived, setShowArchived] = useState(false)
+  const [archivedRange, setArchivedRange] = useState<DateRange>(() => computeRange('7d'))
   const [newProjectTitle, setNewProjectTitle] = useState('')
   const [creatingProject, setCreatingProject] = useState(false)
   const [delivsByProject, setDelivsByProject] = useState<Record<string, Deliverable[]>>({})
+  // Resumo de entregáveis por projeto pra barra de progresso dos cards.
+  // Bulk via `/api/projects/deliverables-summary` — evita N+1 do frontend.
+  const [delivSummary, setDelivSummary] = useState<Record<string, { total: number; done: number }>>({})
 
   const areaProjects = projects.filter(p => p.area_slug === areaSlug)
   const projectIdsKey = areaProjects.map(p => p.id).sort().join(',')
@@ -315,6 +321,13 @@ function AreaDetailView({
     return () => { cancelled = true }
   }, [projectIdsKey])
 
+  // Resumo bulk de entregáveis (total/done) por projeto da área.
+  useEffect(() => {
+    fetchDeliverablesSummary(areaSlug)
+      .then(setDelivSummary)
+      .catch(err => reportApiError('AreasPage.deliverablesSummary', err))
+  }, [areaSlug, projectIdsKey])
+
   if (!area) return <div style={{ color: 'var(--color-text-tertiary)' }}>Área não encontrada</div>
   const doing = areaProjects.filter(p => p.status === 'doing').length
   const pending = areaProjects.filter(p => p.status === 'pending').length
@@ -323,11 +336,16 @@ function AreaDetailView({
   const closed = done + cancelled
   const total = areaProjects.length
 
-  const active = areaProjects.filter(p => p.status !== 'done' && p.status !== 'cancelled')
-  const doneAll = areaProjects.filter(p => p.status === 'done')
+  // Arquivados ficam na gaveta própria — saem de active/done/cancelled
+  // independente do status. Usuário reabre pela seção "arquivados" embaixo.
+  const nonArchived = areaProjects.filter(p => !p.archived_at)
+  const active = nonArchived.filter(p => p.status !== 'done' && p.status !== 'cancelled')
+  const doneAll = nonArchived.filter(p => p.status === 'done')
   const doneInRange = doneAll.filter(p => isInRange(p.completed_at, doneRange))
-  const cancelledAll = areaProjects.filter(p => p.status === 'cancelled')
+  const cancelledAll = nonArchived.filter(p => p.status === 'cancelled')
   const cancelledInRange = cancelledAll.filter(p => isInRange(p.completed_at, cancelledRange))
+  const archivedAll = areaProjects.filter(p => !!p.archived_at)
+  const archivedInRange = archivedAll.filter(p => isInRange(p.archived_at, archivedRange))
   const selectedProject = selectedProjectId ? areaProjects.find(p => p.id === selectedProjectId) : null
 
   const handleCreateProject = () => {
@@ -354,6 +372,22 @@ function AreaDetailView({
         })
         .catch(err => reportApiError('AreasPage.deleteProject', err))
     }
+  }
+
+  const handleCompleteProject = (projectId: string) => {
+    if (window.confirm('Marcar este projeto como finalizado?')) {
+      onProjectUpdate(projectId, { status: 'done', completed_at: new Date().toISOString() })
+    }
+  }
+
+  const handleArchiveProject = (projectId: string) => {
+    if (window.confirm('Arquivar este projeto? Ele sai da lista principal mas continua acessível na seção "arquivados".')) {
+      onProjectUpdate(projectId, { archived_at: new Date().toISOString() })
+    }
+  }
+
+  const handleUnarchiveProject = (projectId: string) => {
+    onProjectUpdate(projectId, { archived_at: null })
   }
 
   // Painel de detalhe ocupa a tela inteira da área quando um projeto está
@@ -476,11 +510,14 @@ function AreaDetailView({
               key={p.id}
               project={p}
               delivs={delivsByProject[p.id] ?? []}
+              progress={delivSummary[p.id]}
               subtasks={quests.filter(q => q.project_id === p.id)}
               areaColor={area.color}
               isSelected={selectedProjectId === p.id}
               onOpen={() => onSelectProject(p.id)}
               onDelete={() => handleDeleteProject(p.id)}
+              onComplete={() => handleCompleteProject(p.id)}
+              onArchive={() => handleArchiveProject(p.id)}
             />
           ))}
         </div>
@@ -511,11 +548,13 @@ function AreaDetailView({
                   key={p.id}
                   project={p}
                   delivs={delivsByProject[p.id] ?? []}
+                  progress={delivSummary[p.id]}
                   subtasks={quests.filter(q => q.project_id === p.id)}
                   areaColor={area.color}
                   isSelected={selectedProjectId === p.id}
                   onOpen={() => onSelectProject(p.id)}
                   onDelete={() => handleDeleteProject(p.id)}
+                  onArchive={() => handleArchiveProject(p.id)}
                 />
               ))}
             </div>
@@ -548,11 +587,52 @@ function AreaDetailView({
                   key={p.id}
                   project={p}
                   delivs={delivsByProject[p.id] ?? []}
+                  progress={delivSummary[p.id]}
                   subtasks={quests.filter(q => q.project_id === p.id)}
                   areaColor={area.color}
                   isSelected={selectedProjectId === p.id}
                   onOpen={() => onSelectProject(p.id)}
                   onDelete={() => handleDeleteProject(p.id)}
+                  onArchive={() => handleArchiveProject(p.id)}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {archivedAll.length > 0 && (
+        <div style={{ marginTop: 20 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <button onClick={() => setShowArchived(o => !o)} style={{
+              background: 'none', border: 'none', cursor: 'pointer',
+              color: 'var(--color-text-tertiary)', fontSize: 11, letterSpacing: '0.15em',
+              textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 6,
+            }}>
+              <span style={{ fontSize: 9 }}>{showArchived ? '▼' : '▶'}</span>
+              {archivedInRange.length} arquivado{archivedInRange.length !== 1 ? 's' : ''}
+            </button>
+            <DateRangeFilter value={archivedRange} onChange={setArchivedRange} />
+          </div>
+          {showArchived && archivedInRange.length === 0 && (
+            <div style={{ marginTop: 12, fontSize: 11, color: 'var(--color-text-muted)', fontStyle: 'italic' }}>
+              Nenhum arquivado no período ({archivedAll.length} no total).
+            </div>
+          )}
+          {showArchived && archivedInRange.length > 0 && (
+            <div style={{ marginTop: 12, opacity: 0.45 }}>
+              {archivedInRange.map(p => (
+                <AreaProjectRow
+                  key={p.id}
+                  project={p}
+                  delivs={delivsByProject[p.id] ?? []}
+                  progress={delivSummary[p.id]}
+                  subtasks={quests.filter(q => q.project_id === p.id)}
+                  areaColor={area.color}
+                  isSelected={selectedProjectId === p.id}
+                  onOpen={() => onSelectProject(p.id)}
+                  onDelete={() => handleDeleteProject(p.id)}
+                  onUnarchive={() => handleUnarchiveProject(p.id)}
                 />
               ))}
             </div>
@@ -591,14 +671,23 @@ function urgencyText(daysAway: number): string {
  * tempo previsto (soma dos child quests), contagem de entregáveis e próximo
  * item a executar.
  */
-function AreaProjectRow({ project, delivs, subtasks, areaColor, isSelected, onOpen, onDelete }: {
+function AreaProjectRow({
+  project, delivs, progress, subtasks, areaColor, isSelected,
+  onOpen, onDelete, onComplete, onArchive, onUnarchive,
+}: {
   project: Project
   delivs: Deliverable[]
+  /** Resumo bulk do backend — usado na barra de progresso. Tem prioridade
+   *  sobre `delivs.length` (que pode estar vazio se o fetch ainda não voltou). */
+  progress?: { total: number; done: number }
   subtasks: Quest[]
   areaColor: string
   isSelected: boolean
   onOpen: () => void
   onDelete: () => void
+  onComplete?: () => void
+  onArchive?: () => void
+  onUnarchive?: () => void
 }) {
   const totalEstMin = subtasks.reduce((s, q) => s + (q.estimated_minutes ?? 0), 0)
   const openDelivs = delivs.filter(d => !d.done)
@@ -611,6 +700,15 @@ function AreaProjectRow({ project, delivs, subtasks, areaColor, isSelected, onOp
   const priority = PRIORITIES.find(p => p.key === project.priority) ?? PRIORITIES[2]
   const daysAway = project.deadline ? calendarDaysUntil(project.deadline) : null
   const overdue = daysAway !== null && daysAway < 0 && project.status !== 'done'
+
+  // Fonte do progresso: preferir summary bulk (vem no mount); fallback pro
+  // que já está nos delivs locais (pode atrasar até o fetch retornar).
+  const total = progress?.total ?? delivs.length
+  const done = progress?.done ?? doneCount
+  const pct = total > 0 ? Math.round((done / total) * 100) : 0
+
+  const isClosed = project.status === 'done' || project.status === 'cancelled'
+  const isArchived = !!project.archived_at
 
   return (
     <div
@@ -694,21 +792,129 @@ function AreaProjectRow({ project, delivs, subtasks, areaColor, isSelected, onOp
               </span>
             </div>
           )}
+
+          {/* Barra de progresso — alimentada por entregáveis done/total */}
+          {total > 0 && (
+            <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div style={{
+                flex: 1, height: 3, borderRadius: 2,
+                background: 'var(--color-bg-tertiary)', overflow: 'hidden',
+              }}>
+                <div style={{
+                  height: '100%', width: `${Math.min(100, pct)}%`,
+                  background: pct >= 100 ? 'var(--color-success)' : 'var(--color-accent-light)',
+                  transition: 'width 0.3s ease-out',
+                }} />
+              </div>
+              <span style={{
+                fontSize: 9, fontFamily: "'IBM Plex Mono', monospace",
+                color: 'var(--color-text-muted)', minWidth: 28, textAlign: 'right',
+              }}>
+                {pct}%
+              </span>
+            </div>
+          )}
         </div>
 
-        <button
-          onClick={(e) => { e.stopPropagation(); onDelete() }}
-          title="Excluir projeto"
-          style={{
-            background: 'none', border: 'none', cursor: 'pointer',
-            color: 'var(--color-text-muted)', fontSize: 14, padding: '2px 6px',
-            flexShrink: 0, transition: 'color 0.15s',
-          }}
-          onMouseEnter={e => (e.currentTarget.style.color = 'var(--color-accent-vivid)')}
-          onMouseLeave={e => (e.currentTarget.style.color = 'var(--color-text-muted)')}
-        >
-          ×
-        </button>
+        {/* Ações: delete (mais sutil) · archive · finalizar (destaque). */}
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 2, flexShrink: 0,
+        }}>
+          <button
+            onClick={(e) => { e.stopPropagation(); onDelete() }}
+            title="Excluir projeto"
+            style={{
+              background: 'none', border: 'none', cursor: 'pointer',
+              color: 'var(--color-text-muted)', padding: 6, opacity: 0.35,
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              transition: 'color 0.15s, opacity 0.15s',
+            }}
+            onMouseEnter={e => {
+              e.currentTarget.style.color = 'var(--color-accent-vivid)'
+              e.currentTarget.style.opacity = '1'
+            }}
+            onMouseLeave={e => {
+              e.currentTarget.style.color = 'var(--color-text-muted)'
+              e.currentTarget.style.opacity = '0.35'
+            }}
+          >
+            <Trash2 size={13} strokeWidth={1.8} />
+          </button>
+
+          {isArchived ? (
+            onUnarchive && (
+              <button
+                onClick={(e) => { e.stopPropagation(); onUnarchive() }}
+                title="Desarquivar projeto"
+                style={{
+                  background: 'none', border: 'none', cursor: 'pointer',
+                  color: 'var(--color-text-tertiary)', padding: 6, opacity: 0.55,
+                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                  transition: 'color 0.15s, opacity 0.15s',
+                }}
+                onMouseEnter={e => {
+                  e.currentTarget.style.color = 'var(--color-accent-light)'
+                  e.currentTarget.style.opacity = '1'
+                }}
+                onMouseLeave={e => {
+                  e.currentTarget.style.color = 'var(--color-text-tertiary)'
+                  e.currentTarget.style.opacity = '0.55'
+                }}
+              >
+                <ArchiveRestore size={14} strokeWidth={1.8} />
+              </button>
+            )
+          ) : (
+            onArchive && (
+              <button
+                onClick={(e) => { e.stopPropagation(); onArchive() }}
+                title="Arquivar projeto"
+                style={{
+                  background: 'none', border: 'none', cursor: 'pointer',
+                  color: 'var(--color-text-tertiary)', padding: 6, opacity: 0.55,
+                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                  transition: 'color 0.15s, opacity 0.15s',
+                }}
+                onMouseEnter={e => {
+                  e.currentTarget.style.color = 'var(--color-accent-light)'
+                  e.currentTarget.style.opacity = '1'
+                }}
+                onMouseLeave={e => {
+                  e.currentTarget.style.color = 'var(--color-text-tertiary)'
+                  e.currentTarget.style.opacity = '0.55'
+                }}
+              >
+                <Archive size={14} strokeWidth={1.8} />
+              </button>
+            )
+          )}
+
+          {onComplete && !isClosed && !isArchived && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onComplete() }}
+              title="Finalizar projeto"
+              style={{
+                background: 'none', border: '1px solid var(--color-success)',
+                cursor: 'pointer', color: 'var(--color-success)',
+                padding: '5px 8px', borderRadius: 3, marginLeft: 4,
+                display: 'inline-flex', alignItems: 'center', gap: 5,
+                fontSize: 9, letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: 700,
+                transition: 'background 0.15s, color 0.15s',
+              }}
+              onMouseEnter={e => {
+                e.currentTarget.style.background = 'var(--color-success)'
+                e.currentTarget.style.color = 'var(--color-bg-primary)'
+              }}
+              onMouseLeave={e => {
+                e.currentTarget.style.background = 'transparent'
+                e.currentTarget.style.color = 'var(--color-success)'
+              }}
+            >
+              <CheckCircle2 size={11} strokeWidth={2.2} />
+              Finalizar
+            </button>
+          )}
+        </div>
       </div>
     </div>
   )

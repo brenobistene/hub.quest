@@ -40,6 +40,16 @@ export const fetchProjects = (area?: string) =>
 
 export const fetchProject = (id: string) => get<Project>(`/api/projects/${id}`)
 
+/**
+ * Resumo de entregáveis por projeto — `{projectId: {total, done}}`.
+ * Evita N+1 do frontend quando a lista de projetos precisa mostrar barra
+ * de progresso. Backend faz um único SELECT agrupado.
+ */
+export const fetchDeliverablesSummary = (area?: string) =>
+  get<Record<string, { total: number; done: number }>>(
+    area ? `/api/projects/deliverables-summary?area=${encodeURIComponent(area)}` : '/api/projects/deliverables-summary',
+  )
+
 export async function createProject(body: {
   title: string
   area_slug: string
