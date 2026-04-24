@@ -357,7 +357,7 @@ export function QuestDetailPanel({
     setHasManualOrder(true)
     setDraggedId(null)
     setDragOverId(null)
-    reorderDeliverables(project.id, list.map(d => d.id)).catch(() => {})
+    reorderDeliverables(project.id, list.map(d => d.id)).catch(err => reportApiError('QuestDetailPanel.reorderDeliverables', err))
   }
 
   function handleDragEnd() {

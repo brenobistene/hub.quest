@@ -31,7 +31,9 @@ def get_conn() -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     try:
         conn.execute("PRAGMA foreign_keys=ON")
-    except:
+    except sqlite3.Error:
+        # Alguns builds/environments do sqlite não suportam essa PRAGMA;
+        # seguir sem FK enforcement é preferível a falhar ao abrir conexão.
         pass
     return conn
 
