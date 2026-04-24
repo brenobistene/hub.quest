@@ -1,18 +1,22 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import type { Area, Quest } from '../types'
+import type { Area, Project } from '../types'
 import {
   fetchMicroTasks, createMicroTask, deleteMicroTask,
-  createQuest, createTask, createRoutine,
+  createTask, createRoutine,
   reportApiError,
 } from '../api'
 
 /**
  * `/micro-dump` — inbox pra capturar ideias soltas sem triagem. Cada item
- * pode virar tarefa, quest, rotina ou ideia arquivada (repassada pro root
- * via `onArchive`, que persiste em localStorage).
+ * pode virar tarefa, rotina ou ideia arquivada (repassada pro root via
+ * `onArchive`, que persiste em localStorage).
+ *
+ * Promoção pra quest foi removida: no novo modelo toda quest precisa de
+ * project_id + deliverable_id. Pra transformar uma ideia em quest, o
+ * usuário captura aqui e depois cria no painel do projeto correspondente.
  */
-export function MicroDumpView({ areas, quests, onArchive }: { areas: Area[]; quests: Quest[]; onArchive: (idea: any) => void }) {
+export function MicroDumpView({ areas, projects, onArchive }: { areas: Area[]; projects: Project[]; onArchive: (idea: any) => void }) {
   const navigate = useNavigate()
   const [microTasks, setMicroTasks] = useState<any[]>([])
   const [microTaskInput, setMicroTaskInput] = useState('')
@@ -375,8 +379,8 @@ export function MicroDumpView({ areas, quests, onArchive }: { areas: Area[]; que
                     }}
                   >
                     <option value="">Nenhum (quest independente)</option>
-                    {quests.filter(q => !q.parent_id && q.area_slug === formData.area_slug).map(q => (
-                      <option key={q.id} value={q.id}>{q.title}</option>
+                    {projects.filter(p => p.area_slug === formData.area_slug).map(p => (
+                      <option key={p.id} value={p.id}>{p.title}</option>
                     ))}
                   </select>
                 </div>
@@ -584,16 +588,8 @@ export function MicroDumpView({ areas, quests, onArchive }: { areas: Area[]; que
                     }
 
                     if (modalMode === 'quest') {
-                      if (!formData.area_slug) {
-                        alert('Área é obrigatória')
-                        return
-                      }
-                      const questData: any = {
-                        title: formData.title,
-                        area_slug: formData.area_slug,
-                      }
-                      if (formData.parent_id) questData.parent_id = formData.parent_id
-                      await createQuest(questData)
+                      alert('Pra criar quest: vá no projeto correspondente e use "+ nova quest" dentro de um entregável. Toda quest precisa de projeto + entregável.')
+                      return
                     } else if (modalMode === 'tarefa') {
                       if ((formData.start_time && !formData.end_time) || (!formData.start_time && formData.end_time)) {
                         alert('Preencha os dois horários, início e fim')

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Sunrise, Sun, Moon, X, ArrowRight, Calendar as CalendarIcon, Trash2 } from 'lucide-react'
-import type { ActiveSession, Area, Deliverable, Quest, Routine, Task } from '../types'
+import type { ActiveSession, Area, Deliverable, Project, Quest, Routine, Task } from '../types'
 import { fetchAllRoutines, fetchTasks, fetchQuests, fetchDeliverables, fetchRoutinesForDate, updateTask, deleteTask, reportApiError } from '../api'
 import { isoToLocalYmd } from '../utils/datetime'
 import type { DateRange } from '../utils/dateRange'
@@ -37,12 +37,13 @@ function itemDurationMin(item: any): number {
  * split disponíveis × períodos), e três blocos minimalistas pra manhã/tarde/
  * noite. Persiste plano em `hq-day-plan` (localStorage).
  */
-export function DiaView({ quests, areas, activeSession, onSessionUpdate, onSelectQuest }: {
+export function DiaView({ projects, quests, areas, activeSession, onSessionUpdate, onSelectProject }: {
+  projects: Project[]
   quests: Quest[]
   areas: Area[]
   activeSession: ActiveSession | null
   onSessionUpdate: () => void
-  onSelectQuest: (id: string | null) => void
+  onSelectProject: (id: string | null) => void
 }) {
   const navigate = useNavigate()
   const [routines, setRoutines] = useState<Routine[]>([])
@@ -109,7 +110,7 @@ export function DiaView({ quests, areas, activeSession, onSessionUpdate, onSelec
   useEffect(() => { refreshDoneRoutines() }, [todayIsoForTasks, activeSession?.type, activeSession?.id, activeSession?.started_at, activeSession?.ended_at])
 
   useEffect(() => {
-    const projectIds = Array.from(new Set(quests.filter(q => q.parent_id).map(q => q.parent_id!)))
+    const projectIds = Array.from(new Set(quests.filter(q => q.project_id).map(q => q.project_id!)))
     if (projectIds.length === 0) { setDelivsByProject({}); return }
     let cancelled = false
     Promise.all(projectIds.map(pid =>
@@ -123,7 +124,7 @@ export function DiaView({ quests, areas, activeSession, onSessionUpdate, onSelec
       setDelivsByProject(map)
     })
     return () => { cancelled = true }
-  }, [quests.map(q => q.id + ':' + (q.deliverable_id ?? '') + ':' + (q.parent_id ?? '')).join(',')])
+  }, [quests.map(q => q.id + ':' + (q.deliverable_id ?? '') + ':' + (q.project_id ?? '')).join(',')])
 
   useEffect(() => {
     localStorage.setItem(dayPlanKey, JSON.stringify(dayPlan))
@@ -187,7 +188,7 @@ export function DiaView({ quests, areas, activeSession, onSessionUpdate, onSelec
       // deles), não o projeto em si. Herdam a deadline do projeto se a
       // subtask não tem uma própria.
       items.push(...quests.filter(q =>
-        q.parent_id
+        q.project_id
         && q.status !== 'done'
         && q.status !== 'cancelled'
         && withinRange(q.deadline)
@@ -473,6 +474,7 @@ export function DiaView({ quests, areas, activeSession, onSessionUpdate, onSelec
             period={period}
             dayPeriods={dayPeriods}
             dayPlan={dayPlan}
+            projects={projects}
             quests={quests}
             allTasks={allTasks}
             routines={routines}
@@ -499,8 +501,8 @@ export function DiaView({ quests, areas, activeSession, onSessionUpdate, onSelec
               // Clique numa quest (subtask) → abre o PROJETO PAI em
               // /areas/{slug}. A AreaDetailView só mostra detalhe pra quests
               // top-level, então passar o id da subtask não abre nada.
-              if (!q.parent_id) return
-              onSelectQuest(q.parent_id)
+              if (!q.project_id) return
+              onSelectProject(q.project_id)
               navigate(`/areas/${q.area_slug}`)
             }}
           />
@@ -531,6 +533,7 @@ export function DiaView({ quests, areas, activeSession, onSessionUpdate, onSelec
           draggedItem={draggedItem}
           setDraggedItem={setDraggedItem}
           areas={areas}
+          projects={projects}
           quests={quests}
           routines={routines}
           allTasks={allTasks}
@@ -547,13 +550,14 @@ export function DiaView({ quests, areas, activeSession, onSessionUpdate, onSelec
 // ─── PeriodSection ─────────────────────────────────────────────────────────
 
 function PeriodSection({
-  period, dayPeriods, dayPlan, quests, allTasks, routines, doneRoutineIds,
+  period, dayPeriods, dayPlan, projects, quests, allTasks, routines, doneRoutineIds,
   areas, activeSession, delivsByProject, todayIsoForTasks,
   onSessionUpdate, onRemoveFromPlan, onOpenPlanner, onOpenQuest,
 }: {
   period: 'morning' | 'afternoon' | 'evening'
   dayPeriods: DayPeriods
   dayPlan: { morning: string[]; afternoon: string[]; evening: string[] }
+  projects: Project[]
   quests: Quest[]
   allTasks: Task[]
   routines: Routine[]
@@ -644,10 +648,10 @@ function PeriodSection({
             let deliverableTitle: string | null = null
             if (!(item as any).isTask && !(item as any).isRoutine) {
               const q = item as Quest
-              if (q.parent_id) {
-                const parent = quests.find(p => p.id === q.parent_id)
+              if (q.project_id) {
+                const parent = projects.find(p => p.id === q.project_id)
                 if (parent) parentTitle = parent.title
-                const deliv = delivsByProject[q.parent_id]?.find(d => d.id === q.deliverable_id)
+                const deliv = delivsByProject[q.project_id]?.find(d => d.id === q.deliverable_id)
                 if (deliv) deliverableTitle = deliv.title
               }
             }
@@ -703,7 +707,7 @@ function PlannerDrawer({
   plannerIncludeUndated, setPlannerIncludeUndated,
   plannerPriorities, setPlannerPriorities,
   draggedItem, setDraggedItem,
-  areas, quests, routines, allTasks, doneRoutineIds,
+  areas, projects, quests, routines, allTasks, doneRoutineIds,
   delivsByProject,
   dayPeriods,
   onClose,
@@ -722,6 +726,7 @@ function PlannerDrawer({
   draggedItem: any
   setDraggedItem: (i: any) => void
   areas: Area[]
+  projects: Project[]
   quests: Quest[]
   routines: Routine[]
   allTasks: Task[]
@@ -952,7 +957,7 @@ function PlannerDrawer({
                     key={item.id}
                     item={item}
                     areas={areas}
-                    quests={quests}
+                    projects={projects}
                     delivsByProject={delivsByProject}
                     onDragStart={() => setDraggedItem(item)}
                     onDragEnd={() => setDraggedItem(null)}
@@ -1414,10 +1419,10 @@ function itemIsDone(item: any): boolean {
   return item?.status === 'done'
 }
 
-function AvailableCard({ item, areas, quests, delivsByProject, onDragStart, onDragEnd }: {
+function AvailableCard({ item, areas, projects, delivsByProject, onDragStart, onDragEnd }: {
   item: any
   areas: Area[]
-  quests: Quest[]
+  projects: Project[]
   delivsByProject: Record<string, Deliverable[]>
   onDragStart: () => void
   onDragEnd: () => void
@@ -1436,8 +1441,8 @@ function AvailableCard({ item, areas, quests, delivsByProject, onDragStart, onDr
 
   const duration = itemDurationMin(item)
   // Quests são sempre subtasks agora; procura projeto pai + entregável.
-  const parent = !isTask && !isRoutine && (item as Quest).parent_id
-    ? quests.find(p => p.id === (item as Quest).parent_id)
+  const parent = !isTask && !isRoutine && (item as Quest).project_id
+    ? projects.find(p => p.id === (item as Quest).project_id)
     : null
   const deliverable = parent && (item as Quest).deliverable_id
     ? delivsByProject[parent.id]?.find(d => d.id === (item as Quest).deliverable_id)

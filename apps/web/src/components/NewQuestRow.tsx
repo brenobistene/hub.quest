@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type { Area, Deliverable, Quest } from '../types'
+import type { Area, Deliverable, Project, Quest } from '../types'
 import { createQuest, fetchDeliverables } from '../api'
 
 /**
@@ -11,10 +11,10 @@ import { createQuest, fetchDeliverables } from '../api'
  * e a causa é exibida inline (ex: "projeto ainda não tem entregável — crie um
  * no detalhe do projeto primeiro").
  */
-export function NewQuestRow({ areaSlug, areas, quests, onCreated }: {
+export function NewQuestRow({ areaSlug, areas, projects, onCreated }: {
   areaSlug: string
   areas: Area[]
-  quests: Quest[]
+  projects: Project[]
   onCreated: (q: Quest) => void
   /** @deprecated projeto é sempre obrigatório agora, flag mantida por compat */
   requireProject?: boolean
@@ -71,7 +71,7 @@ export function NewQuestRow({ areaSlug, areas, quests, onCreated }: {
     return () => { cancelled = true }
   }, [selectedProject])
 
-  const projects = quests.filter(q => q.area_slug === selectedArea && !q.parent_id)
+  const areaProjects = projects.filter(p => p.area_slug === selectedArea)
   const canCreate = !!title.trim() && !!selectedProject && !!selectedDeliverable
 
   function commit() {
@@ -82,7 +82,7 @@ export function NewQuestRow({ areaSlug, areas, quests, onCreated }: {
     createQuest({
       title: t,
       area_slug: selectedArea,
-      parent_id: selectedProject,
+      project_id: selectedProject,
       deliverable_id: selectedDeliverable,
       estimated_minutes: parseTimeToMinutes(estimatedInput),
     })
@@ -193,7 +193,7 @@ export function NewQuestRow({ areaSlug, areas, quests, onCreated }: {
         <span style={{ fontSize: 9, color: 'var(--color-text-muted)', letterSpacing: '0.15em', textTransform: 'uppercase', fontWeight: 700 }}>
           projeto
         </span>
-        {projects.length > 0 ? (
+        {areaProjects.length > 0 ? (
           <select
             value={selectedProject || ''}
             onChange={e => setSelectedProject(e.target.value || null)}
@@ -205,7 +205,7 @@ export function NewQuestRow({ areaSlug, areas, quests, onCreated }: {
             }}
           >
             <option value="">— selecione —</option>
-            {projects.map(p => (
+            {areaProjects.map(p => (
               <option key={p.id} value={p.id}>{p.title}</option>
             ))}
           </select>

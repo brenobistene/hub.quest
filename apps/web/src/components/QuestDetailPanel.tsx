@@ -1,19 +1,19 @@
 import { useEffect, useState } from 'react'
 import { CheckCircle2, XCircle, GripVertical } from 'lucide-react'
-import type { Area, Quest } from '../types'
+import type { Area, Project, Quest } from '../types'
 import {
-  fetchSubtasks, fetchDeliverables,
+  fetchQuestsByProject, fetchDeliverables,
   createQuest, deleteQuest,
   createDeliverable, updateDeliverable, deleteDeliverable, reorderDeliverables,
   fetchSessions,
   reportApiError,
 } from '../api'
 import { parseIsoAsUtc, sumClosedSessionsSeconds, formatHMS } from '../utils/datetime'
-import { fmtDeadline, formatDateBR } from '../utils/quests'
+import { formatDateBR } from '../utils/quests'
 import { InlineText } from './ui/InlineText'
 import { Label } from './ui/Label'
-import { StatusDropdown } from './StatusDropdown'
 import { PrioritySelect } from './PrioritySelect'
+import { StatusDropdown } from './StatusDropdown'
 import { BlockEditor, isBlockDocEmpty } from './BlockEditor'
 
 type Deliverable = {
@@ -28,12 +28,42 @@ type Deliverable = {
 }
 
 /**
- * Right-side detail panel for a quest or project. Shows editable title,
- * area/project/status selectors, deadline, "finalizar projeto" CTA, a
- * deliverables list with inline CRUD + drag-reorder, and a subtasks list
- * (using QuestRow) with active/done partitions.
+ * Painel de detalhe do PROJETO. Mostra título editável, área/status/deadline,
+ * lista de deliverables com CRUD inline + drag-reorder, e dentro de cada
+ * deliverable a lista de quests (subtarefas) com Play, descrição notion-like,
+ * edição inline, drag-reorder e criação scoped.
+ *
+ * Project e Quest agora são entidades SEPARADAS — este painel edita apenas
+ * Project no header e passa callbacks dedicados pra cada nível.
  */
-export function QuestDetailPanel({ quest, onClose, onUpdate, allQuests, onQuestCreate, onQuestDelete }: { quest: Quest; onClose: () => void; onUpdate: (id: string, patch: Partial<Quest>) => void; allQuests?: Quest[]; area?: Area; onQuestCreate?: (q: Quest) => void; onQuestDelete?: (id: string) => void }) {
+export function QuestDetailPanel({
+  project,
+  onClose,
+  onProjectUpdate,
+  onQuestUpdate,
+  quests: quests,
+  area,
+  onQuestCreate,
+  onQuestDelete,
+  onSessionUpdate,
+}: {
+  project: Project
+  onClose: () => void
+  onProjectUpdate: (id: string, patch: Partial<Project>) => void
+  onQuestUpdate: (id: string, patch: Partial<Quest>) => void
+  quests: Quest[]
+  area?: Area
+  onQuestCreate: (q: Quest) => void
+  onQuestDelete: (id: string) => void
+  onSessionUpdate?: () => void
+}) {
+  // area + onSessionUpdate recebidos pra API completa da página-cliente mas
+  // não usados diretamente aqui (herdados de quando o painel suportava
+  // subtarefas inline).
+  void area; void onSessionUpdate;
+  // Subtasks carregadas do backend (escopadas ao projeto). Usamos estado
+  // local pra UI ser responsiva — updates otimistas refletem aqui antes do
+  // refetch.
   const [subtasks, setSubtasks] = useState<Quest[]>([])
   const [deliverables, setDeliverables] = useState<Deliverable[]>([])
   const [newDeliverableTitle, setNewDeliverableTitle] = useState('')
@@ -64,15 +94,13 @@ export function QuestDetailPanel({ quest, onClose, onUpdate, allQuests, onQuestC
   const [dragOverQuestId, setDragOverQuestId] = useState<string | null>(null)
   const [questOrder, setQuestOrder] = useState<Record<string, string[]>>({})
 
-  const dl = fmtDeadline(quest.deadline)
-  const overdue = quest.deadline && new Date(quest.deadline) < new Date()
-
-  const areaQuestCount = allQuests ? allQuests.filter(q => q.area_slug === quest.area_slug && q.status !== 'done').length : 0
+  // Quantos projetos ativos tem nessa área (exceto este). Usado pro breadcrumb.
+  const areaQuestCount = quests ? quests.filter(q => q.area_slug === project.area_slug && q.status !== 'done').length : 0
 
   useEffect(() => {
-    fetchSubtasks(quest.id).then(setSubtasks).catch(err => reportApiError('QuestDetailPanel', err))
-    fetchDeliverables(quest.id).then(setDeliverables).catch(err => reportApiError('QuestDetailPanel', err))
-  }, [quest.id])
+    fetchQuestsByProject(project.id).then(setSubtasks).catch(err => reportApiError('QuestDetailPanel', err))
+    fetchDeliverables(project.id).then(setDeliverables).catch(err => reportApiError('QuestDetailPanel', err))
+  }, [project.id])
 
   // Carrega sessões de todas as subtasks pra poder mostrar `tempo gasto` nos
   // cards compactos dentro dos deliverables. N requests em paralelo — aceitável
@@ -120,18 +148,19 @@ export function QuestDetailPanel({ quest, onClose, onUpdate, allQuests, onQuestC
   // `notesDraft` é não-nulo (ou seja, o usuário editou nesta sessão).
   useEffect(() => {
     if (notesDraft === null) return
-    const current = quest.notes ?? null
+    const current = project.notes ?? null
     if (notesDraft === (current ?? '')) return
     const t = setTimeout(() => {
       const newVal = isBlockDocEmpty(notesDraft) ? null : notesDraft
-      if (newVal !== current) onUpdate(quest.id, { notes: newVal })
+      if (newVal !== current) onProjectUpdate(project.id, { notes: newVal })
     }, 800)
     return () => clearTimeout(t)
-  }, [notesDraft, quest.notes, quest.id, onUpdate])
+  }, [notesDraft, project.notes, project.id, onProjectUpdate])
 
+  // Update otimista de subtask + dispara o callback global do App.
   const handleUpdate = (id: string, patch: Partial<Quest>) => {
     setSubtasks(sts => sts.map(st => st.id === id ? { ...st, ...patch } : st))
-    onUpdate(id, patch)
+    onQuestUpdate(id, patch)
   }
 
   function addQuestToDeliverable(delivId: string) {
@@ -140,13 +169,13 @@ export function QuestDetailPanel({ quest, onClose, onUpdate, allQuests, onQuestC
     const estimatedMinutes = parseTimeToMinutes(newQuestEstByDeliv[delivId] || '')
     createQuest({
       title,
-      area_slug: quest.area_slug,
-      parent_id: quest.id,
+      area_slug: project.area_slug,
+      project_id: project.id,
       deliverable_id: delivId,
       estimated_minutes: estimatedMinutes,
     })
       .then(q => {
-        fetchSubtasks(quest.id).then(setSubtasks).catch(err => reportApiError('QuestDetailPanel', err))
+        fetchQuestsByProject(project.id).then(setSubtasks).catch(err => reportApiError('QuestDetailPanel', err))
         setNewQuestByDeliv(prev => ({ ...prev, [delivId]: '' }))
         setNewQuestEstByDeliv(prev => ({ ...prev, [delivId]: '' }))
         if (onQuestCreate) onQuestCreate(q)
@@ -191,7 +220,7 @@ export function QuestDetailPanel({ quest, onClose, onUpdate, allQuests, onQuestC
 
   function addDeliverable() {
     if (!newDeliverableTitle.trim()) return
-    createDeliverable(quest.id, newDeliverableTitle, {
+    createDeliverable(project.id, newDeliverableTitle, {
       deadline: newDeliverableDeadline || null,
     })
       .then(newDeliv => {
@@ -328,7 +357,7 @@ export function QuestDetailPanel({ quest, onClose, onUpdate, allQuests, onQuestC
     setHasManualOrder(true)
     setDraggedId(null)
     setDragOverId(null)
-    reorderDeliverables(quest.id, list.map(d => d.id)).catch(() => {})
+    reorderDeliverables(project.id, list.map(d => d.id)).catch(() => {})
   }
 
   function handleDragEnd() {
@@ -398,11 +427,11 @@ export function QuestDetailPanel({ quest, onClose, onUpdate, allQuests, onQuestC
 
       <div style={{ marginBottom: 16 }}>
         <InlineText
-          value={quest.title}
-          onSave={v => onUpdate(quest.id, { title: v })}
+          value={project.title}
+          onSave={v => onProjectUpdate(project.id, { title: v })}
           style={{ color: 'var(--color-text-primary)', fontSize: 22, fontWeight: 700, display: 'block', letterSpacing: '-0.01em' }}
         />
-        {!quest.parent_id && (totalEstimatedMin > 0 || totalExecutedMin > 0 || deliverables.length > 0) && (
+        {(totalEstimatedMin > 0 || totalExecutedMin > 0 || deliverables.length > 0) && (
           <div style={{
             display: 'flex', alignItems: 'center', gap: 18, flexWrap: 'wrap',
             marginTop: 10,
@@ -443,7 +472,7 @@ export function QuestDetailPanel({ quest, onClose, onUpdate, allQuests, onQuestC
           </div>
         )}
 
-        {!quest.parent_id && deliverables.length > 0 && (
+        {deliverables.length > 0 && (
           <div style={{ marginTop: 12, maxWidth: 520 }}>
             <div style={{
               height: 4, borderRadius: 2,
@@ -472,18 +501,16 @@ export function QuestDetailPanel({ quest, onClose, onUpdate, allQuests, onQuestC
         )}
       </div>
 
-      {/* Meta row: deadline + finalizar (inline). Área não é editável aqui —
-          é herdada do create. Subtarefa mantém layout vertical. */}
-      {!quest.parent_id ? (
-        <div style={{
-          display: 'flex', gap: 18, alignItems: 'center', flexWrap: 'wrap',
-          marginBottom: 28, paddingBottom: 16, borderBottom: '1px solid var(--color-divider)',
-        }}>
+      {/* Meta row: área · deadline · prioridade · finalizar/cancelar/reabrir. */}
+      <div style={{
+        display: 'flex', gap: 18, alignItems: 'center', flexWrap: 'wrap',
+        marginBottom: 28, paddingBottom: 16, borderBottom: '1px solid var(--color-divider)',
+      }}>
           <span style={{
             fontSize: 10, color: 'var(--color-text-tertiary)',
             letterSpacing: '0.15em', textTransform: 'uppercase', fontWeight: 700,
           }}>
-            {quest.area_slug}
+            {project.area_slug}
           </span>
 
           <label style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}>
@@ -492,8 +519,8 @@ export function QuestDetailPanel({ quest, onClose, onUpdate, allQuests, onQuestC
             </span>
             <input
               type="date"
-              value={quest.deadline || ''}
-              onChange={e => onUpdate(quest.id, { deadline: e.target.value || null })}
+              value={project.deadline || ''}
+              onChange={e => onProjectUpdate(project.id, { deadline: e.target.value || null })}
               style={{
                 background: 'transparent', border: 'none',
                 borderBottom: '1px solid transparent',
@@ -513,20 +540,20 @@ export function QuestDetailPanel({ quest, onClose, onUpdate, allQuests, onQuestC
               prioridade
             </span>
             <PrioritySelect
-              value={quest.priority || 'medium'}
-              onChange={v => onUpdate(quest.id, { priority: v })}
+              value={project.priority || 'medium'}
+              onChange={v => onProjectUpdate(project.id, { priority: v })}
             />
           </label>
 
           <div style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-            {quest.status !== 'done' && quest.status !== 'cancelled' ? (
+            {project.status !== 'done' && project.status !== 'cancelled' ? (
               <>
                 <button
                   onClick={() => {
                     if (window.confirm('Marcar este projeto como finalizado?')) {
                       // Seta completed_at localmente pro filtro "hoje" pegar
                       // imediatamente, antes do refetch do backend.
-                      onUpdate(quest.id, { status: 'done', completed_at: new Date().toISOString() })
+                      onProjectUpdate(project.id, { status: 'done', completed_at: new Date().toISOString() })
                     }
                   }}
                   style={{
@@ -554,7 +581,7 @@ export function QuestDetailPanel({ quest, onClose, onUpdate, allQuests, onQuestC
                 <button
                   onClick={() => {
                     if (window.confirm('Cancelar este projeto? Ele sai dos painéis de acompanhamento, mas fica no histórico.')) {
-                      onUpdate(quest.id, { status: 'cancelled', completed_at: new Date().toISOString() })
+                      onProjectUpdate(project.id, { status: 'cancelled', completed_at: new Date().toISOString() })
                     }
                   }}
                   title="Cancelar projeto"
@@ -571,7 +598,7 @@ export function QuestDetailPanel({ quest, onClose, onUpdate, allQuests, onQuestC
                   cancelar
                 </button>
               </>
-            ) : quest.status === 'done' ? (
+            ) : project.status === 'done' ? (
               <div style={{
                 display: 'inline-flex', alignItems: 'center', gap: 8,
                 padding: '6px 10px', borderRadius: 3,
@@ -581,16 +608,16 @@ export function QuestDetailPanel({ quest, onClose, onUpdate, allQuests, onQuestC
                 <CheckCircle2 size={11} strokeWidth={2.2} color="var(--color-success)" />
                 <span style={{ fontSize: 10, color: 'var(--color-success)', textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 700 }}>
                   Finalizado
-                  {quest.completed_at && (
+                  {project.completed_at && (
                     <span style={{ color: 'var(--color-text-tertiary)', letterSpacing: '0.05em', marginLeft: 6, fontWeight: 400 }}>
-                      · {parseIsoAsUtc(quest.completed_at).toLocaleDateString('pt-BR')}
+                      · {parseIsoAsUtc(project.completed_at).toLocaleDateString('pt-BR')}
                     </span>
                   )}
                 </span>
                 <button
                   onClick={() => {
                     if (window.confirm('Reabrir este projeto? Ele volta para "em andamento".')) {
-                      onUpdate(quest.id, { status: 'doing', completed_at: null })
+                      onProjectUpdate(project.id, { status: 'doing', completed_at: null })
                     }
                   }}
                   style={{
@@ -614,16 +641,16 @@ export function QuestDetailPanel({ quest, onClose, onUpdate, allQuests, onQuestC
                 <XCircle size={11} strokeWidth={2.2} color="var(--color-text-tertiary)" />
                 <span style={{ fontSize: 10, color: 'var(--color-text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 700 }}>
                   Cancelado
-                  {quest.completed_at && (
+                  {project.completed_at && (
                     <span style={{ color: 'var(--color-text-muted)', letterSpacing: '0.05em', marginLeft: 6, fontWeight: 400 }}>
-                      · {parseIsoAsUtc(quest.completed_at).toLocaleDateString('pt-BR')}
+                      · {parseIsoAsUtc(project.completed_at).toLocaleDateString('pt-BR')}
                     </span>
                   )}
                 </span>
                 <button
                   onClick={() => {
                     if (window.confirm('Reabrir este projeto? Ele volta para "em andamento".')) {
-                      onUpdate(quest.id, { status: 'doing', completed_at: null })
+                      onProjectUpdate(project.id, { status: 'doing', completed_at: null })
                     }
                   }}
                   style={{
@@ -639,89 +666,7 @@ export function QuestDetailPanel({ quest, onClose, onUpdate, allQuests, onQuestC
               </div>
             )}
           </div>
-        </div>
-      ) : (
-        <>
-          <div style={{ marginBottom: 14 }}>
-            <Label>área</Label>
-            <select
-              value={quest.area_slug}
-              onChange={e => onUpdate(quest.id, { area_slug: e.target.value })}
-              style={{
-                display: 'block', marginTop: 8, background: 'var(--color-bg-primary)', border: '1px solid var(--color-text-tertiary)',
-                color: 'var(--color-text-primary)', fontSize: 12, padding: '6px 8px', borderRadius: 4,
-                outline: 'none', transition: 'border 0.15s', cursor: 'pointer',
-              }}
-              onFocus={e => (e.currentTarget.style.borderColor = 'var(--color-accent-light)')}
-              onBlur={e => (e.currentTarget.style.borderColor = 'var(--color-text-tertiary)')}
-            >
-              {allQuests && Array.from(new Set(allQuests.map(q => q.area_slug))).sort().map(slug => (
-                <option key={slug} value={slug}>{slug}</option>
-              ))}
-            </select>
-          </div>
-
-          <div style={{ marginBottom: 14 }}>
-            <Label>projeto</Label>
-            <select
-              value={quest.parent_id || ''}
-              onChange={e => onUpdate(quest.id, { parent_id: e.target.value || null })}
-              style={{
-                display: 'block', marginTop: 8, background: 'var(--color-bg-primary)', border: '1px solid var(--color-text-tertiary)',
-                color: 'var(--color-text-primary)', fontSize: 12, padding: '6px 8px', borderRadius: 4,
-                outline: 'none', transition: 'border 0.15s', cursor: 'pointer',
-              }}
-              onFocus={e => (e.currentTarget.style.borderColor = 'var(--color-accent-light)')}
-              onBlur={e => (e.currentTarget.style.borderColor = 'var(--color-text-tertiary)')}
-            >
-              <option value="">Sem projeto</option>
-              {allQuests && allQuests
-                .filter(q => !q.parent_id && q.area_slug === quest.area_slug)
-                .map(q => (
-                  <option key={q.id} value={q.id}>{q.title}</option>
-                ))}
-            </select>
-          </div>
-
-          <div style={{ marginBottom: 18, display: 'flex', alignItems: 'center', gap: 12 }}>
-            <Label>status:</Label>
-            <StatusDropdown status={quest.status} onChange={s => onUpdate(quest.id, { status: s })} />
-          </div>
-        </>
-      )}
-
-      {quest.parent_id && (
-        <div style={{ marginBottom: 20, display: 'flex', alignItems: 'center', gap: 12 }}>
-          <Label>entregável:</Label>
-          <select
-            value={quest.deliverable_id || ''}
-            onChange={e => onUpdate(quest.id, { deliverable_id: e.target.value || null })}
-            style={{
-              background: 'var(--color-bg-primary)', border: '1px solid var(--color-text-tertiary)', color: 'var(--color-text-primary)',
-              fontSize: 11, padding: '4px 6px', cursor: 'pointer', outline: 'none',
-              transition: 'border 0.15s', borderRadius: 2,
-            }}
-            onFocus={e => e.currentTarget.style.borderColor = 'var(--color-accent-light)'}
-            onBlur={e => e.currentTarget.style.borderColor = 'var(--color-text-tertiary)'}
-          >
-            <option value="">Nenhum entregável</option>
-            {deliverables.map(d => (
-              <option key={d.id} value={d.id}>
-                {d.title}
-              </option>
-            ))}
-          </select>
-        </div>
-      )}
-
-      {quest.deadline && quest.parent_id && (
-        <div style={{ marginBottom: 20 }}>
-          <Label>deadline</Label>
-          <div style={{ marginTop: 8, fontSize: 12, color: overdue ? 'var(--color-accent-light)' : 'var(--color-text-primary)' }}>
-            {formatDateBR(quest.deadline)} {dl && `(${dl})`}
-          </div>
-        </div>
-      )}
+      </div>
 
       <div style={{ marginTop: 12 }}>
         <div style={{
@@ -1250,19 +1195,17 @@ export function QuestDetailPanel({ quest, onClose, onUpdate, allQuests, onQuestC
         </div>
       </div>
 
-      {!quest.parent_id && (
-        <div style={{ marginTop: 40, paddingTop: 28, borderTop: '1px solid var(--color-divider)' }}>
-          <Label>informações detalhadas</Label>
-          <div style={{ marginTop: 10 }}>
-            <BlockEditor
-              value={notesDraft ?? quest.notes ?? ''}
-              onChange={setNotesDraft}
-              placeholder="Digite / pra escolher o tipo de bloco…"
-              minHeight={200}
-            />
-          </div>
+      <div style={{ marginTop: 40, paddingTop: 28, borderTop: '1px solid var(--color-divider)' }}>
+        <Label>informações detalhadas</Label>
+        <div style={{ marginTop: 10 }}>
+          <BlockEditor
+            value={notesDraft ?? project.notes ?? ''}
+            onChange={setNotesDraft}
+            placeholder="Digite / pra escolher o tipo de bloco…"
+            minHeight={200}
+          />
         </div>
-      )}
+      </div>
 
       {areaQuestCount > 0 && (
         <div style={{ marginTop: 20, paddingTop: 20, borderTop: '1px solid var(--color-border)', fontSize: 11, color: 'var(--color-text-tertiary)' }}>

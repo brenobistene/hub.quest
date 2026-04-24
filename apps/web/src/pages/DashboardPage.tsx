@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ChevronDown, Info } from 'lucide-react'
-import type { Area, Deliverable, Profile, Quest, Routine, Task } from '../types'
+import type { Area, Deliverable, Project, Profile, Quest, Routine, Task } from '../types'
 import { fetchAllRoutines, fetchDeliverables, fetchTasks, reportApiError } from '../api'
 import { getAllBlockRangesForDay } from '../utils/blocks'
 import type { UnproductiveBlock } from '../utils/blocks'
@@ -16,7 +16,7 @@ const WINDOW_STORAGE_KEY = 'hq-dashboard-range'
 type Pressure = 'overdue' | 'impossible' | 'tight' | 'ok' | 'done' | 'no-deadline'
 
 type ProjectPressure = {
-  project: Quest
+  project: Project
   deliverables: Deliverable[]
   effectiveDeadline: string | null
   // Dias corridos até a deadline. -N=atrasado, 0=hoje, 1=amanhã, N=em N dias.
@@ -125,12 +125,13 @@ function routineMinutesOnDay(r: Routine): number {
  *
  * Janela default = 14d, persistida em `hq-dashboard-window`.
  */
-export function DashboardView({ quests, areas, profile, onProfileUpdate, onSelectQuest }: {
+export function DashboardView({ projects, quests, areas, profile, onProfileUpdate, onSelectProject }: {
+  projects: Project[]
   quests: Quest[]
   areas: Area[]
   profile: Profile
   onProfileUpdate: (p: Profile) => void
-  onSelectQuest: (id: string | null) => void
+  onSelectProject: (id: string | null) => void
 }) {
   const navigate = useNavigate()
   // Intervalo explícito [start, end]. Default = hoje + 29 dias (janela de 30d).
@@ -171,8 +172,8 @@ export function DashboardView({ quests, areas, profile, onProfileUpdate, onSelec
   }, [])
 
   const projectIds = useMemo(
-    () => quests.filter(q => !q.parent_id).map(q => q.id).sort(),
-    [quests],
+    () => projects.map(p => p.id).sort(),
+    [projects],
   )
   useEffect(() => {
     if (projectIds.length === 0) { setDelivsByProject({}); return }
@@ -276,13 +277,13 @@ export function DashboardView({ quests, areas, profile, onProfileUpdate, onSelec
     const qs = questsByDeliverable[delivId] ?? []
     return qs.reduce((s, q) => s + (q.estimated_minutes ?? 0), 0)
   }
-  function effectiveDeliverableDeadline(d: Deliverable, project?: Quest): string | null {
+  function effectiveDeliverableDeadline(d: Deliverable, project?: Project): string | null {
     if (d.deadline) return d.deadline
     return project?.deadline ?? null
   }
 
   const projectPressures: ProjectPressure[] = useMemo(() => {
-    const activeProjects = quests.filter(q => !q.parent_id && q.status !== 'done' && q.status !== 'cancelled')
+    const activeProjects = projects.filter(p => p.status !== 'done' && p.status !== 'cancelled')
     return activeProjects.map(p => {
       const delivs = (delivsByProject[p.id] ?? []).filter(d => !d.done)
       let estimatedMin = 0
@@ -350,7 +351,7 @@ export function DashboardView({ quests, areas, profile, onProfileUpdate, onSelec
   // todos os projetos em dia se eu distribuir o esforço uniformemente".
   const todayQuotaMin = useMemo(() => {
     let quota = 0
-    for (const p of quests.filter(q => !q.parent_id && q.status !== 'done' && q.status !== 'cancelled')) {
+    for (const p of projects.filter(p => p.status !== 'done' && p.status !== 'cancelled')) {
       for (const d of delivsByProject[p.id] ?? []) {
         if (d.done) continue
         const eff = effectiveDeliverableDeadline(d, p)
@@ -372,7 +373,7 @@ export function DashboardView({ quests, areas, profile, onProfileUpdate, onSelec
   // pra não duplicar o projeto.
   const mostUrgent = useMemo(() => {
     let best: { title: string; daysAway: number; type: 'projeto' | 'entregável' } | null = null
-    for (const p of quests.filter(q => !q.parent_id && q.status !== 'done' && q.status !== 'cancelled')) {
+    for (const p of projects.filter(p => p.status !== 'done' && p.status !== 'cancelled')) {
       if (p.deadline) {
         const days = calendarDaysUntil(p.deadline)
         if (!best || days < best.daysAway) {
@@ -397,12 +398,12 @@ export function DashboardView({ quests, areas, profile, onProfileUpdate, onSelec
   // usuário a entender por que "próximas deadlines" está vazio.
   const deadlinesOutsideWindow = useMemo(() => {
     let count = 0
-    for (const p of quests.filter(q => !q.parent_id)) {
+    for (const p of projects) {
       if (!p.deadline) continue
       const projectOverdue = p.status !== 'done' && p.status !== 'cancelled' && p.deadline < todayIso
       if (!projectOverdue && (p.deadline < windowStartIso || p.deadline > windowEndIso)) count++
     }
-    for (const p of quests.filter(q => !q.parent_id)) {
+    for (const p of projects) {
       for (const d of delivsByProject[p.id] ?? []) {
         if (!d.deadline) continue
         const delivOverdue = !d.done && d.deadline < todayIso
@@ -415,7 +416,7 @@ export function DashboardView({ quests, areas, profile, onProfileUpdate, onSelec
   const upcomingItems: UpcomingItem[] = useMemo(() => {
     const items: UpcomingItem[] = []
     const areaColor = (slug: string) => areas.find(a => a.slug === slug)?.color ?? 'var(--color-text-tertiary)'
-    for (const p of quests.filter(q => !q.parent_id)) {
+    for (const p of projects) {
       if (!p.deadline) continue
       const projectOverdue = p.status !== 'done' && p.status !== 'cancelled' && p.deadline < todayIso
       // Exibe se está na janela OU se está atrasado e ainda não foi concluído
@@ -430,7 +431,7 @@ export function DashboardView({ quests, areas, profile, onProfileUpdate, onSelec
         done: p.status === 'done',
       })
     }
-    for (const p of quests.filter(q => !q.parent_id)) {
+    for (const p of projects) {
       for (const d of delivsByProject[p.id] ?? []) {
         if (!d.deadline) continue
         const delivOverdue = !d.done && d.deadline < todayIso
@@ -677,7 +678,7 @@ export function DashboardView({ quests, areas, profile, onProfileUpdate, onSelec
                   areaColor={area?.color ?? 'var(--color-text-tertiary)'}
                   areaName={area?.name ?? pp.project.area_slug}
                   onOpen={() => {
-                    onSelectQuest(pp.project.id)
+                    onSelectProject(pp.project.id)
                     navigate(`/areas/${pp.project.area_slug}`)
                   }}
                 />

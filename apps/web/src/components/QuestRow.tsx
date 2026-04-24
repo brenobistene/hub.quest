@@ -1,21 +1,20 @@
 import { useEffect, useRef, useState } from 'react'
-import type { Area, Quest } from '../types'
+import type { Area, Deliverable, Project, Quest } from '../types'
 import { createDeliverable, updateDeliverable, deleteDeliverable } from '../api'
 import { getAreaColor } from '../utils/quests'
 import { InlineText } from './ui/InlineText'
 import { StartPauseButton } from './StartPauseButton'
 
-type Deliverable = { id: string; title: string; done: boolean; estimated_minutes?: number; minutes_worked?: number; deadline?: string }
-
 /**
- * Row used in QuestsView and inside QuestDetailPanel. Shows the quest's
- * title (inline-editable), optional next_action, area/parent-project picker
- * when it's a subtask, and a StartPauseButton cluster. For projects
- * (no parent_id), optionally renders an inline deliverables list with
- * progress bar and an "adicionar entrega" composer.
+ * Row usado na QuestsView. Mostra quest subtarefa com título inline-editável,
+ * breadcrumb de projeto + entregável, StartPauseButton cluster.
+ *
+ * Quests sempre têm project_id + deliverable_id após a refatoração — não há
+ * mais quest-projeto. Se precisar renderizar um projeto, use AreaProjectRow
+ * (em AreasPage) ou QuestDetailPanel.
  */
-export function QuestRow({ q, onUpdate, onClick, isSelected, quests = [], areas = [], onSessionUpdate, hideTimer, onDelete, deliverables = [], sessionUpdateTrigger = 0 }: { q: Quest; onUpdate: (id: string, patch: Partial<Quest>) => void; onClick?: () => void; isSelected?: boolean; quests?: Quest[]; areas?: Area[]; onSessionUpdate?: () => void; hideTimer?: boolean; onDelete?: (id: string) => void; deliverables?: Deliverable[]; sessionUpdateTrigger?: number }) {
-  const parentProject = q.parent_id ? quests.find(quest => quest.id === q.parent_id) : null
+export function QuestRow({ q, onUpdate, onClick, isSelected, projects = [], areas = [], onSessionUpdate, hideTimer, onDelete, deliverables = [], sessionUpdateTrigger = 0 }: { q: Quest; onUpdate: (id: string, patch: Partial<Quest>) => void; onClick?: () => void; isSelected?: boolean; projects?: Project[]; areas?: Area[]; onSessionUpdate?: () => void; hideTimer?: boolean; onDelete?: (id: string) => void; deliverables?: Deliverable[]; sessionUpdateTrigger?: number }) {
+  const parentProject = q.project_id ? projects.find(p => p.id === q.project_id) : null
   const [isEditingProject, setIsEditingProject] = useState(false)
   const [showDeliverables, setShowDeliverables] = useState(false)
   const [showDescription, setShowDescription] = useState(false)
@@ -205,8 +204,8 @@ export function QuestRow({ q, onUpdate, onClick, isSelected, quests = [], areas 
                     </select>
 
                     <select
-                      value={q.parent_id || ''}
-                      onChange={e => onUpdate(q.id, { parent_id: e.target.value || null })}
+                      value={q.project_id || ''}
+                      onChange={e => onUpdate(q.id, { project_id: e.target.value || null })}
                       style={{
                         background: 'var(--color-bg-primary)', border: '1px solid var(--color-border)', color: 'var(--color-text-secondary)',
                         fontSize: 10, padding: '2px 4px', borderRadius: 2, outline: 'none',
@@ -220,8 +219,8 @@ export function QuestRow({ q, onUpdate, onClick, isSelected, quests = [], areas 
                       }}
                     >
                       <option value="">Sem projeto</option>
-                      {quests
-                        .filter(proj => !proj.parent_id && proj.area_slug === q.area_slug)
+                      {projects
+                        .filter(proj => proj.area_slug === q.area_slug)
                         .map(proj => (
                           <option key={proj.id} value={proj.id}>
                             {proj.title}
@@ -234,12 +233,12 @@ export function QuestRow({ q, onUpdate, onClick, isSelected, quests = [], areas 
             )}
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0 }}>
-            {!hideTimer && <StartPauseButton questId={q.id} onUpdate={onUpdate} onSessionChange={onSessionUpdate} status={q.status} onDelete={onDelete} isSubtask={!!q.parent_id} deliverables={deliverables} linkedDeliverableId={q.deliverable_id} sessionUpdateTrigger={sessionUpdateTrigger} />}
-            {onDelete && !q.parent_id && (
+            {!hideTimer && <StartPauseButton questId={q.id} onUpdate={onUpdate} onSessionChange={onSessionUpdate} status={q.status} onDelete={onDelete} isSubtask={true} deliverables={deliverables as any} linkedDeliverableId={q.deliverable_id} sessionUpdateTrigger={sessionUpdateTrigger} />}
+            {false && onDelete && (
               <button
                 onClick={(e) => {
                   e.stopPropagation()
-                  onDelete(q.id)
+                  onDelete && onDelete(q.id)
                 }}
                 style={{
                   background: 'none', border: 'none', cursor: 'pointer',
@@ -267,7 +266,7 @@ export function QuestRow({ q, onUpdate, onClick, isSelected, quests = [], areas 
           style={{ marginTop: 5, fontSize: 12, color: 'var(--color-text-tertiary)', display: 'block' }}
         />
 
-        {!q.parent_id && deliverablesList.length > 0 && (
+        {false && deliverablesList.length > 0 && (
           <div style={{ marginTop: 12 }}>
             <button
               onClick={(e) => {

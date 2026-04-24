@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type { Area, Quest, Routine, Task } from '../types'
+import type { Area, Project, Quest, Routine, Task } from '../types'
 import { fetchAllRoutines, fetchSessions, fetchTasks, fetchTaskSessions, fetchRoutineSessions, deleteRoutine, reportApiError } from '../api'
 import { parseIsoAsUtc } from '../utils/datetime'
 import { getAreaColor } from '../utils/quests'
@@ -26,7 +26,7 @@ function routineMatchesDay(r: Routine, jsDay: number): boolean {
  * via `getAllBlockRangesForDay`). Clicar num slot abre o modal de edição de
  * bloco improdutivo.
  */
-export function CalendarView({ quests, areas, sessionUpdateTrigger }: { quests: Quest[]; areas: Area[]; sessionUpdateTrigger: number }) {
+export function CalendarView({ projects, quests, areas, sessionUpdateTrigger }: { projects: Project[]; quests: Quest[]; areas: Area[]; sessionUpdateTrigger: number }) {
   const [routines, setRoutines] = useState<Routine[]>([])
   const [viewMode, setViewMode] = useState<'dia' | 'semana' | 'mês' | 'ano'>('dia')
   const [currentDate, setCurrentDate] = useState(new Date())
@@ -233,7 +233,7 @@ export function CalendarView({ quests, areas, sessionUpdateTrigger }: { quests: 
 
           <div style={{ overflow: 'auto', height: '80vh' }}>
             {(() => {
-              const dayProjects = quests.filter(q => !q.parent_id && q.deadline === dateIso)
+              const dayProjects = projects.filter(p => p.deadline === dateIso)
               if (!dayProjects.length) return null
               return (
                 <div style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--color-bg-secondary)', borderBottom: '1px solid var(--color-border)', padding: '2px 8px', marginBottom: 4, display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -394,7 +394,7 @@ export function CalendarView({ quests, areas, sessionUpdateTrigger }: { quests: 
                     const startDate = `${start.getFullYear()}-${String(start.getMonth()+1).padStart(2,'0')}-${String(start.getDate()).padStart(2,'0')}`
                     return startDate === dateIso
                   })
-                  const parentQuest = quest.parent_id ? quests.find(q => q.id === quest.parent_id) : null
+                  const parentQuest = quest.project_id ? projects.find(p => p.id === quest.project_id) : null
 
                   return todaySessions.map((session, idx) => {
                     const start = parseIsoAsUtc(session.started_at)
@@ -790,7 +790,7 @@ export function CalendarView({ quests, areas, sessionUpdateTrigger }: { quests: 
                   </button>
 
                   {(() => {
-                    const dayProjects = quests.filter(q => !q.parent_id && q.deadline === dayIso)
+                    const dayProjects = projects.filter(p => p.deadline === dayIso)
                     if (!dayProjects.length) return null
                     return (
                       <div style={{ position: 'sticky', top: 40, zIndex: 10, background: 'var(--color-bg-tertiary)', padding: '1px 2px', borderBottom: '1px solid var(--color-border)', display: 'flex', flexDirection: 'column', gap: 1 }}>
@@ -917,7 +917,7 @@ export function CalendarView({ quests, areas, sessionUpdateTrigger }: { quests: 
                       const startDate = `${start.getFullYear()}-${String(start.getMonth()+1).padStart(2,'0')}-${String(start.getDate()).padStart(2,'0')}`
                       return startDate === dayIso
                     })
-                    const parentQuest = quest.parent_id ? quests.find(q => q.id === quest.parent_id) : null
+                    const parentQuest = quest.project_id ? projects.find(p => p.id === quest.project_id) : null
                     const displayTitle = parentQuest ? `${parentQuest.title} > ${quest.title}` : quest.title
 
                     return daySessions.map((session, idx) => {

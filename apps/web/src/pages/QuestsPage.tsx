@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { Area, Quest } from '../types'
+import type { Area, Project, Quest } from '../types'
 import { fetchDeliverables, deleteQuest, reportApiError } from '../api'
 import type { DateRange } from '../utils/dateRange'
 import { computeRange, isInRange } from '../utils/dateRange'
@@ -16,7 +16,7 @@ type DeliverableLite = { id: string; title: string; done: boolean; estimated_min
  * contador `X/Y feitas` das subtarefas (ativas + concluídas).
  */
 function ProjectGroupHeader({ project, area, doneCount, totalCount }: {
-  project: Quest
+  project: Project
   area: Area | undefined
   doneCount: number
   totalCount: number
@@ -71,19 +71,19 @@ function ProjectGroupHeader({ project, area, doneCount, totalCount }: {
  * contador `X/Y feitas`. Filtro por área nos tabs do topo, seção retrátil
  * "concluídas" com `DateRangeFilter`.
  */
-export function QuestsView({ quests: initial, areas, onSessionUpdate, onQuestUpdate, sessionUpdateTrigger = 0 }: { quests: Quest[]; areas: Area[]; onSessionUpdate?: () => void; onQuestUpdate?: (id: string, patch: Partial<Quest>) => void; sessionUpdateTrigger?: number }) {
+export function QuestsView({ projects, quests: initial, areas, onSessionUpdate, onQuestUpdate, sessionUpdateTrigger = 0 }: { projects: Project[]; quests: Quest[]; areas: Area[]; onSessionUpdate?: () => void; onQuestUpdate?: (id: string, patch: Partial<Quest>) => void; sessionUpdateTrigger?: number }) {
   const [filter, setFilter] = useState<string>('all')
   const [showDone, setShowDone] = useState(false)
   const [doneRange, setDoneRange] = useState<DateRange>(() => computeRange('7d'))
   const [deliverablesByProject, setDeliverablesByProject] = useState<Record<string, DeliverableLite[]>>({})
 
   useEffect(() => {
-    const projectIds = new Set(initial.filter(q => q.parent_id !== null && q.parent_id !== undefined).map(q => q.parent_id!))
+    const projectIds = new Set(initial.filter(q => q.project_id != null).map(q => q.project_id!))
 
     Promise.all(
       Array.from(projectIds).map(projectId =>
         fetchDeliverables(projectId)
-          .then(delivs => ({ projectId, delivs }))
+          .then(delivs => ({ projectId, delivs: delivs as DeliverableLite[] }))
           .catch(() => ({ projectId, delivs: [] as DeliverableLite[] }))
       )
     ).then(results => {
@@ -107,7 +107,7 @@ export function QuestsView({ quests: initial, areas, onSessionUpdate, onQuestUpd
 
   function add(_q: Quest) { /* Already handled by parent component */ }
 
-  const subtasksAll = initial.filter(q => q.parent_id !== null && q.parent_id !== undefined)
+  const subtasksAll = initial.filter(q => q.project_id != null)
   const filtered = filter === 'all' ? subtasksAll : subtasksAll.filter(q => q.area_slug === filter)
   const activeSubs = filtered.filter(q => q.status !== 'done')
   const doneAllSubs = filtered.filter(q => q.status === 'done')
@@ -116,24 +116,24 @@ export function QuestsView({ quests: initial, areas, onSessionUpdate, onQuestUpd
   // Sort projects by area (keeping areas list order) then by title, so groups
   // come out in a predictable order when filter=all.
   const areaOrder = new Map(areas.map((a, i) => [a.slug, i]))
-  const sortProjects = (a: Quest, b: Quest) => {
+  const sortProjects = (a: Project, b: Project) => {
     const ai = areaOrder.get(a.area_slug) ?? 999
     const bi = areaOrder.get(b.area_slug) ?? 999
     if (ai !== bi) return ai - bi
     return a.title.localeCompare(b.title)
   }
 
-  // Group subtasks by their parent project id. Keep projects in sorted order.
-  function groupByProject(subs: Quest[]): { project: Quest; subtasks: Quest[] }[] {
+  // Group subtasks by their project id. Keep projects in sorted order.
+  function groupByProject(subs: Quest[]): { project: Project; subtasks: Quest[] }[] {
     const byId: Record<string, Quest[]> = {}
     for (const s of subs) {
-      const pid = s.parent_id!
+      const pid = s.project_id!
       if (!byId[pid]) byId[pid] = []
       byId[pid].push(s)
     }
-    const groups: { project: Quest; subtasks: Quest[] }[] = []
+    const groups: { project: Project; subtasks: Quest[] }[] = []
     for (const pid of Object.keys(byId)) {
-      const project = initial.find(p => p.id === pid)
+      const project = projects.find(p => p.id === pid)
       if (project) groups.push({ project, subtasks: byId[pid] })
     }
     groups.sort((g1, g2) => sortProjects(g1.project, g2.project))
@@ -148,14 +148,14 @@ export function QuestsView({ quests: initial, areas, onSessionUpdate, onQuestUpd
   const totalByProject: Record<string, number> = {}
   const doneByProject: Record<string, number> = {}
   for (const s of subtasksAll) {
-    const pid = s.parent_id!
+    const pid = s.project_id!
     totalByProject[pid] = (totalByProject[pid] ?? 0) + 1
     if (s.status === 'done') doneByProject[pid] = (doneByProject[pid] ?? 0) + 1
   }
 
   const getDeliverables = (questId: string) => {
-    const parentId = initial.find(q => q.id === questId)?.parent_id
-    return parentId ? deliverablesByProject[parentId] || [] : []
+    const projectId = initial.find(q => q.id === questId)?.project_id
+    return projectId ? deliverablesByProject[projectId] || [] : []
   }
 
   useEffect(() => {
@@ -192,7 +192,7 @@ export function QuestsView({ quests: initial, areas, onSessionUpdate, onQuestUpd
         })}
       </div>
 
-      <NewQuestRow areaSlug={filter} areas={areas} quests={initial} onCreated={add} requireProject={true} />
+      <NewQuestRow areaSlug={filter} areas={areas} projects={projects} onCreated={add} />
 
       {activeGroups.length === 0 && (
         <div style={{ marginTop: 24, fontSize: 12, color: 'var(--color-text-muted)', fontStyle: 'italic' }}>
@@ -215,11 +215,11 @@ export function QuestsView({ quests: initial, areas, onSessionUpdate, onQuestUpd
               key={q.id}
               q={q}
               onUpdate={update}
-              quests={initial}
               areas={areas}
               onSessionUpdate={onSessionUpdate}
               onDelete={handleDelete}
-              deliverables={getDeliverables(q.id)}
+              deliverables={getDeliverables(q.id) as any}
+              projects={projects}
               sessionUpdateTrigger={sessionUpdateTrigger}
             />
           ))}
@@ -254,11 +254,11 @@ export function QuestsView({ quests: initial, areas, onSessionUpdate, onQuestUpd
                       key={q.id}
                       q={q}
                       onUpdate={update}
-                      quests={initial}
                       areas={areas}
                       onSessionUpdate={onSessionUpdate}
                       onDelete={handleDelete}
-                      deliverables={getDeliverables(q.id)}
+                      deliverables={getDeliverables(q.id) as any}
+                      projects={projects}
                       sessionUpdateTrigger={sessionUpdateTrigger}
                     />
                   ))}
