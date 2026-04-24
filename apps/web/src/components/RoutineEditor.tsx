@@ -58,6 +58,7 @@ export function RoutineEditor({
     <div style={{ padding: '12px 0', borderBottom: '1px solid var(--color-border)', marginBottom: 12 }}>
       <input
         type="text"
+        autoComplete="off"
         placeholder="Título da rotina"
         value={formData.title || ''}
         onChange={e => setFormData({ ...formData, title: e.target.value })}
@@ -171,6 +172,7 @@ export function RoutineEditor({
             <span style={{ color: 'var(--color-text-secondary)', fontSize: 12 }}>Todo dia</span>
             <input
               type="number"
+              autoComplete="off"
               min="1"
               max="31"
               placeholder="15"
@@ -290,6 +292,7 @@ export function RoutineEditor({
             {mode === 'duration' && (
               <input
                 type="number"
+                autoComplete="off"
                 min="0"
                 placeholder="Minutos"
                 value={formData.estimated_minutes || ''}

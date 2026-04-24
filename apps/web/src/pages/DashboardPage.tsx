@@ -1046,6 +1046,7 @@ function WindowRangeSelector({ value, onChange }: {
               <span style={{ fontSize: 10, color: 'var(--color-text-tertiary)', width: 28 }}>de</span>
               <input
                 type="date"
+                autoComplete="off"
                 value={customStart}
                 onChange={e => setCustomStart(e.target.value)}
                 style={{
@@ -1059,6 +1060,7 @@ function WindowRangeSelector({ value, onChange }: {
               <span style={{ fontSize: 10, color: 'var(--color-text-tertiary)', width: 28 }}>até</span>
               <input
                 type="date"
+                autoComplete="off"
                 value={customEnd}
                 onChange={e => setCustomEnd(e.target.value)}
                 style={{

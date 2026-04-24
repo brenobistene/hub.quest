@@ -53,6 +53,11 @@ function parseInitial(value: string | null | undefined): PartialBlock<Schema['bl
   }))
 }
 
+// Tipos de bloco que devem preservar seu tipo ao receber paste — paste
+// default do BlockNote parseia HTML/Markdown do clipboard e pode substituir
+// o bloco pelo que detectou, sumindo com a lista original.
+const LIST_LIKE_TYPES = new Set(['checkListItem', 'bulletListItem', 'numberedListItem'])
+
 export function BlockEditor({ value, onChange, placeholder, minHeight = 120 }: {
   value: string | null | undefined
   onChange: (serialized: string) => void
@@ -67,15 +72,40 @@ export function BlockEditor({ value, onChange, placeholder, minHeight = 120 }: {
     initialContent,
   })
 
+  // Paste handler via listener DOM na fase de captura — roda ANTES de
+  // qualquer handler do ProseMirror/BlockNote. Quando o cursor está num
+  // bloco list-like (checkbox/bullet/numbered), paste como texto puro,
+  // preservando o tipo do bloco. Em outros tipos, deixa o paste default.
+  useEffect(() => {
+    const dom: HTMLElement | null =
+      (editor as any).domElement
+      ?? (editor as any)._tiptapEditor?.view?.dom
+      ?? null
+    if (!dom) return
+    const handler = (event: Event) => {
+      const clipboard = (event as ClipboardEvent).clipboardData
+      if (!clipboard) return
+      try {
+        const block = (editor as any).getTextCursorPosition?.().block
+        if (!block || !LIST_LIKE_TYPES.has(block.type)) return
+        const text = clipboard.getData('text/plain') ?? ''
+        if (!text) return
+        event.preventDefault()
+        event.stopPropagation()
+        ;(editor as any).insertInlineContent(text)
+      } catch {}
+    }
+    dom.addEventListener('paste', handler, true) // capture phase
+    return () => dom.removeEventListener('paste', handler, true)
+  }, [editor])
+
   // onChange dispara quando o documento muda — serializamos como JSON.
   useEffect(() => {
     const handler = () => {
       try {
-        const doc = editor.document
-        onChange(JSON.stringify(doc))
+        onChange(JSON.stringify(editor.document))
       } catch {}
     }
-    // API de subscribe do BlockNote
     const unsub = editor.onChange(handler)
     return () => { if (typeof unsub === 'function') unsub() }
   }, [editor, onChange])
@@ -98,7 +128,7 @@ export function BlockEditor({ value, onChange, placeholder, minHeight = 120 }: {
     <div
       className="hq-block-editor"
       data-placeholder={placeholder}
-      style={{ minHeight, border: '1px solid var(--color-border)', borderRadius: 3, background: 'var(--color-bg-primary)' }}
+      style={{ minHeight, background: 'transparent' }}
     >
       <BlockNoteView editor={editor} theme="dark" slashMenu={false}>
         <SuggestionMenuController triggerCharacter="/" getItems={getItems} />

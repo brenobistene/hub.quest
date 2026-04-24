@@ -123,14 +123,39 @@ export default function App() {
     fetchProjects().then(setProjects).catch(err => reportApiError('App', err))
   }, [sessionUpdateTrigger])
 
-  // Keep banner synced with periodic checks
+  // Mantém o banner sincronizado com a sessão ativa do backend.
+  //
+  // Polling custa ~1 request a cada 15s, mas a gente pausa totalmente quando
+  // a aba está em segundo plano (visibilityState === 'hidden') — zero carga
+  // enquanto o usuário não está olhando. Quando volta, faz um refresh imediato
+  // e reinicia o intervalo, pra o banner refletir o estado real caso tenha
+  // mudado fora (ex: outra aba clicou Play/Pause).
   useEffect(() => {
-    bannerSyncRef.current = setInterval(() => {
-      refreshActiveSession()
-    }, 3000)
-
+    const POLL_MS = 15_000
+    const start = () => {
+      if (bannerSyncRef.current) return
+      bannerSyncRef.current = setInterval(refreshActiveSession, POLL_MS)
+    }
+    const stop = () => {
+      if (bannerSyncRef.current) {
+        clearInterval(bannerSyncRef.current)
+        bannerSyncRef.current = null
+      }
+    }
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        refreshActiveSession()
+        start()
+      } else {
+        stop()
+      }
+    }
+    // Arranca no estado atual da aba.
+    if (document.visibilityState === 'visible') start()
+    document.addEventListener('visibilitychange', onVisibility)
     return () => {
-      if (bannerSyncRef.current) clearInterval(bannerSyncRef.current)
+      stop()
+      document.removeEventListener('visibilitychange', onVisibility)
     }
   }, [])
 

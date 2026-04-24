@@ -424,6 +424,7 @@ function AreaDetailView({
       <div style={{ marginTop: 24, display: 'flex', gap: 10, alignItems: 'center' }}>
         <input
           type="text"
+          autoComplete="off"
           autoFocus
           value={newProjectTitle}
           onChange={e => setNewProjectTitle(e.target.value)}

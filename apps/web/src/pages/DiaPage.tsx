@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Sunrise, Sun, Moon, X, ArrowRight, Calendar as CalendarIcon, Trash2 } from 'lucide-react'
+import { Sunrise, Sun, Moon, X, ArrowRight, Calendar as CalendarIcon, Trash2, AlertTriangle } from 'lucide-react'
 import type { ActiveSession, Area, Deliverable, Project, Quest, Routine, Task } from '../types'
 import { fetchAllRoutines, fetchTasks, fetchQuests, fetchDeliverables, fetchRoutinesForDate, updateTask, deleteTask, reportApiError } from '../api'
 import { isoToLocalYmd } from '../utils/datetime'
@@ -29,6 +29,39 @@ function itemDurationMin(item: any): number {
   if (item.isTask) return item.duration_minutes ?? 0
   // quests e rotinas usam estimated_minutes.
   return item.estimated_minutes ?? 0
+}
+
+/** Formata data YYYY-MM-DD como DD/MM (local), pra tooltips de deadline. */
+function fmtShortDate(iso: string): string {
+  try {
+    const parts = iso.split('T')[0].split('-').map(Number)
+    const m = parts[1]
+    const d = parts[2]
+    return `${String(d).padStart(2, '0')}/${String(m).padStart(2, '0')}`
+  } catch {
+    return iso
+  }
+}
+
+/**
+ * Monta o tooltip explicando o aviso de prazo apertado. Recebe a cadeia de
+ * entregáveis futuros que vencem muito próximo uns dos outros e descreve por
+ * que o usuário está vendo o ícone: pra alertar que não vai dar tempo de
+ * fechar um entregável antes do próximo começar a pressionar.
+ */
+function buildTightChainTooltip(
+  chain: Array<{ title: string; deadline: string; daysFromActive: number }>,
+): string {
+  if (chain.length === 0) return 'Prazo apertado entre entregáveis'
+  const header = chain.length === 1
+    ? 'Prazo apertado — o próximo entregável deste projeto vence logo em seguida:'
+    : `Prazo apertado — ${chain.length} entregáveis deste projeto vencem muito próximos:`
+  const lines = chain.map(c => {
+    const days = c.daysFromActive
+    const when = days <= 0 ? 'no mesmo dia' : `em ${days} dia${days === 1 ? '' : 's'}`
+    return `• "${c.title}" — vence ${fmtShortDate(c.deadline)} (${when})`
+  })
+  return [header, ...lines, '', 'Planeje com antecedência — não vai dar pra fechar um antes do próximo chegar.'].join('\n')
 }
 
 /**
@@ -187,13 +220,90 @@ export function DiaView({ projects, quests, areas, activeSession, onSessionUpdat
       // containers — você planeja o trabalho granular (as quests dentro
       // deles), não o projeto em si. Herdam a deadline do projeto se a
       // subtask não tem uma própria.
-      items.push(...quests.filter(q =>
-        q.project_id
-        && q.status !== 'done'
-        && q.status !== 'cancelled'
-        && withinRange(q.deadline)
-        && priorityOK(q.priority)
-      ))
+      //
+      // Pra evitar que o drawer fique poluído com 30+ quests do mesmo projeto,
+      // filtramos: só aparecem quests do ENTREGÁVEL ATIVO de cada projeto
+      // (= próximo entregável não-done, por deadline asc → sort_order asc).
+      // Quests de entregáveis futuros ficam escondidas até o atual ser feito.
+      //
+      // Além disso, se o próximo entregável do mesmo projeto vence em menos
+      // de TIGHT_DEADLINE_GAP_DAYS, anexamos `nextDelivTight` pra UI mostrar
+      // um aviso — sinal de que não vai dar pra fechar um antes do outro.
+      const TIGHT_DEADLINE_GAP_DAYS = 5
+
+      const rankDeliv = (d: Deliverable): [number, number] => {
+        // asc deadline (nulls last), depois sort_order asc.
+        const deadlineKey = d.deadline ? new Date(d.deadline).getTime() : Number.MAX_SAFE_INTEGER
+        return [deadlineKey, d.sort_order ?? 0]
+      }
+      const sortByRank = (a: Deliverable, b: Deliverable) => {
+        const [ad, as] = rankDeliv(a)
+        const [bd, bs] = rankDeliv(b)
+        return ad !== bd ? ad - bd : as - bs
+      }
+
+      // Cache por projeto: entregável ativo + cadeia de "próximos apertados".
+      // Cadeia = sequência de entregáveis em que cada um vence < TIGHT dias
+      // após o anterior. Ex: ativo dia 10, próximos dia 12 e 14 → ambos entram
+      // (12 - 10 = 2, 14 - 12 = 2). Se o terceiro fosse dia 20, só o segundo
+      // entraria (20 - 14 = 6 ≥ 5). Permite o tooltip mostrar "múltiplos
+      // entregáveis colados", não só o imediato.
+      const projectActiveInfo = new Map<string, {
+        activeId: string
+        tightChain: Array<{ title: string; deadline: string; daysFromActive: number }>
+      }>()
+      const allProjectIdsInPool = new Set(
+        quests
+          .filter(q => q.project_id && q.status !== 'done' && q.status !== 'cancelled')
+          .map(q => q.project_id as string),
+      )
+      for (const pid of allProjectIdsInPool) {
+        const delivs = (delivsByProject[pid] || [])
+          .filter(d => !d.done)
+          .sort(sortByRank)
+        if (delivs.length === 0) continue
+        const active = delivs[0]
+
+        const tightChain: Array<{ title: string; deadline: string; daysFromActive: number }> = []
+        if (active.deadline) {
+          const activeMs = new Date(active.deadline).getTime()
+          let prevMs = activeMs
+          for (let i = 1; i < delivs.length; i++) {
+            const d = delivs[i]
+            if (!d.deadline) break
+            const curMs = new Date(d.deadline).getTime()
+            const gapFromPrev = Math.round((curMs - prevMs) / 86_400_000)
+            if (gapFromPrev >= TIGHT_DEADLINE_GAP_DAYS) break
+            const daysFromActive = Math.round((curMs - activeMs) / 86_400_000)
+            tightChain.push({ title: d.title, deadline: d.deadline, daysFromActive })
+            prevMs = curMs
+          }
+        }
+
+        projectActiveInfo.set(pid, {
+          activeId: active.id,
+          tightChain,
+        })
+      }
+
+      items.push(...quests
+        .filter(q => {
+          if (!q.project_id || q.status === 'done' || q.status === 'cancelled') return false
+          if (!withinRange(q.deadline)) return false
+          if (!priorityOK(q.priority)) return false
+          // Pool do projeto: se não temos info (projeto sem entregáveis carregados),
+          // deixa passar por segurança — melhor mostrar a mais do que esconder a quest.
+          const info = projectActiveInfo.get(q.project_id)
+          if (!info) return true
+          return q.deliverable_id === info.activeId
+        })
+        .map(q => {
+          const info = q.project_id ? projectActiveInfo.get(q.project_id) : null
+          return info
+            ? { ...q, tightChain: info.tightChain }
+            : q
+        }),
+      )
     }
     if (plannerTypes.has('task')) {
       items.push(...allTasks.filter(t => !t.done && withinRange(t.scheduled_date) && priorityOK((t as any).priority)).map(t => ({ ...t, isTask: true })))
@@ -1306,6 +1416,7 @@ function OverdueTasksBanner({ tasks, onToToday, onReschedule, onDiscard }: {
                 <>
                   <input
                     type="date"
+                    autoComplete="off"
                     value={pickValue}
                     onChange={e => setPickValue(e.target.value)}
                     style={{
@@ -1473,11 +1584,27 @@ function AvailableCard({ item, areas, projects, delivsByProject, onDragStart, on
       }}
     >
       <div style={{
-        fontSize: 12, color: 'var(--color-text-primary)', fontWeight: 500,
-        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-        textDecoration: done ? 'line-through' : 'none',
+        display: 'flex', alignItems: 'center', gap: 6, minWidth: 0,
       }}>
-        {item.title}
+        <div style={{
+          flex: 1, minWidth: 0,
+          fontSize: 12, color: 'var(--color-text-primary)', fontWeight: 500,
+          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+          textDecoration: done ? 'line-through' : 'none',
+        }}>
+          {item.title}
+        </div>
+        {Array.isArray(item.tightChain) && item.tightChain.length > 0 && (
+          <span
+            title={buildTightChainTooltip(item.tightChain)}
+            style={{
+              display: 'inline-flex', alignItems: 'center', flexShrink: 0,
+              color: 'var(--color-warning)',
+            }}
+          >
+            <AlertTriangle size={12} strokeWidth={2} />
+          </span>
+        )}
       </div>
       <div style={{
         marginTop: 3, display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap',

@@ -66,3 +66,52 @@ body {
 .fc-theme-standard .fc-scrollgrid { border-color: #161819; }
 .fc .fc-scrollgrid-section > td { border-color: #161819; }
 .fc td, .fc th { border-color: #161819; }
+
+/* BlockNote — visual Notion-like, integrado ao fundo dark do app.
+   Sobrescreve o tema dark do Mantine pra não parecer um card cinza
+   dentro da página. */
+.hq-block-editor {
+  --bn-colors-editor-background: transparent;
+  --bn-colors-editor-text: #e2ddd8;
+  --bn-colors-menu-background: #141618;
+  --bn-colors-menu-text: #e2ddd8;
+  --bn-colors-hovered-background: #1a1c1f;
+  --bn-colors-hovered-text: #e2ddd8;
+  --bn-colors-selected-background: #252829;
+  --bn-colors-selected-text: #e2ddd8;
+  --bn-colors-tooltip-background: #141618;
+  --bn-colors-tooltip-text: #bdb0a0;
+  --bn-colors-border: #1e2023;
+  --bn-colors-side-menu: #6d6762;
+  --bn-colors-disabled-background: transparent;
+  --bn-colors-disabled-text: #6d6762;
+  --bn-colors-shadow: rgba(0, 0, 0, 0.4);
+}
+.hq-block-editor .bn-container,
+.hq-block-editor .bn-editor {
+  background: transparent !important;
+}
+/* Reduz o padding-inline default (54px) que o BN aplica; queremos o
+   texto alinhado com o resto do conteúdo do painel. */
+.hq-block-editor .bn-editor {
+  padding-inline: 0 !important;
+}
+/* Placeholder mais suave — cor do texto-muted do tema. */
+.hq-block-editor .bn-inline-content:has(> br:only-child)::before,
+.hq-block-editor [data-is-empty="true"] .bn-inline-content::before {
+  color: #6d6762 !important;
+  font-style: normal;
+}
+/* Divider (hr) — linha sutil e mais clara pra destacar no fundo dark. */
+.hq-block-editor [data-content-type="divider"] hr {
+  border: none;
+  border-top: 1px solid #4a4845;
+  margin: 8px 0;
+}
+/* Checkbox ticado — texto cinza + peso mais leve, sem risco.
+   Sobrescreve o line-through default do BlockNote. */
+.hq-block-editor .bn-block-content[data-content-type="checkListItem"][data-checked="true"] .bn-inline-content {
+  text-decoration: none;
+  color: #6d6762;
+  font-weight: 300;
+}

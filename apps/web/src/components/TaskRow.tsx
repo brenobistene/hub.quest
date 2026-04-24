@@ -112,6 +112,7 @@ export function TaskRow({ task, onToggle, onUpdate, onDelete, activeSession, onS
           {editingDate ? (
             <input
               type="date"
+              autoComplete="off"
               autoFocus
               value={task.scheduled_date ?? ''}
               onChange={e => {
@@ -210,6 +211,7 @@ export function TaskRow({ task, onToggle, onUpdate, onDelete, activeSession, onS
           {editingDuration ? (
             <input
               type="number"
+              autoComplete="off"
               min={1}
               autoFocus
               value={duration}

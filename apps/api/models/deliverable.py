@@ -23,8 +23,8 @@ class DeliverableOut(BaseModel):
 class DeliverableCreate(BaseModel):
     title: str
     estimated_minutes: Optional[int] = None
-    # YYYY-MM-DD, obrigatório (Pydantic devolve 422 se faltar).
-    deadline: str
+    # YYYY-MM-DD; opcional — projetos sem data podem ficar sem deadline.
+    deadline: Optional[str] = None
 
 
 DELIV_COLUMNS = (

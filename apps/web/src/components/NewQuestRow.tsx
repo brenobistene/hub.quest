@@ -147,6 +147,7 @@ export function NewQuestRow({ areaSlug, areas, projects, onCreated }: {
         />
         <input
           type="text"
+          autoComplete="off"
           value={estimatedInput}
           onChange={e => setEstimatedInput(e.target.value)}
           onKeyDown={e => {

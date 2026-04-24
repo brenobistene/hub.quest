@@ -105,6 +105,7 @@ export function DateRangeFilter({ value, onChange }: {
                 <span style={{ fontSize: 10, color: 'var(--color-text-tertiary)', width: 28 }}>de</span>
                 <input
                   type="date"
+                  autoComplete="off"
                   value={customFrom}
                   onChange={e => setCustomFrom(e.target.value)}
                   style={{
@@ -118,6 +119,7 @@ export function DateRangeFilter({ value, onChange }: {
                 <span style={{ fontSize: 10, color: 'var(--color-text-tertiary)', width: 28 }}>até</span>
                 <input
                   type="date"
+                  autoComplete="off"
                   value={customTo}
                   onChange={e => setCustomTo(e.target.value)}
                   style={{

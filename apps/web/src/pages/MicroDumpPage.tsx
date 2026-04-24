@@ -74,6 +74,7 @@ export function MicroDumpView({ areas, projects, onArchive }: { areas: Area[]; p
         >
           <input
             type="text"
+            autoComplete="off"
             value={microTaskInput}
             onChange={(e) => setMicroTaskInput(e.target.value)}
             placeholder="nova ideia…"
@@ -308,6 +309,7 @@ export function MicroDumpView({ areas, projects, onArchive }: { areas: Area[]; p
               </label>
               <input
                 type="text"
+                autoComplete="off"
                 value={formData.title || ''}
                 onChange={e => setFormData({ ...formData, title: e.target.value })}
                 style={{
@@ -395,6 +397,7 @@ export function MicroDumpView({ areas, projects, onArchive }: { areas: Area[]; p
                   </label>
                   <input
                     type="date"
+                    autoComplete="off"
                     value={formData.scheduled_date || ''}
                     onChange={e => setFormData({ ...formData, scheduled_date: e.target.value || null })}
                     style={{
@@ -442,6 +445,7 @@ export function MicroDumpView({ areas, projects, onArchive }: { areas: Area[]; p
                   </label>
                   <input
                     type="number"
+                    autoComplete="off"
                     min={1}
                     placeholder="30"
                     value={formData.duration_minutes || ''}
@@ -554,6 +558,7 @@ export function MicroDumpView({ areas, projects, onArchive }: { areas: Area[]; p
                     </label>
                     <input
                       type="number"
+                      autoComplete="off"
                       min="0"
                       placeholder="30"
                       value={formData.estimated_minutes || ''}

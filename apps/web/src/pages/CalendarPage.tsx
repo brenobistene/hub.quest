@@ -1297,6 +1297,7 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger }: 
                 </label>
                 <input
                   type="text"
+                  autoComplete="off"
                   value={editingBlock.title}
                   onChange={(e) => setEditingBlock({ ...editingBlock, title: e.target.value })}
                   style={{
@@ -1493,6 +1494,7 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger }: 
                   {editingBlock.endsOn === 'date' && (
                     <input
                       type="date"
+                      autoComplete="off"
                       value={editingBlock.endDate || ''}
                       onChange={(e) => setEditingBlock({ ...editingBlock, endDate: e.target.value })}
                       style={{
@@ -1522,6 +1524,7 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger }: 
                   {editingBlock.endsOn === 'count' && (
                     <input
                       type="number"
+                      autoComplete="off"
                       min="1"
                       value={editingBlock.endCount || 1}
                       onChange={(e) => setEditingBlock({ ...editingBlock, endCount: parseInt(e.target.value) })}

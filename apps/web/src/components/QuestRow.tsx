@@ -343,6 +343,7 @@ export function QuestRow({ q, onUpdate, onClick, isSelected, projects = [], area
                 <div style={{ marginTop: 8, display: 'flex', gap: 6, alignItems: 'center' }}>
                   <input
                     type="text"
+                    autoComplete="off"
                     value={newDeliverableTitle}
                     onChange={(e) => {
                       e.stopPropagation()

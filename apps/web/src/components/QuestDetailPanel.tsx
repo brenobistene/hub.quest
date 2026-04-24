@@ -519,6 +519,7 @@ export function QuestDetailPanel({
             </span>
             <input
               type="date"
+              autoComplete="off"
               value={project.deadline || ''}
               onChange={e => onProjectUpdate(project.id, { deadline: e.target.value || null })}
               style={{
@@ -705,6 +706,7 @@ export function QuestDetailPanel({
         }}>
           <input
             type="text"
+            autoComplete="off"
             value={newDeliverableTitle}
             onChange={e => setNewDeliverableTitle(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') addDeliverable() }}
@@ -721,6 +723,7 @@ export function QuestDetailPanel({
           />
           <input
             type="date"
+            autoComplete="off"
             value={newDeliverableDeadline}
             onChange={e => setNewDeliverableDeadline(e.target.value)}
             title="Deadline"
@@ -853,6 +856,7 @@ export function QuestDetailPanel({
                       {editingField === `${d.id}:deadline` ? (
                         <input
                           type="date"
+                          autoComplete="off"
                           autoFocus
                           defaultValue={d.deadline ?? ''}
                           onChange={e => patchDeliverable(d.id, { deadline: e.target.value || null })}
@@ -1051,6 +1055,7 @@ export function QuestDetailPanel({
                                 <span style={{ fontSize: 9, color: 'var(--color-text-muted)', letterSpacing: '0.1em', textTransform: 'uppercase' }}>Estimativa:</span>
                                 <input
                                   type="text"
+                                  autoComplete="off"
                                   defaultValue={q.estimated_minutes ? minutesToHmm(q.estimated_minutes) : ''}
                                   placeholder="h:mm"
                                   onBlur={e => {
@@ -1117,6 +1122,7 @@ export function QuestDetailPanel({
                       }}>+</span>
                       <input
                         type="text"
+                        autoComplete="off"
                         value={newQuestByDeliv[d.id] ?? ''}
                         onChange={e => setNewQuestByDeliv(prev => ({ ...prev, [d.id]: e.target.value }))}
                         onKeyDown={e => { if (e.key === 'Enter') addQuestToDeliverable(d.id) }}
@@ -1134,6 +1140,7 @@ export function QuestDetailPanel({
                       />
                       <input
                         type="text"
+                        autoComplete="off"
                         value={newQuestEstByDeliv[d.id] ?? ''}
                         onChange={e => setNewQuestEstByDeliv(prev => ({ ...prev, [d.id]: e.target.value }))}
                         onKeyDown={e => { if (e.key === 'Enter') addQuestToDeliverable(d.id) }}
