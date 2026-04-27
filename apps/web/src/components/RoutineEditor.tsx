@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { Routine } from '../types'
 import { PrioritySelect } from './PrioritySelect'
+import { parseTimeToMinutes, minutesToHmm } from '../utils/datetime'
 
 /**
  * Form for creating/editing a Routine. Title + recurrence (diária / dias úteis
@@ -31,6 +32,11 @@ export function RoutineEditor({
   // 'duration' no próximo render. Com state local, o toggle sempre funciona.
   const [mode, setMode] = useState<'fixed' | 'duration'>(() =>
     (formData.start_time || formData.end_time) ? 'fixed' : 'duration'
+  )
+  // Buffer local do input de duração — permite digitar "1:" antes de completar
+  // sem perder o estado enquanto o parser não consegue extrair minutos.
+  const [estimatedInput, setEstimatedInput] = useState<string>(
+    formData.estimated_minutes ? minutesToHmm(formData.estimated_minutes) : ''
   )
   const switchMode = (m: 'fixed' | 'duration') => {
     if (m === 'fixed') {
@@ -291,12 +297,16 @@ export function RoutineEditor({
 
             {mode === 'duration' && (
               <input
-                type="number"
+                type="text"
                 autoComplete="off"
-                min="0"
-                placeholder="Minutos"
-                value={formData.estimated_minutes || ''}
-                onChange={e => setFormData({ ...formData, estimated_minutes: e.target.value ? parseInt(e.target.value) : null })}
+                placeholder="h:mm (ex: 1:30) ou minutos"
+                title="Aceita '1:30' ou '90' (minutos)"
+                value={estimatedInput}
+                onChange={e => {
+                  setEstimatedInput(e.target.value)
+                  const parsed = parseTimeToMinutes(e.target.value)
+                  setFormData({ ...formData, estimated_minutes: parsed ?? null })
+                }}
                 onFocus={e => {
                   e.currentTarget.style.borderColor = 'var(--color-accent-primary)'
                   e.currentTarget.style.boxShadow = '0 0 0 2px rgba(139, 46, 46, 0.2)'

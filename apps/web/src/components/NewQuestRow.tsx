@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Area, Deliverable, Project, Quest } from '../types'
 import { createQuest, fetchDeliverables } from '../api'
+import { parseTimeToMinutes } from '../utils/datetime'
 
 /**
  * Inline "nova quest" composer. Collapsed → "+ nova quest" button. Expanded →
@@ -28,18 +29,6 @@ export function NewQuestRow({ areaSlug, areas, projects, onCreated }: {
   const [projectDeliverables, setProjectDeliverables] = useState<Deliverable[]>([])
   const [loadingDelivs, setLoadingDelivs] = useState(false)
   const ref = useRef<HTMLInputElement>(null)
-
-  // Parse "30" (min) or "1:30" (h:mm). Devolve undefined quando vazio/inválido.
-  function parseTimeToMinutes(input: string): number | undefined {
-    if (!input.trim()) return undefined
-    if (input.includes(':')) {
-      const [h, m] = input.split(':').map(p => parseInt(p.trim(), 10))
-      if (!isNaN(h) && !isNaN(m)) return h * 60 + m
-      return undefined
-    }
-    const mins = parseInt(input, 10)
-    return isNaN(mins) ? undefined : mins
-  }
 
   useEffect(() => { if (active) ref.current?.focus() }, [active])
   useEffect(() => {

@@ -315,7 +315,6 @@ export async function createQuest(body: {
   priority?: string
   estimated_minutes?: number
   description?: string | null
-  deadline?: string | null
   next_action?: string | null
 }): Promise<Quest> {
   const res = await fetch(`${BASE}/api/quests`, {

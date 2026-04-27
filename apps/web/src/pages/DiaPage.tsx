@@ -4,6 +4,7 @@ import { Sunrise, Sun, Moon, X, ArrowRight, Calendar as CalendarIcon, Trash2, Al
 import type { ActiveSession, Area, Deliverable, Project, Quest, Routine, Task } from '../types'
 import { fetchAllRoutines, fetchTasks, fetchQuests, fetchDeliverables, fetchRoutinesForDate, updateTask, deleteTask, reportApiError } from '../api'
 import { isoToLocalYmd } from '../utils/datetime'
+import { effectiveQuestDeadline } from '../utils/quests'
 import type { DateRange } from '../utils/dateRange'
 import { computeRange } from '../utils/dateRange'
 import type { DayPeriods } from '../utils/dayPeriods'
@@ -270,42 +271,105 @@ export function DiaView({ projects, quests, areas, activeSession, onSessionUpdat
         const delivs = (delivsByProject[pid] || [])
           .filter(d => !d.done)
           .sort(sortByRank)
-        if (delivs.length === 0) continue
-        const active = delivs[0]
 
+        let activeId: string | null = null
         const tightChain: Array<{ title: string; deadline: string; daysFromActive: number }> = []
-        if (active.deadline) {
-          const activeMs = new Date(active.deadline).getTime()
-          let prevMs = activeMs
-          for (let i = 1; i < delivs.length; i++) {
-            const d = delivs[i]
-            if (!d.deadline) break
-            const curMs = new Date(d.deadline).getTime()
-            const gapFromPrev = Math.round((curMs - prevMs) / 86_400_000)
-            if (gapFromPrev >= TIGHT_DEADLINE_GAP_DAYS) break
-            const daysFromActive = Math.round((curMs - activeMs) / 86_400_000)
-            tightChain.push({ title: d.title, deadline: d.deadline, daysFromActive })
-            prevMs = curMs
+
+        if (delivs.length > 0) {
+          const active = delivs[0]
+          activeId = active.id
+          if (active.deadline) {
+            const activeMs = new Date(active.deadline).getTime()
+            let prevMs = activeMs
+            for (let i = 1; i < delivs.length; i++) {
+              const d = delivs[i]
+              if (!d.deadline) break
+              const curMs = new Date(d.deadline).getTime()
+              const gapFromPrev = Math.round((curMs - prevMs) / 86_400_000)
+              if (gapFromPrev >= TIGHT_DEADLINE_GAP_DAYS) break
+              const daysFromActive = Math.round((curMs - activeMs) / 86_400_000)
+              tightChain.push({ title: d.title, deadline: d.deadline, daysFromActive })
+              prevMs = curMs
+            }
+          }
+        } else {
+          // Fallback: nenhum deliverable carregado pra esse projeto (fetch
+          // pendente, erro silencioso, ou schema inconsistente). Em vez de
+          // liberar TODAS as quests — que é o que derrotava o filtro —
+          // escolhemos um `activeId` a partir das próprias quests: o
+          // deliverable_id da quest ativa com menor deadline (fallback
+          // `next_action` por ordem de aparição). Determinístico, e garante
+          // que só quests de um deliverable por projeto apareçam.
+          const questsOfProject = quests.filter(q =>
+            q.project_id === pid
+            && q.status !== 'done'
+            && q.status !== 'cancelled'
+            && q.deliverable_id,
+          )
+          if (questsOfProject.length > 0) {
+            const sortedQuests = [...questsOfProject].sort((a, b) => {
+              const ad = a.deadline ? new Date(a.deadline).getTime() : Number.MAX_SAFE_INTEGER
+              const bd = b.deadline ? new Date(b.deadline).getTime() : Number.MAX_SAFE_INTEGER
+              return ad - bd
+            })
+            activeId = sortedQuests[0].deliverable_id!
           }
         }
 
-        projectActiveInfo.set(pid, {
-          activeId: active.id,
-          tightChain,
-        })
+        if (activeId) {
+          projectActiveInfo.set(pid, { activeId, tightChain })
+        }
       }
 
-      items.push(...quests
-        .filter(q => {
-          if (!q.project_id || q.status === 'done' || q.status === 'cancelled') return false
-          if (!withinRange(q.deadline)) return false
-          if (!priorityOK(q.priority)) return false
-          // Pool do projeto: se não temos info (projeto sem entregáveis carregados),
-          // deixa passar por segurança — melhor mostrar a mais do que esconder a quest.
-          const info = projectActiveInfo.get(q.project_id)
-          if (!info) return true
-          return q.deliverable_id === info.activeId
-        })
+      // DEBUG temporário — logar decisões do filtro pra diagnosticar por que
+      // quests de múltiplos entregáveis estão passando. Remove depois.
+      // eslint-disable-next-line no-console
+      console.log('[planner-filter] projectActiveInfo:', Array.from(projectActiveInfo.entries()).map(([pid, info]) => ({
+        pid,
+        activeId: info.activeId,
+        delivsLoaded: (delivsByProject[pid] || []).length,
+        openDelivs: (delivsByProject[pid] || []).filter(d => !d.done).length,
+      })))
+      // eslint-disable-next-line no-console
+      console.log('[planner-filter] quests pool por projeto:',
+        Object.entries(
+          quests
+            .filter(q => q.project_id && q.status !== 'done' && q.status !== 'cancelled')
+            .reduce((acc: Record<string, any[]>, q) => {
+              const pid = q.project_id as string
+              acc[pid] = acc[pid] || []
+              acc[pid].push({ qid: q.id, deliv: q.deliverable_id, status: q.status, title: q.title?.slice(0, 30) })
+              return acc
+            }, {})
+        )
+      )
+
+      // DEBUG: contadores pra ver onde o filtro "dispara vs esconde"
+      let counters = { total: 0, byProjectNull: 0, byStatusDone: 0, byRange: 0, byPriority: 0, byNoInfo: 0, byMismatchDeliv: 0, passed: 0 }
+      const passedSamples: any[] = []
+      const filteredQuests = quests.filter(q => {
+        counters.total++
+        if (!q.project_id) { counters.byProjectNull++; return false }
+        if (q.status === 'done' || q.status === 'cancelled') { counters.byStatusDone++; return false }
+        // Quest não tem deadline própria por design — herda do entregável
+        // (e, em fallback, do projeto). Se nenhum dos dois tiver deadline,
+        // cai no checkbox "incluir sem data" via withinRange.
+        const effectiveDl = effectiveQuestDeadline(q, delivsByProject, projects)
+        if (!withinRange(effectiveDl)) { counters.byRange++; return false }
+        if (!priorityOK(q.priority)) { counters.byPriority++; return false }
+        const info = projectActiveInfo.get(q.project_id)
+        if (!info) { counters.byNoInfo++; return false }
+        if (q.deliverable_id !== info.activeId) { counters.byMismatchDeliv++; return false }
+        counters.passed++
+        if (passedSamples.length < 30) passedSamples.push({ project: q.project_id, deliv: q.deliverable_id, title: q.title?.slice(0, 40) })
+        return true
+      })
+      // eslint-disable-next-line no-console
+      console.log('[planner-filter] counters:', counters)
+      // eslint-disable-next-line no-console
+      console.log('[planner-filter] passed sample (até 30):', passedSamples)
+
+      items.push(...filteredQuests
         .map(q => {
           const info = q.project_id ? projectActiveInfo.get(q.project_id) : null
           return info
@@ -1139,19 +1203,14 @@ function PlannerDrawer({
               Disponíveis ({availableItems.length})
             </div>
             {availableItems.length > 0 ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {availableItems.map(item => (
-                  <AvailableCard
-                    key={item.id}
-                    item={item}
-                    areas={areas}
-                    projects={projects}
-                    delivsByProject={delivsByProject}
-                    onDragStart={() => setDraggedItem(item)}
-                    onDragEnd={() => setDraggedItem(null)}
-                  />
-                ))}
-              </div>
+              <AvailableList
+                items={availableItems}
+                areas={areas}
+                projects={projects}
+                delivsByProject={delivsByProject}
+                onDragStart={(item) => setDraggedItem(item)}
+                onDragEnd={() => setDraggedItem(null)}
+              />
             ) : (
               <div style={{
                 fontSize: 11, color: 'var(--color-text-muted)', fontStyle: 'italic',
@@ -1606,6 +1665,168 @@ function itemIsDone(item: any): boolean {
   if (item?.isTask) return !!item.done
   if (item?.isRoutine) return !!item.done
   return item?.status === 'done'
+}
+
+/**
+ * Lista de itens disponíveis no drawer de planejar dia, agrupada de forma
+ * sutil pra dar contexto visual sem virar bagunça de hierarquia:
+ *
+ *   PROJETO X
+ *     Entregável Y
+ *       [card quest]
+ *       [card quest]
+ *
+ *   PROJETO Z
+ *     Entregável W
+ *       [card quest]
+ *
+ *   TAREFAS
+ *     [card task]
+ *
+ *   ROTINAS
+ *     [card routine]
+ *
+ * Headers são minimalistas (uppercase pequena, tom muted). Indent é só
+ * margin-left, sem bordas verticais, pra não competir com os cards.
+ */
+function AvailableList({ items, areas, projects, delivsByProject, onDragStart, onDragEnd }: {
+  items: any[]
+  areas: Area[]
+  projects: Project[]
+  delivsByProject: Record<string, Deliverable[]>
+  onDragStart: (item: any) => void
+  onDragEnd: () => void
+}) {
+  // Particiona em quests / tasks / routines preservando a ordem original
+  // (que já vem ordenada pelo getFilteredItems do parent — deadline asc).
+  const questItems: any[] = []
+  const taskItems: any[] = []
+  const routineItems: any[] = []
+  for (const it of items) {
+    if (it.isTask) taskItems.push(it)
+    else if (it.isRoutine) routineItems.push(it)
+    else questItems.push(it)
+  }
+
+  // Agrupa quests por projeto e, dentro, por entregável. Mantém ordem de
+  // primeira aparição (já filtrado pra "1 entregável ativo por projeto",
+  // mas a fallback pode trazer mais — agrupar deixa fácil de ler de qualquer jeito).
+  type DelivGroup = { delivId: string | null; delivTitle: string | null; items: any[] }
+  type ProjectGroup = { projectId: string; projectTitle: string; areaColor: string; delivs: DelivGroup[] }
+  const projectMap = new Map<string, ProjectGroup>()
+
+  for (const q of questItems) {
+    const pid = q.project_id ?? '__no_project__'
+    if (!projectMap.has(pid)) {
+      const proj = projects.find(p => p.id === q.project_id)
+      const area = areas.find(a => a.slug === q.area_slug)
+      projectMap.set(pid, {
+        projectId: pid,
+        projectTitle: proj?.title ?? '— sem projeto —',
+        areaColor: area?.color ?? 'var(--color-text-tertiary)',
+        delivs: [],
+      })
+    }
+    const pg = projectMap.get(pid)!
+    const did = q.deliverable_id ?? null
+    let dg = pg.delivs.find(d => d.delivId === did)
+    if (!dg) {
+      const delivObj = q.project_id ? delivsByProject[q.project_id]?.find(d => d.id === did) : null
+      dg = { delivId: did, delivTitle: delivObj?.title ?? null, items: [] }
+      pg.delivs.push(dg)
+    }
+    dg.items.push(q)
+  }
+
+  const projectGroups = Array.from(projectMap.values())
+
+  const sectionHeaderStyle: React.CSSProperties = {
+    fontSize: 9, color: 'var(--color-text-muted)',
+    letterSpacing: '0.18em', textTransform: 'uppercase', fontWeight: 700,
+    marginBottom: 6,
+  }
+  const projectHeaderStyle = (color: string): React.CSSProperties => ({
+    fontSize: 10, color: 'var(--color-text-secondary)',
+    letterSpacing: '0.12em', textTransform: 'uppercase', fontWeight: 700,
+    marginBottom: 4,
+    display: 'flex', alignItems: 'center', gap: 6,
+    borderLeft: `2px solid ${color}`, paddingLeft: 8,
+  })
+  const delivHeaderStyle: React.CSSProperties = {
+    fontSize: 9, color: 'var(--color-text-muted)',
+    fontStyle: 'italic',
+    marginBottom: 4, marginTop: 2,
+    paddingLeft: 10,
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+      {projectGroups.map(pg => (
+        <div key={pg.projectId}>
+          <div style={projectHeaderStyle(pg.areaColor)}>{pg.projectTitle}</div>
+          {pg.delivs.map(dg => (
+            <div key={dg.delivId ?? '__no_deliv__'} style={{ marginTop: 4 }}>
+              {dg.delivTitle && <div style={delivHeaderStyle}>{dg.delivTitle}</div>}
+              <div style={{
+                display: 'flex', flexDirection: 'column', gap: 6,
+                paddingLeft: 10,
+              }}>
+                {dg.items.map(item => (
+                  <AvailableCard
+                    key={item.id}
+                    item={item}
+                    areas={areas}
+                    projects={projects}
+                    delivsByProject={delivsByProject}
+                    onDragStart={() => onDragStart(item)}
+                    onDragEnd={onDragEnd}
+                  />
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      ))}
+
+      {taskItems.length > 0 && (
+        <div>
+          <div style={sectionHeaderStyle}>Tarefas</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {taskItems.map(item => (
+              <AvailableCard
+                key={item.id}
+                item={item}
+                areas={areas}
+                projects={projects}
+                delivsByProject={delivsByProject}
+                onDragStart={() => onDragStart(item)}
+                onDragEnd={onDragEnd}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {routineItems.length > 0 && (
+        <div>
+          <div style={sectionHeaderStyle}>Rotinas</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {routineItems.map(item => (
+              <AvailableCard
+                key={item.id}
+                item={item}
+                areas={areas}
+                projects={projects}
+                delivsByProject={delivsByProject}
+                onDragStart={() => onDragStart(item)}
+                onDragEnd={onDragEnd}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
 }
 
 function AvailableCard({ item, areas, projects, delivsByProject, onDragStart, onDragEnd }: {

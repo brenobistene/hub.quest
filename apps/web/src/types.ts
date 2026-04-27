@@ -32,6 +32,12 @@ export interface Quest {
   area_slug: string
   status: string
   priority: string
+  /**
+   * @deprecated Quest não tem mais deadline própria — herda do entregável
+   * (e em fallback, do projeto). Sempre vem `null` do backend. Use
+   * `effectiveQuestDeadline(quest, delivsByProject, projects)` em
+   * `utils/quests.ts` pra resolver o prazo correto.
+   */
   deadline: string | null
   estimated_minutes: number | null
   next_action: string | null

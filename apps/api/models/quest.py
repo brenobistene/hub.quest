@@ -2,6 +2,11 @@
 
 Após a refatoração Project/Quest split, quests sempre têm project_id +
 deliverable_id — nunca mais existem quests-projeto.
+
+Quests **não têm mais deadline própria** — herdam do entregável (e em
+fallback, do projeto). A coluna `deadline` ainda existe no schema mas é
+sempre NULL e foi removida dos payloads de Create/Update. O campo continua
+em `QuestOut` por compat e sempre vem `None` pro frontend.
 """
 from __future__ import annotations
 
@@ -17,9 +22,12 @@ class QuestOut(BaseModel):
     area_slug: str
     status: str
     priority: str
-    deadline: Optional[str]
-    estimated_minutes: Optional[int]
-    next_action: Optional[str]
+    # `deadline` é legado: a coluna existe mas sempre vem None. Toda lógica
+    # de prazo passa por `effectiveQuestDeadline` no frontend (entregável →
+    # projeto). Mantido aqui só pra não quebrar consumidores antigos.
+    deadline: Optional[str] = None
+    estimated_minutes: Optional[int] = None
+    next_action: Optional[str] = None
     description: Optional[str] = None
     deliverable_id: Optional[str] = None
     completed_at: Optional[str] = None
@@ -35,7 +43,6 @@ class QuestCreate(BaseModel):
     deliverable_id: str
     status: str = "pending"
     priority: str = "medium"
-    deadline: Optional[str] = None
     estimated_minutes: Optional[int] = None
     next_action: Optional[str] = None
     description: Optional[str] = None
@@ -45,7 +52,6 @@ class QuestUpdate(BaseModel):
     title: Optional[str] = None
     status: Optional[str] = None
     priority: Optional[str] = None
-    deadline: Optional[str] = None
     estimated_minutes: Optional[int] = None
     next_action: Optional[str] = None
     description: Optional[str] = None

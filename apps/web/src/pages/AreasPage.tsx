@@ -321,11 +321,17 @@ function AreaDetailView({
     return () => { cancelled = true }
   }, [projectIdsKey])
 
-  // Resumo bulk de entregáveis (total/done) por projeto da área.
-  useEffect(() => {
+  // Resumo bulk de entregáveis (total/done) por projeto da área. Refetcha
+  // também quando o painel de detalhe de um projeto fecha (via handler no
+  // onClose abaixo), pra refletir entregáveis marcados/desmarcados lá dentro.
+  const refreshDelivSummary = () => {
     fetchDeliverablesSummary(areaSlug)
       .then(setDelivSummary)
       .catch(err => reportApiError('AreasPage.deliverablesSummary', err))
+  }
+  useEffect(() => {
+    refreshDelivSummary()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [areaSlug, projectIdsKey])
 
   if (!area) return <div style={{ color: 'var(--color-text-tertiary)' }}>Área não encontrada</div>
@@ -396,7 +402,13 @@ function AreaDetailView({
     return (
       <QuestDetailPanel
         project={selectedProject}
-        onClose={() => onSelectProject(null)}
+        onClose={() => {
+          // Antes de voltar pra lista, refetcha o resumo de entregáveis —
+          // garante que a barra de progresso do card reflita qualquer
+          // tick/untick feito dentro do painel sem precisar F5.
+          refreshDelivSummary()
+          onSelectProject(null)
+        }}
         onProjectUpdate={onProjectUpdate}
         onQuestUpdate={onQuestUpdate}
         area={area}

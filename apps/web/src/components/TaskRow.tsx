@@ -5,6 +5,7 @@ import { fetchTaskSessions, reportApiError } from '../api'
 import { InlineText } from './ui/InlineText'
 import { RunnableControls } from './RunnableControls'
 import { PrioritySelect } from './PrioritySelect'
+import { parseTimeToMinutes, minutesToHmm, isValidDateInput } from '../utils/datetime'
 
 /**
  * Task row used in the TasksView list and in the Dia "tarefas de hoje" area.
@@ -26,7 +27,7 @@ export function TaskRow({ task, onToggle, onUpdate, onDelete, activeSession, onS
   const [hover, setHover] = useState(false)
   const [startTime, setStartTime] = useState(task.start_time ?? '')
   const [endTime, setEndTime] = useState(task.end_time ?? '')
-  const [duration, setDuration] = useState(task.duration_minutes ? String(task.duration_minutes) : '')
+  const [duration, setDuration] = useState(task.duration_minutes ? minutesToHmm(task.duration_minutes) : '')
   const [taskSessions, setTaskSessions] = useState<{ started_at: string; ended_at: string | null }[]>([])
 
   useEffect(() => {
@@ -35,7 +36,7 @@ export function TaskRow({ task, onToggle, onUpdate, onDelete, activeSession, onS
 
   useEffect(() => { setStartTime(task.start_time ?? '') }, [task.start_time])
   useEffect(() => { setEndTime(task.end_time ?? '') }, [task.end_time])
-  useEffect(() => { setDuration(task.duration_minutes ? String(task.duration_minutes) : '') }, [task.duration_minutes])
+  useEffect(() => { setDuration(task.duration_minutes ? minutesToHmm(task.duration_minutes) : '') }, [task.duration_minutes])
 
   function commitTime() {
     setEditingTime(false)
@@ -48,8 +49,8 @@ export function TaskRow({ task, onToggle, onUpdate, onDelete, activeSession, onS
 
   function commitDuration() {
     setEditingDuration(false)
-    const parsed = duration.trim() ? parseInt(duration.trim(), 10) : null
-    const next = parsed && !isNaN(parsed) && parsed > 0 ? parsed : null
+    const parsed = parseTimeToMinutes(duration)
+    const next = parsed && parsed > 0 ? parsed : null
     if (next !== (task.duration_minutes ?? null)) {
       onUpdate(task.id, { duration_minutes: next })
     }
@@ -116,6 +117,10 @@ export function TaskRow({ task, onToggle, onUpdate, onDelete, activeSession, onS
               autoFocus
               value={task.scheduled_date ?? ''}
               onChange={e => {
+                // Ignora estados intermediários (ex: "0003-03-14" enquanto
+                // o usuário ainda está digitando o ano) — só commita quando
+                // o value representa uma data plausível.
+                if (!isValidDateInput(e.target.value)) return
                 onUpdate(task.id, { scheduled_date: e.target.value || null })
                 setEditingDate(false)
               }}
@@ -210,19 +215,20 @@ export function TaskRow({ task, onToggle, onUpdate, onDelete, activeSession, onS
 
           {editingDuration ? (
             <input
-              type="number"
+              type="text"
               autoComplete="off"
-              min={1}
               autoFocus
               value={duration}
               onChange={e => setDuration(e.target.value)}
               onBlur={commitDuration}
               onKeyDown={e => { if (e.key === 'Enter') commitDuration() }}
-              placeholder="min"
+              placeholder="h:mm"
+              title="Duração — aceita '1:30' ou '90' (minutos)"
               style={{
                 background: 'var(--color-bg-primary)', border: '1px solid var(--color-border)',
                 color: 'var(--color-text-primary)', fontSize: 10, padding: '2px 4px',
                 borderRadius: 2, outline: 'none', width: 60,
+                fontFamily: "'IBM Plex Mono', monospace",
               }}
             />
           ) : task.duration_minutes ? (
@@ -234,7 +240,7 @@ export function TaskRow({ task, onToggle, onUpdate, onDelete, activeSession, onS
                 padding: '2px 6px', borderRadius: 2, cursor: 'pointer',
               }}
             >
-              ~{task.duration_minutes}min
+              ~{minutesToHmm(task.duration_minutes)}
             </button>
           ) : (
             <button

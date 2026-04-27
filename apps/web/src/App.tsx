@@ -159,6 +159,28 @@ export default function App() {
     }
   }, [])
 
+  // Defesa em profundidade: se o state global de quests indica que a entity
+  // do banner está done, limpa o banner imediatamente (sem esperar o polling
+  // de 15s). Cobre o caso onde algum lugar marca a quest done sem chamar
+  // onSessionUpdate (ex: edit inline em outra tela).
+  useEffect(() => {
+    if (!activeSession || activeSession.type !== 'quest') return
+    const q = quests.find(x => x.id === activeSession.id)
+    if (q && q.status === 'done') {
+      setActiveSession(null)
+      saveFocusedEntity(null)
+    }
+  }, [quests, activeSession?.type, activeSession?.id])
+
+  // Refresh defensivo da sessão ativa ao trocar de rota. Como tasks/routines
+  // não estão no state global do App (cada page busca por conta), não dá pra
+  // validar via state como nas quests acima — esse refresh garante que ao
+  // navegar pra outra tela o banner reflita o estado atual do backend.
+  useEffect(() => {
+    if (document.visibilityState === 'visible') refreshActiveSession()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.pathname])
+
   // Tracks which (type, id) pair the current bannerClosedSec value corresponds
   // to. Used to avoid mixing stale session data from a previous entity into
   // the banner during async refetches (was causing the timer to jump

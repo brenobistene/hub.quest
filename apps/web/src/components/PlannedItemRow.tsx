@@ -90,139 +90,148 @@ export function PlannedItemRow({ item, areas, activeSession, onSessionUpdate, on
       borderLeft: `3px solid ${itemColor}`,
       borderRadius: 4,
       padding: 12,
-      display: 'flex', alignItems: 'center', gap: 12,
-      flexWrap: 'wrap',
+      // Layout em coluna: header em linha (título + breadcrumb + meta + controles)
+      // e a descrição expandida ocupa a largura total embaixo, sem espremer os
+      // controles ao lado dela.
+      display: 'flex', flexDirection: 'column', gap: 10,
       width: '100%', boxSizing: 'border-box', minWidth: 0, maxWidth: '100%',
       opacity: done ? 0.5 : 1,
     }}>
+      {/* Header em linha — título/breadcrumb à esquerda, controles à direita */}
       <div style={{
-        width: 10, height: 10, borderRadius: '50%',
-        background: itemColor, flexShrink: 0,
-      }} />
-      <div style={{ flex: '1 1 180px', minWidth: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <div
-            onClick={onOpen}
-            title={onOpen ? 'Abrir projeto' : undefined}
-            style={{
-              color: 'var(--color-text-primary)', fontWeight: 500, fontSize: 13,
-              textDecoration: done ? 'line-through' : 'none',
-              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-              cursor: onOpen ? 'pointer' : 'default',
-              transition: 'color 0.12s',
-            }}
-            onMouseEnter={e => { if (onOpen) e.currentTarget.style.color = 'var(--color-accent-light)' }}
-            onMouseLeave={e => { if (onOpen) e.currentTarget.style.color = 'var(--color-text-primary)' }}
-          >
-            {item.title}
-          </div>
-          <button
-            onClick={(e) => {
-              e.stopPropagation()
-              setShowDescription(!showDescription)
-            }}
-            title={item?.description ? (showDescription ? 'Ocultar descrição' : 'Ver descrição') : 'Adicionar descrição'}
-            style={{
-              background: 'none', border: 'none', cursor: 'pointer',
-              color: item?.description ? 'var(--color-accent-light)' : 'var(--color-text-tertiary)',
-              fontSize: 10, padding: '2px 4px',
-              display: 'inline-flex', alignItems: 'center', gap: 3,
-              transition: 'color 0.15s', flexShrink: 0,
-              opacity: item?.description ? 1 : 0.6,
-            }}
-            onMouseEnter={e => (e.currentTarget.style.color = 'var(--color-accent-light)')}
-            onMouseLeave={e => (e.currentTarget.style.color = item?.description ? 'var(--color-accent-light)' : 'var(--color-text-tertiary)')}
-          >
-            <span style={{ fontSize: 9 }}>{showDescription ? '▼' : '▶'}</span>
-            <span style={{ fontSize: 9, letterSpacing: '0.05em', textTransform: 'uppercase' }}>info</span>
-          </button>
-        </div>
-        {showDescription && (
-          <div
-            onClick={e => e.stopPropagation()}
-            style={{
-              marginTop: 8, width: '100%',
-            }}
-          >
-            <BlockEditor
-              value={descDraft ?? item?.description ?? ''}
-              onChange={setDescDraft}
-              placeholder="Digite / pra ver os blocos…"
-              minHeight={80}
-            />
-          </div>
-        )}
-        {(parentTitle || deliverableTitle) && (
-          <div style={{
-            fontSize: 9, color: 'var(--color-text-tertiary)',
-            marginTop: 2,
-            display: 'flex', gap: 5, alignItems: 'center', flexWrap: 'wrap',
-          }}>
-            {parentTitle && <span>{parentTitle}</span>}
-            {parentTitle && deliverableTitle && (
-              <span style={{ color: 'var(--color-text-muted)' }}>›</span>
-            )}
-            {deliverableTitle && (
-              <span style={{ color: 'var(--color-accent-light)' }}>{deliverableTitle}</span>
-            )}
-          </div>
-        )}
+        display: 'flex', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap',
+        width: '100%', minWidth: 0,
+      }}>
         <div style={{
-          fontSize: 10, color: 'var(--color-text-tertiary)',
-          display: 'flex', gap: 10, marginTop: 3, flexWrap: 'wrap',
-        }}>
-          <span style={{
-            color: isRoutine ? 'var(--color-success)'
-              : isTask ? 'var(--color-accent-light)'
-              : 'var(--color-text-tertiary)',
-            textTransform: 'uppercase', letterSpacing: '0.05em',
-          }}>{typeLabel}</span>
-          {item.estimated_minutes && <span>~{item.estimated_minutes}m</span>}
-          {item.duration_minutes && <span>~{item.duration_minutes}m</span>}
-          {(item.start_time && item.end_time) && (
-            <span style={{ fontFamily: 'monospace' }}>{item.start_time}–{item.end_time}</span>
+          width: 10, height: 10, borderRadius: '50%',
+          background: itemColor, flexShrink: 0, marginTop: 4,
+        }} />
+        <div style={{ flex: '1 1 180px', minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <div
+              onClick={onOpen}
+              title={onOpen ? 'Abrir projeto' : undefined}
+              style={{
+                color: 'var(--color-text-primary)', fontWeight: 500, fontSize: 13,
+                textDecoration: done ? 'line-through' : 'none',
+                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                cursor: onOpen ? 'pointer' : 'default',
+                transition: 'color 0.12s',
+              }}
+              onMouseEnter={e => { if (onOpen) e.currentTarget.style.color = 'var(--color-accent-light)' }}
+              onMouseLeave={e => { if (onOpen) e.currentTarget.style.color = 'var(--color-text-primary)' }}
+            >
+              {item.title}
+            </div>
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                setShowDescription(!showDescription)
+              }}
+              title={item?.description ? (showDescription ? 'Ocultar descrição' : 'Ver descrição') : 'Adicionar descrição'}
+              style={{
+                background: 'none', border: 'none', cursor: 'pointer',
+                color: item?.description ? 'var(--color-accent-light)' : 'var(--color-text-tertiary)',
+                fontSize: 10, padding: '2px 4px',
+                display: 'inline-flex', alignItems: 'center', gap: 3,
+                transition: 'color 0.15s', flexShrink: 0,
+                opacity: item?.description ? 1 : 0.6,
+              }}
+              onMouseEnter={e => (e.currentTarget.style.color = 'var(--color-accent-light)')}
+              onMouseLeave={e => (e.currentTarget.style.color = item?.description ? 'var(--color-accent-light)' : 'var(--color-text-tertiary)')}
+            >
+              <span style={{ fontSize: 9 }}>{showDescription ? '▼' : '▶'}</span>
+              <span style={{ fontSize: 9, letterSpacing: '0.05em', textTransform: 'uppercase' }}>info</span>
+            </button>
+          </div>
+          {(parentTitle || deliverableTitle) && (
+            <div style={{
+              fontSize: 9, color: 'var(--color-text-tertiary)',
+              marginTop: 2,
+              display: 'flex', gap: 5, alignItems: 'center', flexWrap: 'wrap',
+            }}>
+              {parentTitle && <span>{parentTitle}</span>}
+              {parentTitle && deliverableTitle && (
+                <span style={{ color: 'var(--color-text-muted)' }}>›</span>
+              )}
+              {deliverableTitle && (
+                <span style={{ color: 'var(--color-accent-light)' }}>{deliverableTitle}</span>
+              )}
+            </div>
           )}
+          <div style={{
+            fontSize: 10, color: 'var(--color-text-tertiary)',
+            display: 'flex', gap: 10, marginTop: 3, flexWrap: 'wrap',
+          }}>
+            <span style={{
+              color: isRoutine ? 'var(--color-success)'
+                : isTask ? 'var(--color-accent-light)'
+                : 'var(--color-text-tertiary)',
+              textTransform: 'uppercase', letterSpacing: '0.05em',
+            }}>{typeLabel}</span>
+            {item.estimated_minutes && <span>~{item.estimated_minutes}m</span>}
+            {item.duration_minutes && <span>~{item.duration_minutes}m</span>}
+            {(item.start_time && item.end_time) && (
+              <span style={{ fontFamily: 'monospace' }}>{item.start_time}–{item.end_time}</span>
+            )}
+          </div>
         </div>
+        <RunnableControls
+          runnableType={kind}
+          id={item.id}
+          sessions={sessions}
+          activeSession={activeSession}
+          onSessionUpdate={onSessionUpdate}
+          target={kind === 'routine' ? target : undefined}
+          done={done}
+          onReopen={async () => {
+            try {
+              if (kind === 'quest') await patchQuest(item.id, { status: 'doing' })
+              else if (kind === 'task') await updateTask(item.id, { done: false })
+              else await toggleRoutine(item.id)
+              onSessionUpdate()
+            } catch (err) {
+              console.error('[runnable] reopen failed', { kind, id: item.id, err })
+              alert('Erro ao reabrir — veja o console (F12).')
+            }
+          }}
+        />
+        <button
+          onClick={onRemoveFromPlan}
+          title="remover do plano do dia"
+          style={{
+            background: 'none', border: 'none', cursor: 'pointer',
+            color: 'var(--color-text-tertiary)', fontSize: 14, padding: '0 6px',
+            opacity: 0.5, transition: 'opacity 0.15s, color 0.15s',
+            alignSelf: 'flex-start',
+          }}
+          onMouseEnter={e => {
+            e.currentTarget.style.opacity = '1'
+            e.currentTarget.style.color = 'var(--color-accent-light)'
+          }}
+          onMouseLeave={e => {
+            e.currentTarget.style.opacity = '0.5'
+            e.currentTarget.style.color = 'var(--color-text-tertiary)'
+          }}
+        >
+          ✕
+        </button>
       </div>
-      <RunnableControls
-        runnableType={kind}
-        id={item.id}
-        sessions={sessions}
-        activeSession={activeSession}
-        onSessionUpdate={onSessionUpdate}
-        target={kind === 'routine' ? target : undefined}
-        done={done}
-        onReopen={async () => {
-          try {
-            if (kind === 'quest') await patchQuest(item.id, { status: 'doing' })
-            else if (kind === 'task') await updateTask(item.id, { done: false })
-            else await toggleRoutine(item.id)
-            onSessionUpdate()
-          } catch (err) {
-            console.error('[runnable] reopen failed', { kind, id: item.id, err })
-            alert('Erro ao reabrir — veja o console (F12).')
-          }
-        }}
-      />
-      <button
-        onClick={onRemoveFromPlan}
-        title="remover do plano do dia"
-        style={{
-          background: 'none', border: 'none', cursor: 'pointer',
-          color: 'var(--color-text-tertiary)', fontSize: 14, padding: '0 6px',
-          opacity: 0.5, transition: 'opacity 0.15s, color 0.15s',
-        }}
-        onMouseEnter={e => {
-          e.currentTarget.style.opacity = '1'
-          e.currentTarget.style.color = 'var(--color-accent-light)'
-        }}
-        onMouseLeave={e => {
-          e.currentTarget.style.opacity = '0.5'
-          e.currentTarget.style.color = 'var(--color-text-tertiary)'
-        }}
-      >
-        ✕
-      </button>
+
+      {/* Descrição expandida — fora da coluna do header, ocupa a largura toda */}
+      {showDescription && (
+        <div
+          onClick={e => e.stopPropagation()}
+          style={{ width: '100%' }}
+        >
+          <BlockEditor
+            value={descDraft ?? item?.description ?? ''}
+            onChange={setDescDraft}
+            placeholder="Digite / pra ver os blocos…"
+            minHeight={80}
+          />
+        </div>
+      )}
     </div>
   )
 }

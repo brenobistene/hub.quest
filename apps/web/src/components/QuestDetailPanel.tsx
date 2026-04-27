@@ -8,7 +8,7 @@ import {
   fetchSessions,
   reportApiError,
 } from '../api'
-import { parseIsoAsUtc, sumClosedSessionsSeconds, formatHMS } from '../utils/datetime'
+import { parseIsoAsUtc, sumClosedSessionsSeconds, formatHMS, parseTimeToMinutes, minutesToHmm, isValidDateInput } from '../utils/datetime'
 import { formatDateBR } from '../utils/quests'
 import { InlineText } from './ui/InlineText'
 import { Label } from './ui/Label'
@@ -158,9 +158,18 @@ export function QuestDetailPanel({
   }, [notesDraft, project.notes, project.id, onProjectUpdate])
 
   // Update otimista de subtask + dispara o callback global do App.
+  // Quando o patch muda `status` ou `deliverable_id`, o backend pode
+  // marcar/desmarcar o `done` do entregável (auto-sync: todas as quests
+  // fechadas → entregável vira done). Refazemos o fetch dos deliverables
+  // pra UI refletir sem F5.
   const handleUpdate = (id: string, patch: Partial<Quest>) => {
     setSubtasks(sts => sts.map(st => st.id === id ? { ...st, ...patch } : st))
     onQuestUpdate(id, patch)
+    if ('status' in patch || 'deliverable_id' in patch) {
+      fetchDeliverables(project.id)
+        .then(setDeliverables)
+        .catch(err => reportApiError('QuestDetailPanel', err))
+    }
   }
 
   function addQuestToDeliverable(delivId: string) {
@@ -199,23 +208,6 @@ export function QuestDetailPanel({
   function toggleQuestDone(q: Quest) {
     const nextStatus = q.status === 'done' ? 'pending' : 'done'
     handleUpdate(q.id, { status: nextStatus })
-  }
-
-  function parseTimeToMinutes(input: string): number | undefined {
-    if (!input.trim()) return undefined
-    if (input.includes(':')) {
-      const parts = input.split(':').map(p => p.trim())
-      if (parts.length === 2) {
-        const hours = parseInt(parts[0])
-        const minutes = parseInt(parts[1])
-        if (!isNaN(hours) && !isNaN(minutes)) {
-          return hours * 60 + minutes
-        }
-      }
-      return undefined
-    }
-    const mins = parseInt(input)
-    return isNaN(mins) ? undefined : mins
   }
 
   function addDeliverable() {
@@ -286,13 +278,6 @@ export function QuestDetailPanel({
     if (h > 0 && r > 0) return `${h}h ${r}m`
     if (h > 0) return `${h}h`
     return `${r}m`
-  }
-
-  /** Converte minutos em `H:MM` pra exibir em inputs editáveis (ex: 150 → "2:30"). */
-  const minutesToHmm = (m: number): string => {
-    const h = Math.floor(m / 60)
-    const r = m % 60
-    return `${h}:${String(r).padStart(2, '0')}`
   }
 
   const questsForDelivId = (delivId: string) =>
@@ -521,7 +506,11 @@ export function QuestDetailPanel({
               type="date"
               autoComplete="off"
               value={project.deadline || ''}
-              onChange={e => onProjectUpdate(project.id, { deadline: e.target.value || null })}
+              onChange={e => {
+                if (isValidDateInput(e.target.value)) {
+                  onProjectUpdate(project.id, { deadline: e.target.value || null })
+                }
+              }}
               style={{
                 background: 'transparent', border: 'none',
                 borderBottom: '1px solid transparent',
@@ -725,7 +714,9 @@ export function QuestDetailPanel({
             type="date"
             autoComplete="off"
             value={newDeliverableDeadline}
-            onChange={e => setNewDeliverableDeadline(e.target.value)}
+            onChange={e => {
+              if (isValidDateInput(e.target.value)) setNewDeliverableDeadline(e.target.value)
+            }}
             title="Deadline"
             style={{
               background: 'transparent', border: 'none',
@@ -859,7 +850,11 @@ export function QuestDetailPanel({
                           autoComplete="off"
                           autoFocus
                           defaultValue={d.deadline ?? ''}
-                          onChange={e => patchDeliverable(d.id, { deadline: e.target.value || null })}
+                          onChange={e => {
+                            if (isValidDateInput(e.target.value)) {
+                              patchDeliverable(d.id, { deadline: e.target.value || null })
+                            }
+                          }}
                           onBlur={() => setEditingField(null)}
                           onKeyDown={e => {
                             if (e.key === 'Enter' || e.key === 'Escape') (e.currentTarget as HTMLInputElement).blur()

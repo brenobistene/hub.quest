@@ -7,6 +7,7 @@ import { Label } from '../components/ui/Label'
 import { DateRangeFilter } from '../components/DateRangeFilter'
 import { TaskRow } from '../components/TaskRow'
 import { PrioritySelect } from '../components/PrioritySelect'
+import { parseTimeToMinutes, isValidDateInput } from '../utils/datetime'
 
 type TaskFilter = 'all' | 'today' | 'no-date'
 
@@ -60,7 +61,8 @@ export function TasksView({ activeSession, onSessionUpdate, sessionUpdateTrigger
   // Regra: toda tarefa precisa ter OU duração OU horário (início + fim), pra
   // caber em algum lugar do dia. Sem isso, não dá pra estimar carga.
   const hasRange = !!(newStartTime && newEndTime)
-  const hasDuration = !!newDuration.trim() && parseInt(newDuration, 10) > 0
+  const parsedDuration = parseTimeToMinutes(newDuration)
+  const hasDuration = !!parsedDuration && parsedDuration > 0
   const timeOK = hasRange || hasDuration
   const canCreate = !!newTitle.trim() && timeOK
 
@@ -80,7 +82,7 @@ export function TasksView({ activeSession, onSessionUpdate, sessionUpdateTrigger
         scheduled_date: newDate || null,
         start_time: newStartTime || null,
         end_time: newEndTime || null,
-        duration_minutes: hasDuration ? parseInt(newDuration, 10) : null,
+        duration_minutes: hasDuration ? parsedDuration : null,
       })
       setTasks(prev => [...prev, created])
       setNewTitle('')
@@ -99,6 +101,10 @@ export function TasksView({ activeSession, onSessionUpdate, sessionUpdateTrigger
     try {
       const updated = await toggleTask(id)
       setTasks(prev => prev.map(t => t.id === id ? updated : t))
+      // Avisa o App pra refazer o fetch da sessão ativa — sem isso o banner
+      // continua mostrando esta task como "pausada" até o próximo polling de
+      // 15s, mesmo após ser marcada como done.
+      onSessionUpdate?.()
     } catch {}
   }
 
@@ -215,10 +221,30 @@ export function TasksView({ activeSession, onSessionUpdate, sessionUpdateTrigger
         {showExtras && (
           <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap', marginTop: 14 }}>
             {[
-              { label: 'data',          value: newDate,       setter: setNewDate,       type: 'date' as const, width: 140 },
-              { label: 'início',        value: newStartTime,  setter: setNewStartTime,  type: 'time' as const, width: 90 },
-              { label: 'fim',           value: newEndTime,    setter: setNewEndTime,    type: 'time' as const, width: 90 },
-              { label: 'duração (min)', value: newDuration,   setter: setNewDuration,   type: 'number' as const, width: 90 },
+              {
+                label: 'data', value: newDate, type: 'date' as const, width: 140,
+                placeholder: undefined as string | undefined,
+                title: undefined as string | undefined,
+                onChange: (v: string) => { if (isValidDateInput(v)) setNewDate(v) },
+              },
+              {
+                label: 'início', value: newStartTime, type: 'time' as const, width: 90,
+                placeholder: undefined,
+                title: undefined,
+                onChange: (v: string) => setNewStartTime(v),
+              },
+              {
+                label: 'fim', value: newEndTime, type: 'time' as const, width: 90,
+                placeholder: undefined,
+                title: undefined,
+                onChange: (v: string) => setNewEndTime(v),
+              },
+              {
+                label: 'duração', value: newDuration, type: 'text' as const, width: 90,
+                placeholder: 'h:mm',
+                title: "Aceita '1:30' ou '90' (minutos)",
+                onChange: (v: string) => setNewDuration(v),
+              },
             ].map(f => (
               <label key={f.label} style={{ display: 'inline-flex', flexDirection: 'column', gap: 4 }}>
                 <span style={{ fontSize: 9, color: 'var(--color-text-muted)', letterSpacing: '0.15em', textTransform: 'uppercase', fontWeight: 700 }}>
@@ -226,8 +252,11 @@ export function TasksView({ activeSession, onSessionUpdate, sessionUpdateTrigger
                 </span>
                 <input
                   type={f.type}
+                  autoComplete="off"
                   value={f.value}
-                  onChange={e => f.setter(e.target.value)}
+                  placeholder={f.placeholder}
+                  title={f.title}
+                  onChange={e => f.onChange(e.target.value)}
                   style={{
                     width: f.width, background: 'transparent',
                     border: 'none', borderBottom: '1px solid var(--color-border)',

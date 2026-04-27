@@ -3,7 +3,7 @@
  * Keep these in sync with the backend enums (status, priority).
  */
 
-import type { Area } from '../types'
+import type { Area, Deliverable, Project, Quest } from '../types'
 
 /** Human label per status key. */
 export const STATUS_LABEL: Record<string, string> = {
@@ -51,4 +51,35 @@ export function fmtDeadline(iso: string | null): string {
   if (diff === 0) return 'hoje'
   if (diff === 1) return 'amanhã'
   return `${diff}d`
+}
+
+/**
+ * Deadline efetiva de uma quest, herdada na ordem:
+ *   1. Entregável (deliverable.deadline)
+ *   2. Projeto (project.deadline)
+ *   3. null (sem deadline)
+ *
+ * O campo `quest.deadline` da tabela é considerado **legado** desde a decisão
+ * de centralizar prazos no entregável e no projeto. Toda lógica de filtragem,
+ * ordenação ou exibição por data deve passar por aqui pra herdar a deadline
+ * correta — caso contrário quests sem deadline própria são tratadas como
+ * "sem data" mesmo quando o entregável vence hoje.
+ *
+ * `delivsByProject` deve estar populado pra a herança funcionar; se não
+ * estiver (race do fetch inicial), faz fallback direto pro projeto.
+ */
+export function effectiveQuestDeadline(
+  q: Quest,
+  delivsByProject: Record<string, Deliverable[]>,
+  projects: Project[],
+): string | null {
+  if (q.project_id && q.deliverable_id) {
+    const deliv = delivsByProject[q.project_id]?.find(d => d.id === q.deliverable_id)
+    if (deliv?.deadline) return deliv.deadline
+  }
+  if (q.project_id) {
+    const proj = projects.find(p => p.id === q.project_id)
+    if (proj?.deadline) return proj.deadline
+  }
+  return null
 }

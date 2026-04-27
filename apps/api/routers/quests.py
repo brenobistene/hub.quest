@@ -103,14 +103,16 @@ def create_quest(body: QuestCreate):
             raise HTTPException(422, detail=f"Deliverable '{body.deliverable_id}' not found")
         if deliv["project_id"] != body.project_id:
             raise HTTPException(422, detail="O entregável escolhido não pertence a esse projeto.")
+        # Quest não recebe mais `deadline` — herda do entregável/projeto.
+        # A coluna fica NULL no INSERT.
         conn.execute(
             """INSERT INTO quests
-               (id, project_id, title, area_slug, status, priority, deadline,
+               (id, project_id, title, area_slug, status, priority,
                 estimated_minutes, next_action, description, deliverable_id,
                 created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (quest_id, body.project_id, body.title, body.area_slug, body.status,
-             body.priority, body.deadline, body.estimated_minutes,
+             body.priority, body.estimated_minutes,
              body.next_action, body.description, body.deliverable_id, now, now),
         )
         conn.commit()
@@ -166,11 +168,44 @@ def update_quest(quest_id: str, body: QuestUpdate):
             elif new_status not in TERMINAL and prev_status in TERMINAL:
                 fields["completed_at"] = None
 
+        # Pega deliverable_id "antes" pra detectar mudança de pai (que pode
+        # destrancar/destrancar dois deliverables na mesma operação).
+        prev_deliv_row = conn.execute(
+            "SELECT deliverable_id FROM quests WHERE id = ?", (quest_id,)
+        ).fetchone()
+        prev_deliv_id = prev_deliv_row["deliverable_id"] if prev_deliv_row else None
+
         set_clause = ", ".join(f"{k} = ?" for k in fields)
         conn.execute(
             f"UPDATE quests SET {set_clause} WHERE id = ?",
             [*fields.values(), quest_id],
         )
+
+        # Auto-sync do `done` do entregável: se todas as quests do entregável
+        # estão fechadas (done ou cancelled) e há pelo menos uma, marca como
+        # done. Se alguma volta pra ativa, desmarca. Se a quest mudou de
+        # entregável, refaz o check pros DOIS (origem e destino).
+        affected_delivs: set[str] = set()
+        new_deliv_id = fields.get("deliverable_id", prev_deliv_id)
+        if prev_deliv_id:
+            affected_delivs.add(prev_deliv_id)
+        if new_deliv_id:
+            affected_delivs.add(new_deliv_id)
+        for did in affected_delivs:
+            counts = conn.execute(
+                """SELECT COUNT(*) AS total,
+                          SUM(CASE WHEN status IN ('done','cancelled') THEN 1 ELSE 0 END) AS closed
+                   FROM quests WHERE deliverable_id = ?""",
+                (did,),
+            ).fetchone()
+            total = counts["total"] or 0
+            closed = counts["closed"] or 0
+            should_be_done = 1 if (total > 0 and closed == total) else 0
+            conn.execute(
+                "UPDATE deliverables SET done = ? WHERE id = ?",
+                (should_be_done, did),
+            )
+
         conn.commit()
 
         row = conn.execute(

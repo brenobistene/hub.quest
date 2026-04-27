@@ -60,3 +60,52 @@ export function formatHMS(seconds: number): string {
   if (h > 0) return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
 }
+
+/**
+ * Converte a string digitada pelo usuário em minutos totais.
+ * Aceita três formatos:
+ *   - "90"     → 90 minutos
+ *   - "1:30"   → 1h30 = 90 minutos
+ *   - "2:00"   → 2h = 120 minutos
+ *
+ * Retorna `undefined` se o input é inválido ou vazio. Centralizado pra todos
+ * os campos de estimativa/duração no app terem o mesmo comportamento.
+ */
+export function parseTimeToMinutes(input: string | null | undefined): number | undefined {
+  if (!input) return undefined
+  const s = input.trim()
+  if (!s) return undefined
+  if (s.includes(':')) {
+    const parts = s.split(':').map(p => p.trim())
+    if (parts.length !== 2) return undefined
+    const h = parseInt(parts[0], 10)
+    const m = parseInt(parts[1], 10)
+    if (isNaN(h) || isNaN(m) || h < 0 || m < 0 || m > 59) return undefined
+    return h * 60 + m
+  }
+  const mins = parseInt(s, 10)
+  if (isNaN(mins) || mins < 0) return undefined
+  return mins
+}
+
+/** Formata minutos totais como "h:mm" (ex: 150 → "2:30", 45 → "0:45"). */
+export function minutesToHmm(m: number): string {
+  const h = Math.floor(m / 60)
+  const r = m % 60
+  return `${h}:${String(r).padStart(2, '0')}`
+}
+
+/**
+ * Valida o `value` de um `<input type="date">` antes de persistir. Evita o
+ * bug clássico em que digitar "3" num campo de data dispara um onChange
+ * com `0003-03-14` (estado intermediário que o navegador entrega enquanto
+ * o usuário não terminou de digitar). Aceitamos só strings vazias OU anos
+ * dentro de um range plausível.
+ */
+export function isValidDateInput(value: string): boolean {
+  if (value === '') return true
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  if (!match) return false
+  const year = parseInt(match[1], 10)
+  return year >= 1900 && year <= 2100
+}

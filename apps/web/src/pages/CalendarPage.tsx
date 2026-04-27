@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState } from 'react'
-import type { Area, Project, Quest, Routine, Task } from '../types'
-import { fetchAllRoutines, fetchSessions, fetchTasks, fetchTaskSessions, fetchRoutineSessions, deleteRoutine, reportApiError } from '../api'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
+import type { Area, Deliverable, Project, Quest, Routine, Task } from '../types'
+import { fetchAllRoutines, fetchSessions, fetchTasks, fetchTaskSessions, fetchRoutineSessions, fetchDeliverables, deleteRoutine, reportApiError } from '../api'
 import { parseIsoAsUtc } from '../utils/datetime'
-import { getAreaColor } from '../utils/quests'
+import { effectiveQuestDeadline, getAreaColor } from '../utils/quests'
 import type { UnproductiveBlock } from '../utils/blocks'
 import { getAllBlockRangesForDay } from '../utils/blocks'
 
@@ -11,6 +11,62 @@ const MONTH_NAMES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
 const DAY_NAMES   = ['Seg','Ter','Qua','Qui','Sex','Sáb','Dom']
 
 function pyDayToJs(py: number) { return (py + 1) % 7 }
+
+/**
+ * Layout de eventos sobrepostos estilo Google Calendar.
+ *
+ * Algoritmo:
+ *  1. Agrupa eventos em clusters (sequências que se sobrepõem direta ou
+ *     indiretamente — se A encosta B e B encosta C, todos ficam no mesmo
+ *     cluster).
+ *  2. Dentro do cluster, atribui cada evento à primeira coluna disponível
+ *     (greedy por ordem de início).
+ *  3. O `cols` final do cluster = maior índice de coluna + 1. Todos os
+ *     eventos do cluster recebem esse mesmo total — garante largura
+ *     uniforme dentro da "faixa" sobreposta.
+ *
+ * Retorno: Map id → { col, cols } pra cada evento. Caller usa pra calcular
+ * `left` e `width` em CSS (ex: width = (100% - 8px) / cols).
+ */
+export function computeEventLayout(
+  events: Array<{ id: string; startMin: number; endMin: number }>,
+): Map<string, { col: number; cols: number }> {
+  // Ordena por início; ties quebram pelo evento mais longo primeiro, pra
+  // não mandar o curto pra coluna 0 e o longo pra direita.
+  const sorted = [...events].sort(
+    (a, b) => a.startMin - b.startMin || b.endMin - a.endMin,
+  )
+  const result = new Map<string, { col: number; cols: number }>()
+  let cluster: Array<{ id: string; endMin: number; col: number }> = []
+  let clusterMaxEnd = -Infinity
+
+  const flush = () => {
+    const cols = cluster.reduce((m, c) => Math.max(m, c.col + 1), 0)
+    for (const c of cluster) result.set(c.id, { col: c.col, cols })
+    cluster = []
+    clusterMaxEnd = -Infinity
+  }
+
+  for (const ev of sorted) {
+    if (cluster.length > 0 && ev.startMin >= clusterMaxEnd) flush()
+    const taken = new Set(cluster.filter(c => c.endMin > ev.startMin).map(c => c.col))
+    let col = 0
+    while (taken.has(col)) col++
+    cluster.push({ id: ev.id, endMin: ev.endMin, col })
+    clusterMaxEnd = Math.max(clusterMaxEnd, ev.endMin)
+  }
+  flush()
+  return result
+}
+
+/** CSS left/width pra um slot com N colunas. Gap de 2px entre colunas. */
+function laneStyle(col: number, cols: number): { left: string; width: string } {
+  const gap = cols > 1 ? 2 : 0
+  return {
+    left: `calc(4px + ${col} * ((100% - 8px) / ${cols}))`,
+    width: `calc((100% - 8px) / ${cols} - ${gap}px)`,
+  }
+}
 
 function routineMatchesDay(r: Routine, jsDay: number): boolean {
   if (r.recurrence === 'daily') return true
@@ -34,7 +90,20 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger }: 
   const [tasks, setTasks] = useState<Task[]>([])
   const [allTaskSessions, setAllTaskSessions] = useState<Map<string, any[]>>(new Map())
   const [allRoutineSessions, setAllRoutineSessions] = useState<Map<string, any[]>>(new Map())
-  const [currentTime] = useState(new Date())
+  // Deliverables por projeto — usado pra resolver `effectiveQuestDeadline`
+  // (quest herda deadline do entregável → projeto). Buscado em paralelo no
+  // mount + sempre que a lista de project_ids das quests muda.
+  const [delivsByProject, setDelivsByProject] = useState<Record<string, Deliverable[]>>({})
+  // Tick por minuto pra linha de "agora" seguir o relógio — antes estava
+  // congelado no instante do mount, o que dava sensação de atraso conforme
+  // o tempo passa.
+  const [currentTime, setCurrentTime] = useState(new Date())
+  useEffect(() => {
+    const update = () => setCurrentTime(new Date())
+    update()
+    const id = setInterval(update, 60_000)
+    return () => clearInterval(id)
+  }, [])
   const [timelineZoom, setTimelineZoom] = useState(1)
   const timelineRef = useRef<HTMLDivElement>(null)
   const [unproductiveBlocks, setUnproductiveBlocks] = useState<UnproductiveBlock[]>(() => {
@@ -61,6 +130,26 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger }: 
   useEffect(() => {
     fetchAllRoutines().then(setRoutines).catch(err => reportApiError('CalendarPage', err))
   }, [])
+
+  // Fetch dos deliverables por projeto. Pool de project_ids vem das quests.
+  // Reusa fetchDeliverables (um GET por projeto) — paralelizado e tolerante
+  // a falha individual. O delivsByProject alimenta o effectiveQuestDeadline.
+  useEffect(() => {
+    const projectIds = Array.from(new Set(quests.filter(q => q.project_id).map(q => q.project_id!)))
+    if (projectIds.length === 0) { setDelivsByProject({}); return }
+    let cancelled = false
+    Promise.all(projectIds.map(pid =>
+      fetchDeliverables(pid)
+        .then(ds => ({ pid, ds }))
+        .catch(() => ({ pid, ds: [] as Deliverable[] }))
+    )).then(results => {
+      if (cancelled) return
+      const map: Record<string, Deliverable[]> = {}
+      for (const r of results) map[r.pid] = r.ds
+      setDelivsByProject(map)
+    })
+    return () => { cancelled = true }
+  }, [quests.map(q => q.id + ':' + (q.deliverable_id ?? '') + ':' + (q.project_id ?? '')).join(',')])
 
   useEffect(() => {
     Promise.all(quests.map(q => fetchSessions(q.id).then(sessions => ({ questId: q.id, sessions })).catch(() => ({ questId: q.id, sessions: [] }))))
@@ -114,13 +203,80 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger }: 
   const dateLabel = currentDate.toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })
 
   function questsForDay(iso: string) {
-    return quests.filter(q => q.deadline === iso && q.status !== 'done')
+    // Quest herda deadline do entregável → projeto. q.deadline (legado) é
+    // ignorado; tudo flui pelo helper centralizado.
+    return quests.filter(q =>
+      q.status !== 'done' &&
+      effectiveQuestDeadline(q, delivsByProject, projects) === iso,
+    )
   }
 
   function routinesForDay(iso: string) {
     const jsDay = new Date(iso + 'T12:00:00').getDay()
     return routines.filter(r => routineMatchesDay(r, jsDay))
   }
+
+  // Layout de colunas pra eventos sobrepostos do dia (view diária).
+  // Coleta todos os blocos timeline do `dateIso` — sessões de quest/task/
+  // rotina + rotinas agendadas — e atribui `col` + `cols` pra cada um via
+  // `computeEventLayout`. Ids devem bater com os usados no render abaixo.
+  const dayEventLayout = useMemo(() => {
+    const evs: Array<{ id: string; startMin: number; endMin: number }> = []
+    const minutesOf = (d: Date) => d.getHours() * 60 + d.getMinutes()
+
+    quests.forEach(quest => {
+      const sessions = allSessions.get(quest.id) || []
+      sessions.forEach((s: any, idx: number) => {
+        if (!s?.started_at) return
+        const start = parseIsoAsUtc(s.started_at)
+        const stIso = `${start.getFullYear()}-${String(start.getMonth()+1).padStart(2,'0')}-${String(start.getDate()).padStart(2,'0')}`
+        if (stIso !== dateIso) return
+        const end = s.ended_at ? parseIsoAsUtc(s.ended_at) : new Date()
+        const sm = minutesOf(start)
+        const em = Math.max(sm + 15, minutesOf(end))
+        evs.push({ id: `q:${quest.id}:${idx}`, startMin: sm, endMin: em })
+      })
+    })
+
+    tasks.forEach(task => {
+      const sessions = allTaskSessions.get(task.id) || []
+      sessions.forEach((s: any, idx: number) => {
+        if (!s?.started_at) return
+        const start = parseIsoAsUtc(s.started_at)
+        const stIso = `${start.getFullYear()}-${String(start.getMonth()+1).padStart(2,'0')}-${String(start.getDate()).padStart(2,'0')}`
+        if (stIso !== dateIso) return
+        const end = s.ended_at ? parseIsoAsUtc(s.ended_at) : new Date()
+        const sm = minutesOf(start)
+        const em = Math.max(sm + 15, minutesOf(end))
+        evs.push({ id: `t:${task.id}:${idx}`, startMin: sm, endMin: em })
+      })
+    })
+
+    routines.forEach(routine => {
+      const sessions = allRoutineSessions.get(routine.id) || []
+      sessions.forEach((s: any, idx: number) => {
+        if (!s?.started_at) return
+        const start = parseIsoAsUtc(s.started_at)
+        const end = s.ended_at ? parseIsoAsUtc(s.ended_at) : new Date()
+        const sm = minutesOf(start)
+        const em = Math.max(sm + 15, minutesOf(end))
+        evs.push({ id: `rs:${routine.id}:${idx}`, startMin: sm, endMin: em })
+      })
+    })
+
+    routinesForDay(dateIso).forEach(routine => {
+      if (!routine.start_time || !routine.end_time) return
+      const [sh, sm] = routine.start_time.split(':').map(Number)
+      const [eh, em] = routine.end_time.split(':').map(Number)
+      const sMin = sh * 60 + sm
+      const eMin = eh * 60 + em
+      if (eMin <= sMin) return
+      evs.push({ id: `r:${routine.id}`, startMin: sMin, endMin: eMin })
+    })
+
+    return computeEventLayout(evs)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [quests, tasks, routines, allSessions, allTaskSessions, allRoutineSessions, dateIso])
 
   return (
     <div style={{ padding: '32px 24px', maxWidth: 1000, margin: '0 auto', color: 'var(--color-text-primary)' }}>
@@ -264,6 +420,7 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger }: 
                   <div
                     key={hour}
                     style={{
+                      position: 'relative',
                       height: 60 * timelineZoom,
                       display: 'flex',
                       alignItems: 'flex-start',
@@ -275,6 +432,20 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger }: 
                     }}
                   >
                     {String(hour).padStart(2, '0')}:00
+                    {/* Marca de :30 — só aparece com zoom suficiente pra caber
+                        sem colidir com o rótulo da hora. */}
+                    {timelineZoom >= 1 && (
+                      <span style={{
+                        position: 'absolute',
+                        top: '50%', right: 8,
+                        transform: 'translateY(-50%)',
+                        fontSize: 9,
+                        color: 'var(--color-text-tertiary)',
+                        opacity: 0.55,
+                      }}>
+                        {String(hour).padStart(2, '0')}:30
+                      </span>
+                    )}
                   </div>
                 ))}
               </div>
@@ -318,7 +489,23 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger }: 
                     onMouseLeave={(e) => {
                       e.currentTarget.style.backgroundColor = 'transparent'
                     }}
-                  />
+                  >
+                    {/* Marca visual de :30 no timeline — linha tracejada sutil
+                        pra bater com o rótulo :30 da coluna de horas. Só
+                        aparece com zoom suficiente. */}
+                    {timelineZoom >= 1 && (
+                      <div
+                        aria-hidden
+                        style={{
+                          position: 'absolute',
+                          top: '50%', left: 0, right: 0,
+                          borderTop: '1px dashed var(--color-divider)',
+                          opacity: 0.45,
+                          pointerEvents: 'none',
+                        }}
+                      />
+                    )}
+                  </div>
                 ))}
 
                 {dateIso === todayIso && (
@@ -402,48 +589,101 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger }: 
                     const startHour = start.getHours() + start.getMinutes() / 60
                     const duration = (end.getTime() - start.getTime()) / (1000 * 60 * 60)
                     const topPercent = 20 + (startHour % 24) * 60 * timelineZoom
-                    const heightPercent = Math.max(15, duration * 60 * timelineZoom)
+                    // Altura 100% proporcional à duração real (1 min = 1px no
+                    // zoom padrão). Sem piso mínimo — blocos curtos ficam
+                    // finos, e o usuário pode dar zoom in pra inspecionar.
+                    const heightPercent = duration * 60 * timelineZoom
                     const displayTitle = parentQuest ? `${parentQuest.title} > ${quest.title}` : quest.title
 
+                    const lay = dayEventLayout.get(`q:${quest.id}:${idx}`) ?? { col: 0, cols: 1 }
+                    const lane = laneStyle(lay.col, lay.cols)
+                    // Eventos < 25min são finos demais pra caber título +
+                    // horário dentro. Move o título pra LINHA ACIMA do bloco;
+                    // o bloco vira só a faixa colorida, e um tooltip completa
+                    // o contexto (título + horário) no hover.
+                    const durationMin = duration * 60
+                    const isShort = durationMin < 25
+                    const timeLabel = start.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', hour12: false })
+                      + (end ? ` → ${end.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', hour12: false })}` : '')
                     return (
-                      <div
-                        key={`${quest.id}-${idx}`}
-                        style={{
-                          position: 'absolute',
-                          left: '4px',
-                          right: '4px',
-                          top: `${topPercent}px`,
-                          height: `${heightPercent}px`,
-                          background: getAreaColor(quest.area_slug, areas),
-                          borderRadius: 3,
-                          padding: '4px',
-                          overflow: 'hidden',
-                          display: 'flex',
-                          flexDirection: 'column',
-                          justifyContent: 'space-between',
-                          cursor: 'pointer',
-                          opacity: 0.85,
-                          transition: 'opacity 0.15s, box-shadow 0.15s',
-                          boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
-                          border: '1px solid rgba(255,255,255,0.2)',
-                        }}
-                        onMouseEnter={e => {
-                          e.currentTarget.style.opacity = '1'
-                          e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.5)'
-                        }}
-                        onMouseLeave={e => {
-                          e.currentTarget.style.opacity = '0.85'
-                          e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.3)'
-                        }}
-                      >
-                        <div style={{ fontSize: 9, color: '#fff', fontWeight: 600, lineHeight: 1.2, wordBreak: 'break-word' }}>
-                          {displayTitle.substring(0, 35)}
+                      <Fragment key={`q-${quest.id}-${idx}`}>
+                        {isShort && (
+                          <>
+                            <div
+                              title={`${displayTitle} · ${timeLabel}`}
+                              style={{
+                                position: 'absolute',
+                                left: lane.left, width: lane.width,
+                                top: `${topPercent - 24}px`,
+                                fontSize: 8, fontWeight: 400, lineHeight: 1,
+                                color: 'var(--color-text-muted)',
+                                fontFamily: "'IBM Plex Mono', monospace",
+                                whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                                paddingLeft: 2, paddingRight: 2,
+                                zIndex: 3,
+                              }}
+                            >
+                              {timeLabel}
+                            </div>
+                            <div
+                              title={`${displayTitle} · ${timeLabel}`}
+                              style={{
+                                position: 'absolute',
+                                left: lane.left, width: lane.width,
+                                top: `${topPercent - 13}px`,
+                                fontSize: 9, fontWeight: 600, lineHeight: 1.1,
+                                color: 'var(--color-text-primary)',
+                                whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                                paddingLeft: 2, paddingRight: 2,
+                                zIndex: 3,
+                              }}
+                            >
+                              {displayTitle}
+                            </div>
+                          </>
+                        )}
+                        <div
+                          title={`${displayTitle} · ${timeLabel}`}
+                          style={{
+                            position: 'absolute',
+                            left: lane.left,
+                            width: lane.width,
+                            top: `${topPercent}px`,
+                            height: `${heightPercent}px`,
+                            background: getAreaColor(quest.area_slug, areas),
+                            borderRadius: 3,
+                            padding: isShort ? '0' : '4px',
+                            overflow: 'hidden',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            justifyContent: 'space-between',
+                            cursor: 'pointer',
+                            opacity: 0.85,
+                            transition: 'opacity 0.15s, box-shadow 0.15s',
+                            boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+                            border: '1px solid rgba(255,255,255,0.2)',
+                          }}
+                          onMouseEnter={e => {
+                            e.currentTarget.style.opacity = '1'
+                            e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.5)'
+                          }}
+                          onMouseLeave={e => {
+                            e.currentTarget.style.opacity = '0.85'
+                            e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.3)'
+                          }}
+                        >
+                          {!isShort && (
+                            <>
+                              <div style={{ fontSize: 9, color: '#fff', fontWeight: 600, lineHeight: 1.2, wordBreak: 'break-word' }}>
+                                {displayTitle.substring(0, 35)}
+                              </div>
+                              <div style={{ fontSize: 8, color: 'rgba(255,255,255,0.9)', marginTop: 2 }}>
+                                {timeLabel}
+                              </div>
+                            </>
+                          )}
                         </div>
-                        <div style={{ fontSize: 8, color: 'rgba(255,255,255,0.9)', marginTop: 2 }}>
-                          {start.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', hour12: false })}
-                          {end && ` → ${end.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', hour12: false })}`}
-                        </div>
-                      </div>
+                      </Fragment>
                     )
                   })
                 })}
@@ -463,32 +703,80 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger }: 
                     const startHour = start.getHours() + start.getMinutes() / 60
                     const duration = (end.getTime() - start.getTime()) / (1000 * 60 * 60)
                     const topPercent = 20 + (startHour % 24) * 60 * timelineZoom
-                    const heightPercent = Math.max(15, duration * 60 * timelineZoom)
+                    // Altura 100% proporcional à duração real (1 min = 1px no
+                    // zoom padrão). Sem piso mínimo — blocos curtos ficam
+                    // finos, e o usuário pode dar zoom in pra inspecionar.
+                    const heightPercent = duration * 60 * timelineZoom
                     const running = !session.ended_at
+                    const lay = dayEventLayout.get(`t:${task.id}:${idx}`) ?? { col: 0, cols: 1 }
+                    const lane = laneStyle(lay.col, lay.cols)
+                    const durationMin = duration * 60
+                    const isShort = durationMin < 25
+                    const timeLabel = start.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', hour12: false })
+                      + ` → ${end.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', hour12: false })}`
                     return (
-                      <div
-                        key={`task-sess-${task.id}-${idx}`}
-                        title={`${task.title} · ${running ? 'rodando' : 'finalizada'}`}
-                        style={{
-                          position: 'absolute', left: '4px', right: '4px',
-                          top: `${topPercent}px`, height: `${heightPercent}px`,
-                          background: 'var(--color-gold)',
-                          border: running ? '1px dashed #fff' : '1px solid rgba(255,255,255,0.2)',
-                          borderRadius: 3, padding: '4px',
-                          overflow: 'hidden',
-                          display: 'flex', flexDirection: 'column', justifyContent: 'space-between',
-                          opacity: 0.85,
-                          boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
-                        }}
-                      >
-                        <div style={{ fontSize: 9, color: '#fff', fontWeight: 600, lineHeight: 1.2 }}>
-                          {task.title.substring(0, 35)}
+                      <Fragment key={`task-sess-${task.id}-${idx}`}>
+                        {isShort && (
+                          <>
+                            <div
+                              title={`${task.title} · ${timeLabel}`}
+                              style={{
+                                position: 'absolute',
+                                left: lane.left, width: lane.width,
+                                top: `${topPercent - 24}px`,
+                                fontSize: 8, fontWeight: 400, lineHeight: 1,
+                                color: 'var(--color-text-muted)',
+                                fontFamily: "'IBM Plex Mono', monospace",
+                                whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                                paddingLeft: 2, paddingRight: 2,
+                                zIndex: 3,
+                              }}
+                            >
+                              {timeLabel}
+                            </div>
+                            <div
+                              title={`${task.title} · ${timeLabel}`}
+                              style={{
+                                position: 'absolute',
+                                left: lane.left, width: lane.width,
+                                top: `${topPercent - 13}px`,
+                                fontSize: 9, fontWeight: 600, lineHeight: 1.1,
+                                color: 'var(--color-text-primary)',
+                                whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                                paddingLeft: 2, paddingRight: 2,
+                                zIndex: 3,
+                              }}
+                            >
+                              {task.title}
+                            </div>
+                          </>
+                        )}
+                        <div
+                          title={`${task.title} · ${running ? 'rodando' : 'finalizada'} · ${timeLabel}`}
+                          style={{
+                            position: 'absolute', left: lane.left, width: lane.width,
+                            top: `${topPercent}px`, height: `${heightPercent}px`,
+                            background: 'var(--color-gold)',
+                            border: running ? '1px dashed #fff' : '1px solid rgba(255,255,255,0.2)',
+                            borderRadius: 3, padding: isShort ? '0' : '4px',
+                            overflow: 'hidden',
+                            display: 'flex', flexDirection: 'column', justifyContent: 'space-between',
+                            opacity: 0.85,
+                            boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+                          }}
+                        >
+                          {!isShort && (
+                            <>
+                              <div style={{ fontSize: 9, color: '#fff', fontWeight: 600, lineHeight: 1.2 }}>
+                                {task.title.substring(0, 35)}
+                              </div>
+                              <div style={{ fontSize: 8, color: 'rgba(255,255,255,0.9)', marginTop: 2 }}>
+                                {timeLabel}
+                              </div>
+                            </>
+                          )}
                         </div>
-                        <div style={{ fontSize: 8, color: 'rgba(255,255,255,0.9)', marginTop: 2 }}>
-                          {start.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', hour12: false })}
-                          {` → ${end.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', hour12: false })}`}
-                        </div>
-                      </div>
+                      </Fragment>
                     )
                   })
                 })}
@@ -503,32 +791,80 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger }: 
                     const startHour = start.getHours() + start.getMinutes() / 60
                     const duration = (end.getTime() - start.getTime()) / (1000 * 60 * 60)
                     const topPercent = 20 + (startHour % 24) * 60 * timelineZoom
-                    const heightPercent = Math.max(15, duration * 60 * timelineZoom)
+                    // Altura 100% proporcional à duração real (1 min = 1px no
+                    // zoom padrão). Sem piso mínimo — blocos curtos ficam
+                    // finos, e o usuário pode dar zoom in pra inspecionar.
+                    const heightPercent = duration * 60 * timelineZoom
                     const running = !session.ended_at
+                    const lay = dayEventLayout.get(`rs:${routine.id}:${idx}`) ?? { col: 0, cols: 1 }
+                    const lane = laneStyle(lay.col, lay.cols)
+                    const durationMin = duration * 60
+                    const isShort = durationMin < 25
+                    const timeLabel = start.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', hour12: false })
+                      + ` → ${end.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', hour12: false })}`
                     return (
-                      <div
-                        key={`routine-sess-${routine.id}-${idx}`}
-                        title={`${routine.title} · ${running ? 'rodando' : 'finalizada'}`}
-                        style={{
-                          position: 'absolute', left: '4px', right: '4px',
-                          top: `${topPercent}px`, height: `${heightPercent}px`,
-                          background: 'var(--color-routine-block)',
-                          border: running ? '1px dashed #fff' : '1px solid var(--color-routine-block-border)',
-                          borderRadius: 3, padding: '4px',
-                          overflow: 'hidden',
-                          display: 'flex', flexDirection: 'column', justifyContent: 'space-between',
-                          opacity: 0.9,
-                          boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
-                        }}
-                      >
-                        <div style={{ fontSize: 9, color: '#fff', fontWeight: 600, lineHeight: 1.2 }}>
-                          {routine.title.substring(0, 35)}
+                      <Fragment key={`routine-sess-${routine.id}-${idx}`}>
+                        {isShort && (
+                          <>
+                            <div
+                              title={`${routine.title} · ${timeLabel}`}
+                              style={{
+                                position: 'absolute',
+                                left: lane.left, width: lane.width,
+                                top: `${topPercent - 24}px`,
+                                fontSize: 8, fontWeight: 400, lineHeight: 1,
+                                color: 'var(--color-text-muted)',
+                                fontFamily: "'IBM Plex Mono', monospace",
+                                whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                                paddingLeft: 2, paddingRight: 2,
+                                zIndex: 3,
+                              }}
+                            >
+                              {timeLabel}
+                            </div>
+                            <div
+                              title={`${routine.title} · ${timeLabel}`}
+                              style={{
+                                position: 'absolute',
+                                left: lane.left, width: lane.width,
+                                top: `${topPercent - 13}px`,
+                                fontSize: 9, fontWeight: 600, lineHeight: 1.1,
+                                color: 'var(--color-text-primary)',
+                                whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                                paddingLeft: 2, paddingRight: 2,
+                                zIndex: 3,
+                              }}
+                            >
+                              {routine.title}
+                            </div>
+                          </>
+                        )}
+                        <div
+                          title={`${routine.title} · ${running ? 'rodando' : 'finalizada'} · ${timeLabel}`}
+                          style={{
+                            position: 'absolute', left: lane.left, width: lane.width,
+                            top: `${topPercent}px`, height: `${heightPercent}px`,
+                            background: 'var(--color-routine-block)',
+                            border: running ? '1px dashed #fff' : '1px solid var(--color-routine-block-border)',
+                            borderRadius: 3, padding: isShort ? '0' : '4px',
+                            overflow: 'hidden',
+                            display: 'flex', flexDirection: 'column', justifyContent: 'space-between',
+                            opacity: 0.9,
+                            boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+                          }}
+                        >
+                          {!isShort && (
+                            <>
+                              <div style={{ fontSize: 9, color: '#fff', fontWeight: 600, lineHeight: 1.2 }}>
+                                {routine.title.substring(0, 35)}
+                              </div>
+                              <div style={{ fontSize: 8, color: 'rgba(255,255,255,0.9)', marginTop: 2 }}>
+                                {timeLabel}
+                              </div>
+                            </>
+                          )}
                         </div>
-                        <div style={{ fontSize: 8, color: 'rgba(255,255,255,0.9)', marginTop: 2 }}>
-                          {start.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', hour12: false })}
-                          {` → ${end.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', hour12: false })}`}
-                        </div>
-                      </div>
+                      </Fragment>
                     )
                   })
                 })}
@@ -544,84 +880,135 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger }: 
                   const duration = endTotal - startTotal
 
                   const topPercent = 20 + startTotal * 60 * timelineZoom
-                  const heightPercent = Math.max(15, duration * 60 * timelineZoom)
+                  // Altura 100% proporcional à duração real (1 min = 1px no
+                  // zoom padrão). Rótulo move pra cima do bloco quando < 25min.
+                  const heightPercent = duration * 60 * timelineZoom
+                  const durationMin = duration * 60
+                  const isShort = durationMin < 25
+                  const timeLabel = `${routine.start_time} – ${routine.end_time}`
 
+                  const lay = dayEventLayout.get(`r:${routine.id}`) ?? { col: 0, cols: 1 }
+                  const lane = laneStyle(lay.col, lay.cols)
                   return (
-                    <div
-                      key={routine.id}
-                      style={{
-                        position: 'absolute',
-                        left: '4px',
-                        right: '4px',
-                        top: `${topPercent}px`,
-                        height: `${heightPercent}px`,
-                        background: 'var(--color-routine-block)',
-                        borderRadius: 3,
-                        border: '1px solid var(--color-routine-block-border)',
-                        padding: '4px',
-                        overflow: 'hidden',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        justifyContent: 'space-between',
-                        cursor: 'pointer',
-                        opacity: routine.done ? 0.5 : 0.85,
-                        transition: 'opacity 0.15s, box-shadow 0.15s',
-                        boxShadow: '0 2px 6px rgba(0,0,0,0.2)',
-                      }}
-                      onMouseEnter={e => {
-                        e.currentTarget.style.opacity = routine.done ? '0.6' : '1'
-                        e.currentTarget.style.boxShadow = '0 4px 10px rgba(0,0,0,0.4)'
-                      }}
-                      onMouseLeave={e => {
-                        e.currentTarget.style.opacity = routine.done ? '0.5' : '0.85'
-                        e.currentTarget.style.boxShadow = '0 2px 6px rgba(0,0,0,0.2)'
-                      }}
-                    >
-                      <div style={{
-                        fontSize: 9,
-                        color: routine.done ? 'var(--color-text-secondary)' : 'var(--color-text-primary)',
-                        fontWeight: 500,
-                        lineHeight: 1,
-                        textDecoration: routine.done ? 'line-through' : 'none',
-                      }}>
-                        {routine.title.substring(0, 25)}
-                      </div>
-                      <div style={{
-                        fontSize: 7,
-                        color: routine.done ? 'var(--color-text-tertiary)' : 'var(--color-text-secondary)',
-                        marginTop: 2,
-                      }}>
-                        {routine.start_time} – {routine.end_time}
-                      </div>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          if (confirm(`Excluir rotina "${routine.title}"?`)) {
-                            deleteRoutine(routine.id)
-                              .then(() => setRoutines(rs => rs.filter(r => r.id !== routine.id)))
-                              .catch(() => alert('Erro ao excluir rotina'))
-                          }
-                        }}
+                    <Fragment key={routine.id}>
+                      {isShort && (
+                        <>
+                          <div
+                            title={`${routine.title} · ${timeLabel}`}
+                            style={{
+                              position: 'absolute',
+                              left: lane.left, width: lane.width,
+                              top: `${topPercent - 24}px`,
+                              fontSize: 8, fontWeight: 400, lineHeight: 1,
+                              color: 'var(--color-text-muted)',
+                              fontFamily: "'IBM Plex Mono', monospace",
+                              whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                              paddingLeft: 2, paddingRight: 2,
+                              zIndex: 3,
+                            }}
+                          >
+                            {timeLabel}
+                          </div>
+                          <div
+                            title={`${routine.title} · ${timeLabel}`}
+                            style={{
+                              position: 'absolute',
+                              left: lane.left, width: lane.width,
+                              top: `${topPercent - 13}px`,
+                              fontSize: 9, fontWeight: 600, lineHeight: 1.1,
+                              color: routine.done ? 'var(--color-text-tertiary)' : 'var(--color-text-primary)',
+                              textDecoration: routine.done ? 'line-through' : 'none',
+                              whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                              paddingLeft: 2, paddingRight: 2,
+                              zIndex: 3,
+                            }}
+                          >
+                            {routine.title}
+                          </div>
+                        </>
+                      )}
+                      <div
+                        title={`${routine.title} · ${timeLabel}`}
                         style={{
                           position: 'absolute',
-                          top: '2px',
-                          right: '2px',
-                          background: 'none',
-                          border: 'none',
-                          color: 'var(--color-error)',
+                          left: lane.left,
+                          width: lane.width,
+                          top: `${topPercent}px`,
+                          height: `${heightPercent}px`,
+                          background: 'var(--color-routine-block)',
+                          borderRadius: 3,
+                          border: '1px solid var(--color-routine-block-border)',
+                          padding: isShort ? '0' : '4px',
+                          overflow: 'hidden',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          justifyContent: 'space-between',
                           cursor: 'pointer',
-                          fontSize: '10px',
-                          padding: '2px 4px',
-                          opacity: 0.6,
-                          transition: 'opacity 0.15s',
+                          opacity: routine.done ? 0.5 : 0.85,
+                          transition: 'opacity 0.15s, box-shadow 0.15s',
+                          boxShadow: '0 2px 6px rgba(0,0,0,0.2)',
                         }}
-                        onMouseEnter={e => (e.currentTarget.style.opacity = '1')}
-                        onMouseLeave={e => (e.currentTarget.style.opacity = '0.6')}
-                        title="Excluir rotina"
+                        onMouseEnter={e => {
+                          e.currentTarget.style.opacity = routine.done ? '0.6' : '1'
+                          e.currentTarget.style.boxShadow = '0 4px 10px rgba(0,0,0,0.4)'
+                        }}
+                        onMouseLeave={e => {
+                          e.currentTarget.style.opacity = routine.done ? '0.5' : '0.85'
+                          e.currentTarget.style.boxShadow = '0 2px 6px rgba(0,0,0,0.2)'
+                        }}
                       >
-                        ✕
-                      </button>
-                    </div>
+                        {!isShort && (
+                          <>
+                            <div style={{
+                              fontSize: 9,
+                              color: routine.done ? 'var(--color-text-secondary)' : 'var(--color-text-primary)',
+                              fontWeight: 500,
+                              lineHeight: 1,
+                              textDecoration: routine.done ? 'line-through' : 'none',
+                            }}>
+                              {routine.title.substring(0, 25)}
+                            </div>
+                            <div style={{
+                              fontSize: 7,
+                              color: routine.done ? 'var(--color-text-tertiary)' : 'var(--color-text-secondary)',
+                              marginTop: 2,
+                            }}>
+                              {timeLabel}
+                            </div>
+                          </>
+                        )}
+                        {!isShort && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              if (confirm(`Excluir rotina "${routine.title}"?`)) {
+                                deleteRoutine(routine.id)
+                                  .then(() => setRoutines(rs => rs.filter(r => r.id !== routine.id)))
+                                  .catch(() => alert('Erro ao excluir rotina'))
+                              }
+                            }}
+                            style={{
+                              position: 'absolute',
+                              top: '2px',
+                              right: '2px',
+                              background: 'none',
+                              border: 'none',
+                              color: 'var(--color-error)',
+                              cursor: 'pointer',
+                              fontSize: '10px',
+                              padding: '2px 4px',
+                              opacity: 0.6,
+                              transition: 'opacity 0.15s',
+                            }}
+                            onMouseEnter={e => (e.currentTarget.style.opacity = '1')}
+                            onMouseLeave={e => (e.currentTarget.style.opacity = '0.6')}
+                            title="Excluir rotina"
+                          >
+                            ✕
+                          </button>
+                        )}
+                      </div>
+                    </Fragment>
                   )
                 })}
               </div>
@@ -1182,9 +1569,12 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger }: 
               // Semana começa na segunda: dom=6, seg=0, ter=1, ...
               const firstDay = (new Date(year, monthIdx, 1).getDay() + 6) % 7
               const daysInMonth = new Date(year, monthIdx + 1, 0).getDate()
+              // Visão "ano": quest é do mês se sua deadline efetiva (entregável
+              // ou projeto) cai dentro dele.
               const monthQuests = quests.filter(q => {
-                if (!q.deadline) return false
-                const parts = q.deadline.split('-')
+                const dl = effectiveQuestDeadline(q, delivsByProject, projects)
+                if (!dl) return false
+                const parts = dl.split('-')
                 return parseInt(parts[0]) === year && parseInt(parts[1]) === monthIdx + 1
               })
               const totalDeadlines = monthQuests.length
@@ -1212,7 +1602,9 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger }: 
                     {Array.from({ length: daysInMonth }).map((_, dayIdx) => {
                       const day = dayIdx + 1
                       const dayIso = `${year}-${String(monthIdx+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`
-                      const hasDeadline = monthQuests.some(q => q.deadline === dayIso)
+                      const hasDeadline = monthQuests.some(q =>
+                        effectiveQuestDeadline(q, delivsByProject, projects) === dayIso
+                      )
 
                       return (
                         <div

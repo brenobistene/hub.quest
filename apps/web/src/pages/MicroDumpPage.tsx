@@ -6,6 +6,7 @@ import {
   createTask, createRoutine,
   reportApiError,
 } from '../api'
+import { parseTimeToMinutes, isValidDateInput } from '../utils/datetime'
 
 /**
  * `/micro-dump` — inbox pra capturar ideias soltas sem triagem. Cada item
@@ -23,6 +24,11 @@ export function MicroDumpView({ areas, projects, onArchive }: { areas: Area[]; p
   const [modalMode, setModalMode] = useState<'tarefa' | 'quest' | 'rotina' | null>(null)
   const [selectedMicroTask, setSelectedMicroTask] = useState<any | null>(null)
   const [formData, setFormData] = useState<any>({})
+  // Buffer de texto dos inputs h:mm — permite digitação intermediária (ex:
+  // "1:") sem perder o caractere enquanto `parseTimeToMinutes` ainda não
+  // consegue extrair um valor numérico.
+  const [durationInput, setDurationInput] = useState<string>('')
+  const [estimatedInput, setEstimatedInput] = useState<string>('')
 
   async function consumeMicroTask(id: string) {
     try { await deleteMicroTask(id) } catch {}
@@ -181,7 +187,7 @@ export function MicroDumpView({ areas, projects, onArchive }: { areas: Area[]; p
 
                 <div style={{ display: 'flex', gap: 6, paddingLeft: 20, fontSize: 9, flexWrap: 'wrap' }}>
                   <button
-                    onClick={() => { setSelectedMicroTask(task); setModalMode('tarefa'); setFormData({ title: task.title }) }}
+                    onClick={() => { setSelectedMicroTask(task); setModalMode('tarefa'); setFormData({ title: task.title }); setDurationInput(''); setEstimatedInput('') }}
                     style={{
                       background: 'transparent',
                       border: '1px solid var(--color-border)',
@@ -199,7 +205,7 @@ export function MicroDumpView({ areas, projects, onArchive }: { areas: Area[]; p
                     → Tarefa
                   </button>
                   <button
-                    onClick={() => { setSelectedMicroTask(task); setModalMode('quest'); setFormData({ title: task.title, area_slug: areas[0]?.slug || '' }) }}
+                    onClick={() => { setSelectedMicroTask(task); setModalMode('quest'); setFormData({ title: task.title, area_slug: areas[0]?.slug || '' }); setDurationInput(''); setEstimatedInput('') }}
                     style={{
                       background: 'transparent',
                       border: '1px solid var(--color-border)',
@@ -217,7 +223,7 @@ export function MicroDumpView({ areas, projects, onArchive }: { areas: Area[]; p
                     → Quest
                   </button>
                   <button
-                    onClick={() => { setSelectedMicroTask(task); setModalMode('rotina'); setFormData({ title: task.title }) }}
+                    onClick={() => { setSelectedMicroTask(task); setModalMode('rotina'); setFormData({ title: task.title }); setDurationInput(''); setEstimatedInput('') }}
                     style={{
                       background: 'transparent',
                       border: '1px solid var(--color-border)',
@@ -399,7 +405,11 @@ export function MicroDumpView({ areas, projects, onArchive }: { areas: Area[]; p
                     type="date"
                     autoComplete="off"
                     value={formData.scheduled_date || ''}
-                    onChange={e => setFormData({ ...formData, scheduled_date: e.target.value || null })}
+                    onChange={e => {
+                      if (isValidDateInput(e.target.value)) {
+                        setFormData({ ...formData, scheduled_date: e.target.value || null })
+                      }
+                    }}
                     style={{
                       width: '100%', background: 'var(--color-bg-tertiary)', border: '1px solid var(--color-border)',
                       color: 'var(--color-text-primary)', padding: '8px 10px', fontSize: 12, borderRadius: 3, outline: 'none',
@@ -441,15 +451,19 @@ export function MicroDumpView({ areas, projects, onArchive }: { areas: Area[]; p
 
                 <div style={{ marginBottom: 16 }}>
                   <label style={{ fontSize: 11, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.1em', display: 'block', marginBottom: 8, fontWeight: 600 }}>
-                    Duração estimada (minutos, opcional)
+                    Duração estimada (opcional)
                   </label>
                   <input
-                    type="number"
+                    type="text"
                     autoComplete="off"
-                    min={1}
-                    placeholder="30"
-                    value={formData.duration_minutes || ''}
-                    onChange={e => setFormData({ ...formData, duration_minutes: e.target.value ? parseInt(e.target.value) : null })}
+                    placeholder="h:mm (ex: 1:30) ou minutos"
+                    title="Aceita '1:30' ou '90' (minutos)"
+                    value={durationInput}
+                    onChange={e => {
+                      setDurationInput(e.target.value)
+                      const parsed = parseTimeToMinutes(e.target.value)
+                      setFormData({ ...formData, duration_minutes: parsed ?? null })
+                    }}
                     style={{
                       width: '100%', background: 'var(--color-bg-tertiary)', border: '1px solid var(--color-border)', color: 'var(--color-text-primary)',
                       padding: '8px 10px', fontSize: 12, borderRadius: 3, outline: 'none', boxSizing: 'border-box',
@@ -554,15 +568,19 @@ export function MicroDumpView({ areas, projects, onArchive }: { areas: Area[]; p
                 {!formData.start_time && !formData.end_time && (
                   <div style={{ marginBottom: 16 }}>
                     <label style={{ fontSize: 11, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.1em', display: 'block', marginBottom: 8, fontWeight: 600 }}>
-                      Duração estimada (minutos)
+                      Duração estimada
                     </label>
                     <input
-                      type="number"
+                      type="text"
                       autoComplete="off"
-                      min="0"
-                      placeholder="30"
-                      value={formData.estimated_minutes || ''}
-                      onChange={e => setFormData({ ...formData, estimated_minutes: e.target.value ? parseInt(e.target.value) : null })}
+                      placeholder="h:mm (ex: 1:30) ou minutos"
+                      title="Aceita '1:30' ou '90' (minutos)"
+                      value={estimatedInput}
+                      onChange={e => {
+                        setEstimatedInput(e.target.value)
+                        const parsed = parseTimeToMinutes(e.target.value)
+                        setFormData({ ...formData, estimated_minutes: parsed ?? null })
+                      }}
                       onFocus={e => {
                         e.currentTarget.style.borderColor = 'var(--color-accent-primary)'
                         e.currentTarget.style.boxShadow = '0 0 0 2px rgba(139, 46, 46, 0.2)'
