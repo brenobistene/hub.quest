@@ -6,7 +6,9 @@ REM Instala Python, Node.js e Git via winget (se ainda nao
 REM tiverem) e roda os installs de dependencias do backend
 REM (pip) e frontend (npm). Por fim cria atalho no Desktop.
 REM
-REM Requisito: Windows 10 1709+ ou Windows 11 (com winget).
+REM Requisito: Windows 11 (winget vem por padrao).
+REM Tambem funciona no Windows 10 1709+ se o winget estiver instalado.
+REM
 REM Se algum comando falhar com "nao reconhecido" apos a
 REM instalacao, FECHE este terminal e abra outro — o Windows
 REM precisa de uma sessao nova pra ver os PATHs novos.

@@ -47,7 +47,8 @@ apps/web/public/foto.jpg
 apps/web/public/breno-perfil.jpg
 apps/web/public/*.personal.*
 
-# Documentação local — só o README vai pro repo. ARCHITECTURE, COMANDOS,
-# scans/auditorias, anotações etc. ficam fora.
+# Documentação local — só os .md públicos vão pro repo. ARCHITECTURE,
+# COMANDOS, scans/auditorias, anotações etc. ficam fora.
 *.md
 !README.md
+!INSTALL.md

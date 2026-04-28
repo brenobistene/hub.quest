@@ -49,9 +49,7 @@ Hierarquia: **Área → Projeto → Entregável → Quest**. Cada nível tem sua
 
 ## Instalação
 
-### Caminho automático (recomendado)
-
-Pré-requisito: Windows 10 1709+ ou Windows 11 (com `winget` disponível — vem por padrão).
+### Caminho automático — Windows 11 (recomendado)
 
 1. Clonar o repo:
    ```bash
@@ -59,34 +57,17 @@ Pré-requisito: Windows 10 1709+ ou Windows 11 (com `winget` disponível — vem
    cd hub.quest
    ```
 2. Duplo clique em **`setup.bat`** na raiz. Ele:
-   - Verifica e instala Python 3.12, Node.js LTS e Git via `winget` (se não tiverem)
+   - Verifica e instala **Python 3.12**, **Node.js LTS** e **Git** via `winget` (se ainda não tiverem)
    - Roda `pip install -r requirements.txt` no backend
    - Roda `npm install` no frontend
-   - Cria atalho do Hub Quest no Desktop com ícone customizado
-3. Quando terminar, duplo clique em **`Hub Quest`** no Desktop pra abrir o app.
+   - Cria um atalho **Hub Quest** no Desktop com ícone customizado
+3. Quando terminar, duplo clique em **Hub Quest** no Desktop pra abrir o app.
 
-> Se o `setup.bat` falhar dizendo "comando não encontrado" depois de instalar Python ou Node, **feche e reabra o terminal** — o Windows precisa de uma sessão nova pra ver os novos PATHs. Rode o `setup.bat` de novo.
+> Se o `setup.bat` reclamar de "comando não reconhecido" logo depois de instalar Python ou Node, **feche e reabra o terminal** — o Windows só vê os PATHs novos em sessões novas. Rode o `setup.bat` de novo.
 
 ### Caminho manual
 
-Se preferir comando por comando, ou estiver em macOS/Linux:
-
-```bash
-# Pré-requisitos: Python 3.12+, Node.js 20+, Git
-
-git clone https://github.com/brenobistene/hub.quest.git
-cd hub.quest
-
-# Backend
-cd apps/api
-pip install -r requirements.txt
-cd ../..
-
-# Frontend
-cd apps/web
-npm install
-cd ../..
-```
+Se preferir comando por comando, estiver em Windows 10, macOS ou Linux, ou quiser visibilidade do que está sendo instalado, siga **[INSTALL.md](INSTALL.md)** com os passos detalhados (instalação de Python/Node/Git + dependências + troubleshooting).
 
 ### Rodando o app
 
