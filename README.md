@@ -8,67 +8,122 @@ App pessoal de produtividade single-user — organiza projetos, tarefas, rotinas
 
 ## O que tem dentro
 
-**Dashboard** — visão geral da semana/mês. Status híbrido dos projetos (tudo em dia / em risco / atrasado), quanto você precisa trabalhar hoje pra se manter em dia, e o item mais urgente. Seção de próximas deadlines com filtros por tipo (projetos / entregáveis).
+**Dashboard** — visão geral da semana/mês. Status híbrido dos projetos (tudo em dia / em risco / atrasado), quanto você precisa trabalhar hoje pra se manter em dia, e o item mais urgente.
 
-**Dia** — planejamento do dia atual. Arrasta quests, tarefas e rotinas pros períodos (manhã / tarde / noite). Timer de sessão por item. Botão play/pause/stop com banner flutuante enquanto uma sessão está ativa.
+**Dia** — planejamento do dia atual. Arrasta quests, tarefas e rotinas pros períodos (manhã / tarde / noite). Timer de sessão por item, banner flutuante enquanto uma sessão está ativa, busca textual no drawer de planejar.
 
-**Calendário** — visões de dia, semana, mês e ano. Deadlines de projetos e entregáveis distribuídos nas datas. Blocos improdutivos (sono, refeições, transporte) configuráveis.
+**Calendário** — visões de dia, semana, mês e ano. Eventos sobrepostos exibidos lado a lado (estilo Google Calendar), altura proporcional à duração real, marcas de meia hora no zoom. Deadlines de projetos e entregáveis distribuídos nas datas. Blocos improdutivos configuráveis.
 
-**Quests** — lista agrupada dos projetos por área, com suas subtarefas. Entregáveis drag-and-drop reordenáveis, inline editing, descrição colapsável.
+**Quests** — lista agrupada dos projetos por área, com suas subtarefas. Entregáveis drag-and-drop reordenáveis, inline editing, descrição em editor estilo Notion (headings, bullets, checklists, divider).
 
-**Áreas** — 5 áreas de vida default (Freelas, Faculdade, Growth, Trabalho, Health), totalmente editáveis. Cada área tem cor própria que pinta os elementos relacionados no app todo.
+**Áreas** — áreas de vida totalmente editáveis. Cada área tem cor própria que pinta os elementos relacionados no app todo. Cards de projeto com barra de progresso (% de entregáveis concluídos), botões de finalizar / arquivar / excluir.
 
 **Tarefas** — to-dos soltos não amarrados a projetos. Agendáveis por data e hora.
 
 **Rotinas** — hábitos recorrentes (diário, dias úteis, semanal, mensal). Geram sessões no calendário automaticamente.
 
-**Micro Dump** — inbox pra ideias soltas que não viraram nada ainda. Arquivável.
+**Micro Dump** — inbox pra ideias soltas que não viraram nada ainda. Promove pra tarefa, quest ou rotina.
 
 ---
 
 ## Conceitos
 
-- **Quest** é a unidade central. Uma quest sem `parent_id` é um *projeto*; com `parent_id` é uma *subtarefa* daquele projeto.
-- **Deliverable** agrupa quests dentro de um projeto. Tem deadline própria e soma o tempo das quests filhas.
-- **Session** registra trabalho real numa quest/tarefa/rotina. Abertura e fechamento via play/pause/stop.
-- **Routine** é recorrente; gera uma sessão por ocorrência planejada.
-- **Task** é one-off — diferente de quest porque não tem complexidade de subtarefas, entregáveis, etc.
+Hierarquia: **Área → Projeto → Entregável → Quest**. Cada nível tem sua tabela própria.
 
-Ver [`ARCHITECTURE.md`](ARCHITECTURE.md) pra detalhe do modelo, estrutura de pastas e decisões.
+- **Project** é o container estratégico. Tem deadline, prioridade, status e notes. Pode ser arquivado (entra na "gaveta" sem perder dado).
+- **Deliverable** agrupa quests dentro de um projeto. Tem deadline própria. Marca-se automaticamente como `done` quando todas as quests filhas estão concluídas/canceladas.
+- **Quest** é a unidade de trabalho granular. Sempre amarrada a um projeto + entregável. Não tem deadline própria — herda do entregável (e do projeto, em fallback).
+- **Session** registra trabalho real numa quest/tarefa/rotina. Abertura e fechamento via play/pause/stop. Backend impede duas sessões abertas simultâneas.
+- **Routine** é recorrente; gera uma sessão por ocorrência planejada.
+- **Task** é one-off — diferente de quest porque não tem hierarquia (sem projeto/entregável).
 
 ---
 
 ## Stack
 
-- **Frontend:** React 19, Vite, TypeScript, React Router 7. Estilos predominantemente inline; ícones via Lucide.
+- **Frontend:** React 19, Vite, TypeScript, React Router 7. Estilos predominantemente inline; ícones via Lucide; editor Notion-like via BlockNote.
 - **Backend:** FastAPI (Python 3.12), SQLite local via `sqlite3` stdlib — sem ORM.
-- **Sem deploy** — roda na máquina do usuário. Banco fica em `apps/api/hubquest.db`, ignorado pelo Git.
+- **Sem deploy** — roda na máquina do usuário. Banco em `apps/api/hubquest.db` (ignorado pelo Git).
 
 ---
 
-## Rodando localmente
+## Instalação
 
-Ver [`COMANDOS.md`](COMANDOS.md) pra comandos prontos.
+### Caminho automático (recomendado)
 
-Resumo:
+Pré-requisito: Windows 10 1709+ ou Windows 11 (com `winget` disponível — vem por padrão).
+
+1. Clonar o repo:
+   ```bash
+   git clone https://github.com/brenobistene/hub.quest.git
+   cd hub.quest
+   ```
+2. Duplo clique em **`setup.bat`** na raiz. Ele:
+   - Verifica e instala Python 3.12, Node.js LTS e Git via `winget` (se não tiverem)
+   - Roda `pip install -r requirements.txt` no backend
+   - Roda `npm install` no frontend
+   - Cria atalho do Hub Quest no Desktop com ícone customizado
+3. Quando terminar, duplo clique em **`Hub Quest`** no Desktop pra abrir o app.
+
+> Se o `setup.bat` falhar dizendo "comando não encontrado" depois de instalar Python ou Node, **feche e reabra o terminal** — o Windows precisa de uma sessão nova pra ver os novos PATHs. Rode o `setup.bat` de novo.
+
+### Caminho manual
+
+Se preferir comando por comando, ou estiver em macOS/Linux:
 
 ```bash
-# Backend — porta 8001
-cd apps/api
-python main.py
+# Pré-requisitos: Python 3.12+, Node.js 20+, Git
 
-# Frontend — porta 5174+ (o Vite escolhe)
+git clone https://github.com/brenobistene/hub.quest.git
+cd hub.quest
+
+# Backend
+cd apps/api
+pip install -r requirements.txt
+cd ../..
+
+# Frontend
 cd apps/web
-npm install   # primeira vez
+npm install
+cd ../..
+```
+
+### Rodando o app
+
+**Windows (recomendado):** duplo clique no atalho **Hub Quest** do Desktop, ou no `start-hub.bat` da raiz. Sobe backend + frontend em duas abas do Windows Terminal e abre o Chrome em `http://localhost:5174/`.
+
+**Manual (qualquer SO):** dois terminais:
+
+```bash
+# Terminal 1 — backend (porta 8001)
+cd apps/api
+python -m uvicorn main:app --reload --port 8001
+
+# Terminal 2 — frontend (porta 5174 por default)
+cd apps/web
 npm run dev
 ```
 
-Abre o link que o Vite imprimir.
+Abrir o link que o Vite imprimir no terminal.
+
+---
+
+## Configuração opcional (.env)
+
+O backend roda sem `.env`. Pra ativar a integração opcional com Google Calendar, criar `apps/api/.env`:
+
+```env
+GOOGLE_CALENDAR_ENABLED=true
+GOOGLE_CALENDAR_ID=primary
+# + credentials.json e token.json no mesmo diretório (OAuth2)
+```
+
+Sem essas variáveis, o app funciona normalmente sem integração externa.
 
 ---
 
 ## Status
 
-Projeto pessoal em iteração ativa. Versão atual: `v0.1.0` (primeira release formal). Breaking changes podem acontecer a qualquer momento — não use em ambiente onde você não seja o próprio usuário.
+Projeto pessoal em iteração ativa. Versão atual: **v0.1.2**. Breaking changes podem acontecer a qualquer momento — não use em ambiente onde você não seja o próprio usuário.
 
 Issues e PRs estão abertos, mas não há compromisso de responder rápido.
