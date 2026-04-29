@@ -4,3 +4,7 @@ google-api-python-client>=2.120
 google-auth>=2.29
 google-auth-oauthlib>=1.2
 python-dotenv>=1.0
+# Provê IANA tz database em Python puro — necessário no Windows, onde
+# `zoneinfo` da stdlib não acha "America/Sao_Paulo" no SO. No-op em
+# Linux/macOS (já têm tzinfo do sistema, mas funciona como fallback).
+tzdata>=2024.1
