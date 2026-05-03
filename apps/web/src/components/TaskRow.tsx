@@ -228,7 +228,7 @@ export function TaskRow({ task, onToggle, onUpdate, onDelete, activeSession, onS
                 background: 'var(--color-bg-primary)', border: '1px solid var(--color-border)',
                 color: 'var(--color-text-primary)', fontSize: 10, padding: '2px 4px',
                 borderRadius: 2, outline: 'none', width: 60,
-                fontFamily: "'IBM Plex Mono', monospace",
+                fontFamily: 'var(--font-mono)',
               }}
             />
           ) : task.duration_minutes ? (

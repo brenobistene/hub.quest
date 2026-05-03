@@ -4,12 +4,19 @@ from typing import Optional
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, HTTPException, Query
+from pydantic import BaseModel
 
 from db import get_conn
 from models.routine import RoutineCreate, RoutineOut, RoutineSessionOut, RoutineUpdate
 from services.active_session import find_active_session
 from services.calendar_state import calendar_state
-from services.utils import utcnow_iso_z
+from services.utils import parse_iso, utcnow_iso_z
+
+
+class SessionEdit(BaseModel):
+    started_at: Optional[str] = None
+    ended_at: Optional[str] = None
+
 
 router = APIRouter()
 
@@ -476,3 +483,70 @@ def routine_stop_session(routine_id: str, target: Optional[str] = None):
         )
         conn.commit()
     return {"status": "ok", "routine_id": routine_id, "date": date_str, "done": True}
+
+
+# ─── Edição manual de sessão (correção retroativa) ─────────────────────────
+
+@router.patch("/api/routine-sessions/{session_id}")
+def edit_routine_session(session_id: int, body: SessionEdit):
+    fields = {k: v for k, v in body.model_dump(exclude_unset=True).items()}
+    if not fields:
+        raise HTTPException(400, detail="Nada pra atualizar")
+
+    with get_conn() as conn:
+        existing = conn.execute(
+            "SELECT * FROM routine_sessions WHERE id = ?", (session_id,)
+        ).fetchone()
+        if not existing:
+            raise HTTPException(404, detail="Sessão não encontrada")
+
+        if existing["ended_at"] is None and "ended_at" in fields and fields["ended_at"] is not None:
+            raise HTTPException(
+                422,
+                detail="Sessão em andamento — pause antes de editar o horário de fim.",
+            )
+
+        new_start = fields.get("started_at", existing["started_at"])
+        new_end = fields.get("ended_at", existing["ended_at"])
+        if new_end is not None:
+            try:
+                if parse_iso(new_end) <= parse_iso(new_start):
+                    raise HTTPException(422, detail="Horário de fim deve ser depois do início.")
+            except HTTPException:
+                raise
+            except Exception:
+                raise HTTPException(422, detail="Datas inválidas.")
+
+        set_clause = ", ".join(f"{k} = ?" for k in fields)
+        conn.execute(
+            f"UPDATE routine_sessions SET {set_clause} WHERE id = ?",
+            [*fields.values(), session_id],
+        )
+        conn.commit()
+
+        row = conn.execute(
+            "SELECT * FROM routine_sessions WHERE id = ?", (session_id,)
+        ).fetchone()
+
+        overlaps = []
+        if row["ended_at"]:
+            overlaps = conn.execute(
+                """SELECT id FROM routine_sessions
+                   WHERE routine_id = ? AND id != ?
+                     AND ended_at IS NOT NULL
+                     AND started_at < ?
+                     AND ended_at > ?""",
+                (existing["routine_id"], session_id, row["ended_at"], row["started_at"]),
+            ).fetchall()
+
+    return {**dict(row), "overlap_warning": len(overlaps) > 0}
+
+
+@router.delete("/api/routine-sessions/{session_id}", status_code=204)
+def delete_routine_session(session_id: int):
+    with get_conn() as conn:
+        res = conn.execute("DELETE FROM routine_sessions WHERE id = ?", (session_id,))
+        if res.rowcount == 0:
+            raise HTTPException(404, detail="Sessão não encontrada")
+        conn.commit()
+    return None

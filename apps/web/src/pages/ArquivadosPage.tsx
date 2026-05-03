@@ -41,7 +41,7 @@ export function ArquivadosView({ archivedIdeas, onDelete }: { archivedIdeas: Arr
           </div>
           <div style={{
             fontSize: 10, color: 'var(--color-text-muted)',
-            fontFamily: "'IBM Plex Mono', monospace",
+            fontFamily: 'var(--font-mono)',
           }}>
             {archivedIdeas.length}
           </div>
@@ -60,7 +60,7 @@ export function ArquivadosView({ archivedIdeas, onDelete }: { archivedIdeas: Arr
               >
                 <span style={{
                   fontSize: 10, color: 'var(--color-text-muted)',
-                  fontFamily: "'IBM Plex Mono', monospace",
+                  fontFamily: 'var(--font-mono)',
                   minWidth: 24, paddingTop: 2, textAlign: 'right',
                 }}>
                   {idx + 1}
@@ -71,7 +71,7 @@ export function ArquivadosView({ archivedIdeas, onDelete }: { archivedIdeas: Arr
                   </div>
                   <div style={{
                     fontSize: 10, color: 'var(--color-text-tertiary)', marginTop: 3,
-                    fontFamily: "'IBM Plex Mono', monospace", letterSpacing: '0.05em',
+                    fontFamily: 'var(--font-mono)', letterSpacing: '0.05em',
                   }}>
                     arquivado em {new Date(idea.created_at).toLocaleDateString('pt-BR')}
                   </div>

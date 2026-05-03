@@ -19,6 +19,98 @@ export interface Project {
   /** ISO quando projeto foi arquivado (gaveta). Null = ativo. */
   archived_at: string | null
   sort_order: number
+  /** Valor cobrado/acordado do projeto (BRL). Null = projeto não-monetizado
+   *  (estudo, área Trabalho fixa, hobby). Hub Finance usa pra calcular
+   *  R$/hora estimado contra o tempo total trabalhado nas quests. */
+  valor_acordado: number | null
+  /** Template informativo da forma de pagamento — só pra UI lembrar qual
+   *  template foi aplicado por último. Validações: 'a_vista' | '50_50' |
+   *  'parcelado_3x' | 'parcelado_4x' | 'custom'. */
+  forma_pagamento_template: string | null
+  /** Cliente vinculado (FK pra fin_client). Habilita auto-vínculo de
+   *  receita por CPF/CNPJ na descrição da transação. */
+  cliente_id: string | null
+}
+
+export interface FinClient {
+  id: string
+  nome: string
+  cpf_cnpj: string | null
+  notas: string | null
+  sort_order: number
+}
+
+export type FinInvoiceStatus = 'aberta' | 'fechada' | 'paga' | 'atrasada'
+
+export interface FinInvoice {
+  id: string
+  cartao_id: string
+  /** YYYY-MM (mês de referência da fatura — quando ela vai/foi paga). */
+  mes_referencia: string
+  data_fechamento: string | null
+  data_vencimento: string | null
+  data_pagamento: string | null
+  status: FinInvoiceStatus
+  /** Soma absoluta das compras vinculadas (computado pelo backend). */
+  total: number
+  transacoes_count: number
+}
+
+export interface FinFreelaProject {
+  id: string
+  title: string
+  status: string
+  valor_acordado: number | null
+  cliente_id: string | null
+  cliente_nome: string | null
+  forma_pagamento_template: string | null
+  horas_trabalhadas: number
+  valor_pago: number
+  valor_a_receber: number
+  parcelas_total: number
+  parcelas_pagas: number
+  /** valor_acordado / horas. null se sem horas ou sem valor. */
+  hourly_estimado: number | null
+  /** valor_pago / horas. null se nada pago ou sem horas. */
+  hourly_real: number | null
+  proxima_parcela: {
+    id: string
+    numero: number
+    valor: number
+    data_prevista: string | null
+  } | null
+}
+
+export interface FinHourlyRateStats {
+  /** R$/hora médio considerando só projetos freela com receita já recebida.
+   *  null quando não há dados suficientes (sem projetos com recebido + horas). */
+  media_real_brl_h: number | null
+  /** R$/hora médio considerando projetos com `valor_acordado` cadastrado
+   *  (mesmo sem recebimento). null quando vazio. */
+  media_estimada_brl_h: number | null
+  projetos_considerados_real: number
+  projetos_considerados_estim: number
+  horas_totais_real: number
+  horas_totais_estim: number
+  valor_recebido_total: number
+  valor_acordado_total: number
+}
+
+export type FinPaymentTemplate = 'a_vista' | '50_50' | 'parcelado_3x' | 'parcelado_4x' | 'custom'
+export type FinParcelaStatus = 'pendente' | 'recebido' | 'atrasado' | 'cancelada'
+
+export interface FinParcela {
+  id: string
+  projeto_id: string
+  numero: number
+  valor: number
+  data_prevista: string | null
+  status: FinParcelaStatus
+  observacao: string | null
+  /** ID da transação que pagou essa parcela (FK reverso). */
+  transacao_recebimento_id: string | null
+  /** Title do projeto (apenas no endpoint cross-projeto `/api/finance/parcelas`). */
+  projeto_titulo?: string
 }
 
 /**
@@ -152,4 +244,180 @@ export interface Task {
   priority: string
   /** Notas em formato BlockNote (JSON serializado). */
   description?: string | null
+}
+
+// ─── Hub Finance (v0) ─────────────────────────────────────────────────────
+
+export type FinAccountType = 'corrente' | 'credito' | 'wallet' | 'wise'
+export type FinAccountOrigin = 'manual' | 'pynubank'
+export type FinCategoryType = 'receita' | 'despesa' | 'estorno' | 'transferencia'
+
+export interface FinAccount {
+  id: string
+  nome: string
+  tipo: FinAccountType
+  moeda: string
+  origem_dados: FinAccountOrigin
+  sort_order: number
+  /** Saldo calculado pelo backend (soma das transações). */
+  saldo: number
+  /** Cotação manual da moeda nativa pra BRL (só usado se moeda != BRL).
+   *  Null = não converte (não soma no saldo total da Visão Geral). */
+  cotacao_brl: number | null
+}
+
+export interface FinCategory {
+  id: string
+  nome: string
+  tipo: FinCategoryType
+  cor: string | null
+  categoria_pai_id: string | null
+  sort_order: number
+  /** Limite mensal em BRL (apenas tipo despesa/receita).
+   *  Quando setado, alimenta o card de Orçamento na Visão Geral. */
+  limite_mensal: number | null
+}
+
+/** Item do card de orçamento — uma linha por categoria com limite definido. */
+export interface FinBudgetItem {
+  categoria_id: string
+  nome: string
+  tipo: FinCategoryType
+  cor: string | null
+  limite_mensal: number
+  consumido: number
+  restante: number
+  percent: number
+  transacoes_count: number
+}
+
+export interface FinBudget {
+  year: number
+  month: number
+  data_de?: string
+  data_ate?: string
+  items: FinBudgetItem[]
+}
+
+export interface FinTransaction {
+  id: string
+  /** YYYY-MM-DD */
+  data: string
+  /** Positivo = entrada, negativo = saída. */
+  valor: number
+  descricao: string
+  conta_id: string
+  categoria_id: string | null
+  origem: 'manual' | 'nubank_csv'
+  notas: string | null
+  /** Identificador único da transação no extrato Nubank (preenchido só
+   *  quando origem='nubank_csv'). Usado pra deduplicar import re-rodado. */
+  nubank_id: string | null
+  /** Vínculo opcional a uma dívida (faculdade, financiamento). Quando
+   *  preenchido e valor < 0, abate o saldo devedor da dívida. */
+  divida_id: string | null
+  /** Vínculo opcional a uma parcela esperada de projeto. Quando preenchido
+   *  e valor > 0, marca a parcela como 'recebido'. */
+  parcela_id: string | null
+  /** Vínculo opcional a uma fatura de cartão de crédito. Compras no cartão
+   *  são auto-vinculadas pela fatura aberta. Não conta no resumo mensal
+   *  até a fatura ser paga. */
+  fatura_id: string | null
+  created_at?: string
+  updated_at?: string
+}
+
+export interface FinImportSummary {
+  imported: number
+  duplicates: number
+  errors: number
+  error_samples: string[]
+  /** Quantas transações o sistema já categorizou automaticamente via regras
+   *  cadastradas (substring case-insensitive da descrição). */
+  auto_categorized: number
+  /** Quantas transações foram auto-vinculadas a uma parcela esperada
+   *  (CPF/CNPJ do cliente apareceu na descrição + valor casa com parcela
+   *  pendente). */
+  auto_linked_parcelas: number
+}
+
+export interface FinCategorizationRule {
+  id: string
+  pattern: string
+  categoria_id: string
+  times_matched: number
+  created_at?: string
+}
+
+export type FinDebtStatus = 'active' | 'paid_off' | 'cancelled'
+
+export interface FinDebt {
+  id: string
+  descricao: string
+  valor_total_original: number
+  parcela_mensal: number | null
+  /** YYYY-MM-DD do início (1ª parcela), opcional. */
+  data_inicio: string | null
+  /** Categoria pra onde os pagamentos costumam ir (ex: "Faculdade"). */
+  categoria_id: string | null
+  status: FinDebtStatus
+  sort_order: number
+  // Computados pelo backend a cada GET:
+  /** Soma absoluta das transações com `divida_id = this.id` E valor < 0. */
+  valor_pago: number
+  /** max(0, valor_total_original - valor_pago). */
+  saldo_devedor: number
+  /** Contagem de transações vinculadas (proxy pra "parcelas pagas"). */
+  parcelas_pagas: number
+  /** Estimativa baseada em parcela_mensal. null se sem parcela cadastrada. */
+  parcelas_restantes: number | null
+  /** 0..100. */
+  progresso_pct: number
+}
+
+export interface FinMonthlySummary {
+  year: number
+  month: number
+  /** YYYY-MM-DD do primeiro dia do mês. */
+  data_de: string
+  /** YYYY-MM-DD do último dia do mês. */
+  data_ate: string
+  /** Soma das transações com valor > 0 no período. */
+  receita: number
+  /** Soma absoluta das transações com valor < 0 no período. */
+  despesa: number
+  /** receita - despesa (pode ser negativa). */
+  sobra: number
+  transacoes_total: number
+}
+
+export interface FinSummary {
+  /** Saldo total em BRL — inclui contas BRL + contas em outras moedas
+   *  convertidas via `cotacao_brl`. Contas sem cotação ficam de fora. */
+  saldo_total: number
+  /** Saldos agregados por moeda nativa (ex: {BRL: 1500, USD: 380}). */
+  saldos_por_moeda: Record<string, number>
+  /** Equivalente em BRL dos saldos não-BRL convertidos no `saldo_total`
+   *  (ex: {USD: 1976.0} se Wise tinha $380 a R$5.20). */
+  saldos_convertidos_por_moeda: Record<string, number>
+  /** Cotações usadas no cálculo, por moeda. */
+  cotacoes_usadas: Record<string, number>
+  /** Contas em moeda != BRL que não tinham cotação definida — não entraram
+   *  no saldo_total. UI deve alertar pro usuário cadastrar a cotação. */
+  saldos_nao_convertidos: Array<{
+    conta_id: string
+    nome: string
+    moeda: string
+    saldo: number
+  }>
+  contas: FinAccount[]
+  transacoes_total: number
+}
+
+export interface FinExchangeRate {
+  from: string
+  to: string
+  rate: number
+  fetched_at: string
+  source: string
 }

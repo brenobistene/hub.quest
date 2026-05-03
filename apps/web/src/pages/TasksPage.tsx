@@ -157,7 +157,7 @@ export function TasksView({ activeSession, onSessionUpdate, sessionUpdateTrigger
           <div style={{
             fontSize: 15, fontWeight: 600, letterSpacing: '-0.01em',
             color: 'var(--color-text-primary)', lineHeight: 1.2,
-            fontFamily: "'IBM Plex Mono', monospace",
+            fontFamily: 'var(--font-mono)',
           }}>
             {active.length} ativa{active.length !== 1 ? 's' : ''} · {doneAll.length} concluída{doneAll.length !== 1 ? 's' : ''}
           </div>
@@ -262,7 +262,7 @@ export function TasksView({ activeSession, onSessionUpdate, sessionUpdateTrigger
                     border: 'none', borderBottom: '1px solid var(--color-border)',
                     color: 'var(--color-text-primary)', fontSize: 12, padding: '4px 2px',
                     outline: 'none', colorScheme: 'dark',
-                    fontFamily: "'IBM Plex Mono', monospace",
+                    fontFamily: 'var(--font-mono)',
                     transition: 'border-color 0.15s',
                   } as any}
                   onFocus={e => (e.currentTarget.style.borderBottomColor = 'var(--color-accent-light)')}

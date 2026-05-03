@@ -130,7 +130,7 @@ export function RoutinesView() {
           <div style={{
             fontSize: 15, fontWeight: 600, letterSpacing: '-0.01em',
             color: 'var(--color-text-primary)', lineHeight: 1.2,
-            fontFamily: "'IBM Plex Mono', monospace",
+            fontFamily: 'var(--font-mono)',
           }}>
             {routines.length} {routines.length === 1 ? 'rotina' : 'rotinas'}
             {routines.length > 0 && (

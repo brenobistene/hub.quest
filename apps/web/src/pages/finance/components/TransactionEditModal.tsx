@@ -1,0 +1,300 @@
+import { useEffect, useMemo, useState } from 'react'
+import { Link2, Unlink } from 'lucide-react'
+import {
+  updateFinTransaction, fetchAllFinParcelas, reportApiError,
+} from '../../../api'
+import type {
+  FinTransaction, FinAccount, FinCategory, FinDebt, FinParcela,
+} from '../../../types'
+import {
+  sectionLabel, fieldLabel, inputStyle, primaryButton, ghostButton, modalOverlay,
+  formatBRL, formatDate,
+} from './styleHelpers'
+
+export function TransactionEditModal({ tx, accounts, categories, debts, onClose, onSaved }: {
+  tx: FinTransaction
+  accounts: FinAccount[]
+  categories: FinCategory[]
+  debts: FinDebt[]
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const [data, setData] = useState(tx.data)
+  const [tipo, setTipo] = useState<'entrada' | 'saida'>(tx.valor >= 0 ? 'entrada' : 'saida')
+  const [valor, setValor] = useState(String(Math.abs(tx.valor)))
+  const [descricao, setDescricao] = useState(tx.descricao)
+  const [contaId, setContaId] = useState(tx.conta_id)
+  const [categoriaId, setCategoriaId] = useState(tx.categoria_id ?? '')
+  const [notas, setNotas] = useState(tx.notas ?? '')
+  const [parcelaId, setParcelaId] = useState<string>(tx.parcela_id ?? '')
+  const [dividaId, setDividaId] = useState<string>(tx.divida_id ?? '')
+  const [parcelas, setParcelas] = useState<FinParcela[]>([])
+  const [busy, setBusy] = useState(false)
+
+  const isEntry = tipo === 'entrada'
+
+  // Carrega parcelas uma vez (cross-projeto). Sem filtro de status — precisamos
+  // mostrar a parcela atualmente vinculada mesmo se já estiver "recebido".
+  useEffect(() => {
+    fetchAllFinParcelas()
+      .then(setParcelas)
+      .catch(err => reportApiError('TransactionEditModal.fetchParcelas', err))
+  }, [])
+
+  const filteredCats = useMemo(() => {
+    if (isEntry) return categories.filter(c => c.tipo === 'receita' || c.tipo === 'estorno' || c.tipo === 'transferencia')
+    return categories.filter(c => c.tipo === 'despesa' || c.tipo === 'transferencia')
+  }, [categories, isEntry])
+
+  // Opções de parcela: pendentes + a atualmente selecionada (mesmo se outro status)
+  const parcelaOptions = useMemo(() => {
+    return parcelas.filter(p => p.status === 'pendente' || p.id === parcelaId)
+  }, [parcelas, parcelaId])
+
+  // Opções de dívida: ativas + a atualmente selecionada
+  const dividaOptions = useMemo(() => {
+    return debts.filter(d => d.status === 'active' || d.id === dividaId)
+  }, [debts, dividaId])
+
+  const linkedParcela = parcelas.find(p => p.id === tx.parcela_id) ?? null
+  const linkedDivida = debts.find(d => d.id === tx.divida_id) ?? null
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!descricao.trim()) { alert('Descrição é obrigatória.'); return }
+    const valorNum = parseFloat(valor.replace(',', '.'))
+    if (isNaN(valorNum) || valorNum === 0) { alert('Valor inválido.'); return }
+    setBusy(true)
+    try {
+      await updateFinTransaction(tx.id, {
+        data,
+        valor: isEntry ? Math.abs(valorNum) : -Math.abs(valorNum),
+        descricao: descricao.trim(),
+        conta_id: contaId,
+        categoria_id: categoriaId || null,
+        notas: notas.trim() || null,
+        // Vínculos: só envia o que faz sentido pro tipo (evita salvar parcela
+        // numa saída ou dívida numa entrada).
+        parcela_id: isEntry ? (parcelaId || null) : null,
+        divida_id: !isEntry ? (dividaId || null) : null,
+      })
+      onSaved()
+    } catch (err) {
+      reportApiError('TransactionEditModal.submit', err)
+      alert('Erro ao salvar — veja o console.')
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div onClick={onClose} style={modalOverlay()}>
+      <div onClick={e => e.stopPropagation()} style={{
+        background: 'var(--color-bg-primary)',
+        border: '1px solid var(--color-border)',
+        borderRadius: 4, padding: 24, minWidth: 460, maxWidth: 540,
+        maxHeight: '90vh', overflowY: 'auto',
+      }}>
+        <div style={sectionLabel()}>Editar transação</div>
+
+        {tx.origem === 'nubank_csv' && (
+          <div style={{
+            fontSize: 10, color: 'var(--color-text-muted)',
+            padding: '6px 10px', marginBottom: 12,
+            background: 'var(--color-bg-secondary)',
+            border: '1px solid var(--color-border)', borderRadius: 3,
+            fontStyle: 'italic',
+          }}>
+            transação importada do Nubank — editar valor/data muda só o registro
+            local, não afeta o extrato real.
+          </div>
+        )}
+
+        <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '110px 110px 1fr', gap: 8 }}>
+            <input
+              type="date"
+              value={data} onChange={e => setData(e.target.value)}
+              style={inputStyle()}
+            />
+            <select value={tipo} onChange={e => { setTipo(e.target.value as any); setCategoriaId('') }} style={inputStyle()}>
+              <option value="saida">saída</option>
+              <option value="entrada">entrada</option>
+            </select>
+            <input
+              type="text" inputMode="decimal" placeholder="valor"
+              value={valor} onChange={e => setValor(e.target.value)}
+              style={{ ...inputStyle(), textAlign: 'right', fontFamily: 'var(--font-mono)' }}
+            />
+          </div>
+          <input
+            type="text" placeholder="descrição"
+            value={descricao} onChange={e => setDescricao(e.target.value)}
+            style={inputStyle()}
+          />
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+            <select value={contaId} onChange={e => setContaId(e.target.value)} style={inputStyle()}>
+              {accounts.map(a => <option key={a.id} value={a.id}>{a.nome}</option>)}
+            </select>
+            <select value={categoriaId} onChange={e => setCategoriaId(e.target.value)} style={inputStyle()}>
+              <option value="">sem categoria</option>
+              {filteredCats.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
+            </select>
+          </div>
+          <input
+            type="text" placeholder="notas (opcional)"
+            value={notas} onChange={e => setNotas(e.target.value)}
+            style={inputStyle()}
+          />
+
+          {/* Vínculos — parcela pra entradas, dívida pra saídas */}
+          {(isEntry ? parcelaOptions.length > 0 || linkedParcela : dividaOptions.length > 0 || linkedDivida) && (
+            <div style={{
+              marginTop: 6, padding: 12,
+              background: 'var(--color-bg-secondary)',
+              border: '1px solid var(--color-border)', borderRadius: 3,
+              display: 'flex', flexDirection: 'column', gap: 8,
+            }}>
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 6,
+                fontSize: 9, color: 'var(--color-text-tertiary)',
+                letterSpacing: '0.1em', textTransform: 'uppercase',
+                fontWeight: 600,
+              }}>
+                <Link2 size={11} strokeWidth={1.8} />
+                Vínculos
+              </div>
+
+              {isEntry ? (
+                <ParcelaPicker
+                  parcelaId={parcelaId}
+                  setParcelaId={setParcelaId}
+                  options={parcelaOptions}
+                  linkedParcela={linkedParcela}
+                />
+              ) : (
+                <DividaPicker
+                  dividaId={dividaId}
+                  setDividaId={setDividaId}
+                  options={dividaOptions}
+                  linkedDivida={linkedDivida}
+                />
+              )}
+            </div>
+          )}
+
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 8 }}>
+            <button type="button" onClick={onClose} style={ghostButton()}>cancelar</button>
+            <button type="submit" disabled={busy} style={primaryButton()}>
+              {busy ? 'salvando…' : 'salvar'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+function ParcelaPicker({ parcelaId, setParcelaId, options, linkedParcela }: {
+  parcelaId: string
+  setParcelaId: (v: string) => void
+  options: FinParcela[]
+  linkedParcela: FinParcela | null
+}) {
+  const wasAutoLinked = !!linkedParcela
+  return (
+    <div>
+      <label style={fieldLabel()}>Parcela esperada</label>
+      <div style={{ display: 'flex', gap: 6 }}>
+        <select
+          value={parcelaId}
+          onChange={e => setParcelaId(e.target.value)}
+          style={{ ...inputStyle(), flex: 1 }}
+        >
+          <option value="">— sem vínculo —</option>
+          {options.map(p => (
+            <option key={p.id} value={p.id}>
+              {p.projeto_titulo ?? '?'} · #{p.numero} · {formatBRL(p.valor)}
+              {p.data_prevista ? ` (vence ${formatDate(p.data_prevista)})` : ''}
+              {p.status !== 'pendente' ? ` [${p.status}]` : ''}
+            </option>
+          ))}
+        </select>
+        {parcelaId && (
+          <button
+            type="button"
+            onClick={() => setParcelaId('')}
+            title="desvincular"
+            style={{
+              ...ghostButton(),
+              padding: '6px 10px',
+              color: 'var(--color-accent-primary)',
+              borderColor: 'var(--color-accent-primary)',
+            }}
+          >
+            <Unlink size={11} strokeWidth={1.8} />
+          </button>
+        )}
+      </div>
+      {wasAutoLinked && (
+        <div style={{
+          fontSize: 9, color: 'var(--color-text-muted)', marginTop: 4, fontStyle: 'italic',
+        }}>
+          {parcelaId === linkedParcela?.id
+            ? 'vinculada automaticamente por CPF/CNPJ — desvincule se foi outro evento.'
+            : 'vínculo automático será substituído ao salvar.'}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function DividaPicker({ dividaId, setDividaId, options, linkedDivida }: {
+  dividaId: string
+  setDividaId: (v: string) => void
+  options: FinDebt[]
+  linkedDivida: FinDebt | null
+}) {
+  const wasLinked = !!linkedDivida
+  return (
+    <div>
+      <label style={fieldLabel()}>Dívida</label>
+      <div style={{ display: 'flex', gap: 6 }}>
+        <select
+          value={dividaId}
+          onChange={e => setDividaId(e.target.value)}
+          style={{ ...inputStyle(), flex: 1 }}
+        >
+          <option value="">— sem vínculo —</option>
+          {options.map(d => (
+            <option key={d.id} value={d.id}>
+              {d.descricao} (saldo {formatBRL(d.saldo_devedor)})
+              {d.status !== 'active' ? ` [${d.status}]` : ''}
+            </option>
+          ))}
+        </select>
+        {dividaId && (
+          <button
+            type="button"
+            onClick={() => setDividaId('')}
+            title="desvincular"
+            style={{
+              ...ghostButton(),
+              padding: '6px 10px',
+              color: 'var(--color-accent-primary)',
+              borderColor: 'var(--color-accent-primary)',
+            }}
+          >
+            <Unlink size={11} strokeWidth={1.8} />
+          </button>
+        )}
+      </div>
+      {wasLinked && dividaId !== linkedDivida?.id && (
+        <div style={{
+          fontSize: 9, color: 'var(--color-text-muted)', marginTop: 4, fontStyle: 'italic',
+        }}>
+          vínculo anterior será substituído ao salvar.
+        </div>
+      )}
+    </div>
+  )
+}

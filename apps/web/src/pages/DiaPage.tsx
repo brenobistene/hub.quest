@@ -123,6 +123,16 @@ export function DiaView({ projects, quests, areas, activeSession, onSessionUpdat
     }
     return { morning: [], afternoon: [], evening: [] }
   })
+  // Metadata de migração: pra cada item migrado entre turnos no dia,
+  // guardamos o turno de origem. Persistido em localStorage por data,
+  // simétrico ao dayPlan. Usado pra exibir "↑ veio da manhã" no card.
+  const migratedKey = `hq-day-plan-migrated-${todayIsoForStorage}`
+  const [migratedFrom, setMigratedFrom] = useState<Record<string, 'morning' | 'afternoon' | 'evening'>>(() => {
+    try {
+      const saved = localStorage.getItem(migratedKey)
+      return saved ? JSON.parse(saved) : {}
+    } catch { return {} }
+  })
   const [draggedItem, setDraggedItem] = useState<any>(null)
   const [allTasks, setAllTasks] = useState<Task[]>([])
   const [doneRoutineIds, setDoneRoutineIds] = useState<Set<string>>(new Set())
@@ -172,6 +182,10 @@ export function DiaView({ projects, quests, areas, activeSession, onSessionUpdat
   useEffect(() => {
     localStorage.setItem(dayPlanKey, JSON.stringify(dayPlan))
   }, [dayPlan, dayPlanKey])
+
+  useEffect(() => {
+    localStorage.setItem(migratedKey, JSON.stringify(migratedFrom))
+  }, [migratedFrom, migratedKey])
 
   // Limpa plans de dias passados pra não acumular lixo no localStorage.
   // (Mantém os últimos 7 dias por segurança — não precisa ser agressivo.)
@@ -444,6 +458,96 @@ export function DiaView({ projects, quests, areas, activeSession, onSessionUpdat
   const nowDate = new Date(nowTick)
   const nowMin = nowDate.getHours() * 60 + nowDate.getMinutes()
 
+  // ─── Auto-migração de turno encerrado pra próximo turno aberto ───────────
+  // Atividades pendentes (não-feitas, não-em-execução) num turno cujo `endMin`
+  // já passou são movidas pra próximo turno aberto, em cadeia. A intenção é
+  // manter o plano "executável" sem o user precisar arrastar manualmente.
+  // Se NENHUM turno seguinte estiver aberto (ex: já é noite), a atividade
+  // fica onde está — coerente com o reset natural do dayPlan no novo dia.
+  useEffect(() => {
+    const periodRangesMin = periodRangesMinFrom(dayPeriods)
+    const order: Array<'morning' | 'afternoon' | 'evening'> = ['morning', 'afternoon', 'evening']
+
+    const itemIsActive = (id: string): boolean =>
+      !!activeSession && activeSession.id === id && activeSession.is_active
+
+    // Resolução do item via 3 stores. Quando o efeito roda na primeira
+    // renderização (antes dos fetches resolverem), TODAS as listas estão
+    // vazias e itemExists é `false` pra tudo — usamos isso pra ser
+    // conservador: item desconhecido = não migra (não sabemos se está done).
+    // Quando os dados chegam, o efeito re-roda e migra corretamente só
+    // os pendentes.
+    const findItem = (id: string) => {
+      const q = quests.find(x => x.id === id); if (q) return { kind: 'quest' as const, q }
+      const t = allTasks.find(x => x.id === id); if (t) return { kind: 'task' as const, t }
+      const r = routines.find(x => x.id === id); if (r) return { kind: 'routine' as const, r }
+      return null
+    }
+    const itemIsDone = (id: string): boolean => {
+      const it = findItem(id)
+      if (!it) return false
+      if (it.kind === 'quest') return it.q.status === 'done' || it.q.status === 'cancelled'
+      if (it.kind === 'task') return !!it.t.done
+      return doneRoutineIds.has(id)
+    }
+
+    setDayPlan(prev => {
+      const next = { morning: [...prev.morning], afternoon: [...prev.afternoon], evening: [...prev.evening] }
+      const newMigrated: Record<string, 'morning' | 'afternoon' | 'evening'> = { ...migratedFrom }
+      let changed = false
+
+      for (let i = 0; i < order.length - 1; i++) {
+        const period = order[i]
+        const [, endMin] = periodRangesMin[period]
+        if (nowMin < endMin) continue  // turno ainda aberto
+
+        // Acha próximo turno ainda aberto.
+        let targetIdx = -1
+        for (let j = i + 1; j < order.length; j++) {
+          const [, nextEnd] = periodRangesMin[order[j]]
+          if (nowMin < nextEnd) { targetIdx = j; break }
+        }
+        if (targetIdx < 0) continue  // todos seguintes já encerrados também
+
+        const target = order[targetIdx]
+        const stayingHere: string[] = []
+        for (const id of next[period]) {
+          // Conservador: só migra se o item é conhecido E está pendente.
+          // Item desconhecido (dados ainda carregando) ou done/ativo fica.
+          if (!findItem(id) || itemIsActive(id) || itemIsDone(id)) {
+            stayingHere.push(id)
+            continue
+          }
+          // Migra pro destino: preserva origem original (se já era migrada
+          // de manhã pra tarde, e agora vai pra noite, mantém "manhã").
+          if (!newMigrated[id]) newMigrated[id] = period
+          if (!next[target].includes(id)) next[target].push(id)
+          changed = true
+        }
+        next[period] = stayingHere
+      }
+
+      if (changed) {
+        // Limpa metadata de itens que saíram do plano de algum jeito (deletados, etc).
+        const allInPlan = new Set([...next.morning, ...next.afternoon, ...next.evening])
+        for (const id of Object.keys(newMigrated)) {
+          if (!allInPlan.has(id)) delete newMigrated[id]
+        }
+        setMigratedFrom(newMigrated)
+        return next
+      }
+      return prev
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // NOTA: activeSession FORA dos deps de propósito. Quando o user finaliza
+    // task/rotina, `setActiveSession(null)` (App.tsx) chega antes dos fetches
+    // de tasks/routines completarem — re-rodar aqui imediatamente leria dados
+    // stale (item ainda como pendente) e migraria o que acabou de virar done.
+    // Confiamos em: (a) tick de nowMin a cada minuto, (b) mudanças nas arrays
+    // de dados — qualquer um cobre o caso. itemIsActive usa o closure atual de
+    // activeSession, que é refrescado em todo render mesmo sem estar nos deps.
+  }, [nowMin, dayPeriods, quests, allTasks, routines, doneRoutineIds])
+
   const productiveMinRemaining = (() => {
     let blockRanges: BlockRange[] = []
     try {
@@ -570,7 +674,7 @@ export function DiaView({ projects, quests, areas, activeSession, onSessionUpdat
         <div style={{
           fontSize: 36, fontWeight: 700, lineHeight: 1.1,
           color: liveColor,
-          fontFamily: "'IBM Plex Mono', monospace",
+          fontFamily: 'var(--font-mono)',
           letterSpacing: '-0.02em',
           display: 'flex', alignItems: 'baseline', gap: 14, flexWrap: 'wrap',
         }}>
@@ -615,7 +719,7 @@ export function DiaView({ projects, quests, areas, activeSession, onSessionUpdat
               <div style={{
                 marginTop: 8, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
                 fontSize: 10, color: 'var(--color-text-tertiary)',
-                fontFamily: "'IBM Plex Mono', monospace",
+                fontFamily: 'var(--font-mono)',
               }}>
                 <span>
                   <span style={{ color: 'var(--color-text-muted)', marginRight: 5 }}>pendente</span>
@@ -637,7 +741,7 @@ export function DiaView({ projects, quests, areas, activeSession, onSessionUpdat
         <div style={{
           marginTop: 14, fontSize: 10,
           color: 'var(--color-text-muted)',
-          fontFamily: "'IBM Plex Mono', monospace",
+          fontFamily: 'var(--font-mono)',
           display: 'flex', gap: 12,
           letterSpacing: '0.05em',
         }}>
@@ -666,6 +770,8 @@ export function DiaView({ projects, quests, areas, activeSession, onSessionUpdat
             activeSession={activeSession}
             delivsByProject={delivsByProject}
             todayIsoForTasks={todayIsoForTasks}
+            nowMin={nowMin}
+            migratedFrom={migratedFrom}
             onSessionUpdate={() => {
               onSessionUpdate()
               refreshAllTasks()
@@ -734,7 +840,7 @@ export function DiaView({ projects, quests, areas, activeSession, onSessionUpdat
 
 function PeriodSection({
   period, dayPeriods, dayPlan, projects, quests, allTasks, routines, doneRoutineIds,
-  areas, activeSession, delivsByProject, todayIsoForTasks,
+  areas, activeSession, delivsByProject, todayIsoForTasks, nowMin, migratedFrom,
   onSessionUpdate, onRemoveFromPlan, onOpenPlanner, onOpenQuest,
 }: {
   period: 'morning' | 'afternoon' | 'evening'
@@ -749,11 +855,19 @@ function PeriodSection({
   activeSession: ActiveSession | null
   delivsByProject: Record<string, Deliverable[]>
   todayIsoForTasks: string
+  /** Minutos desde meia-noite local (re-renderizado a cada minuto pelo
+   *  parent). Usado pra calcular janela dinâmica do período. */
+  nowMin: number
+  /** Mapa item-id → turno de origem pra itens migrados automaticamente. */
+  migratedFrom: Record<string, 'morning' | 'afternoon' | 'evening'>
   onSessionUpdate: () => void
   onRemoveFromPlan: (itemId: string) => void
   onOpenPlanner: () => void
   onOpenQuest: (q: Quest) => void
 }) {
+  const periodLabelPt: Record<'morning' | 'afternoon' | 'evening', string> = {
+    morning: 'manhã', afternoon: 'tarde', evening: 'noite',
+  }
   const META = {
     morning: { Icon: Sunrise, label: 'Manhã' },
     afternoon: { Icon: Sun, label: 'Tarde' },
@@ -762,21 +876,28 @@ function PeriodSection({
 
   const periodRangesMin = periodRangesMinFrom(dayPeriods)
   const [startMin, endMin] = periodRangesMin[period]
-  const totalPeriodMin = endMin - startMin
+
+  // Janela "ainda viva" do período: começa em max(startMin, nowMin). Período
+  // que já acabou tem janela 0; período no meio descontinua o que já passou.
+  const effectiveStartMin = Math.max(startMin, nowMin)
+  const effectiveWindowMin = Math.max(0, endMin - effectiveStartMin)
+  const isPeriodOver = nowMin >= endMin
 
   let ranges: BlockRange[] = []
   try {
     const saved = localStorage.getItem('hq-unproductive-blocks')
     if (saved) ranges = getAllBlockRangesForDay(JSON.parse(saved), new Date())
   } catch {}
+  // Sobreposição dos blocos improdutivos com a janela RESTANTE (não com o
+  // período inteiro) — assim improdutivos no passado não dobram contagem.
   const unproductiveMin = ranges.reduce((sum, r) => {
     const blockStartMin = r.start * 60
     const blockEndMin = r.end * 60
-    const overlapStart = Math.max(blockStartMin, startMin)
+    const overlapStart = Math.max(blockStartMin, effectiveStartMin)
     const overlapEnd = Math.min(blockEndMin, endMin)
     return sum + Math.max(0, overlapEnd - overlapStart)
   }, 0)
-  const availableMin = Math.max(0, totalPeriodMin - unproductiveMin)
+  const availableMin = Math.max(0, effectiveWindowMin - unproductiveMin)
 
   const allItems = [
     ...quests,
@@ -791,8 +912,13 @@ function PeriodSection({
   const usedMin = periodItems.reduce((s, item) => s + itemDurationMin(item), 0)
   const remainingMin = availableMin - usedMin
   const isExceeded = remainingMin < 0
+  // Atividades no período sem estimativa preenchida — o cálculo de "livre"
+  // não considera elas, então avisamos discreto pra usuário não se enganar.
+  const undefinedCount = periodItems.filter(it => itemDurationMin(it) === 0).length
 
-  const metricColor = isExceeded ? 'var(--color-accent-primary)' : 'var(--color-success)'
+  const metricColor = isPeriodOver
+    ? 'var(--color-text-muted)'
+    : isExceeded ? 'var(--color-accent-primary)' : 'var(--color-success)'
 
   return (
     <section>
@@ -809,18 +935,36 @@ function PeriodSection({
         </div>
         <div style={{
           fontSize: 10, color: 'var(--color-text-muted)',
-          fontFamily: "'IBM Plex Mono', monospace",
+          fontFamily: 'var(--font-mono)',
         }}>
           {minutesToHHMM(startMin)}–{minutesToHHMM(endMin)}
         </div>
         <div style={{ flex: 1 }} />
         <div style={{
-          fontSize: 10, color: metricColor,
-          fontFamily: "'IBM Plex Mono', monospace", fontWeight: 600,
+          display: 'flex', alignItems: 'baseline', gap: 8,
         }}>
-          {isExceeded
-            ? `−${fmtHM(Math.abs(remainingMin))}`
-            : `+${fmtHM(remainingMin)} livre`}
+          {undefinedCount > 0 && !isPeriodOver && (
+            <span
+              title={`${undefinedCount} atividade${undefinedCount === 1 ? '' : 's'} sem tempo definido — preencha pra cálculo correto`}
+              style={{
+                fontSize: 9, color: 'var(--color-warning)',
+                fontFamily: 'var(--font-mono)',
+                textTransform: 'lowercase',
+              }}
+            >
+              ⚠ {undefinedCount} sem tempo
+            </span>
+          )}
+          <div style={{
+            fontSize: 10, color: metricColor,
+            fontFamily: 'var(--font-mono)', fontWeight: 600,
+          }}>
+            {isPeriodOver
+              ? 'encerrado'
+              : isExceeded
+                ? `−${fmtHM(Math.abs(remainingMin))}`
+                : `+${fmtHM(remainingMin)} livre`}
+          </div>
         </div>
       </div>
 
@@ -852,6 +996,7 @@ function PeriodSection({
                 onOpen={!(item as any).isTask && !(item as any).isRoutine
                   ? () => onOpenQuest(item as Quest)
                   : undefined}
+                migratedFromLabel={migratedFrom[item.id] ? periodLabelPt[migratedFrom[item.id]] : undefined}
               />
             )
           })}
@@ -1313,7 +1458,7 @@ function PlannerDrawer({
                     </div>
                     <div style={{
                       fontSize: 9, color: 'var(--color-text-muted)',
-                      fontFamily: "'IBM Plex Mono', monospace",
+                      fontFamily: 'var(--font-mono)',
                     }}>
                       {minutesToHHMM(startMin)}–{minutesToHHMM(endMin)}
                     </div>
@@ -1322,7 +1467,7 @@ function PlannerDrawer({
                       title={`${fmtHM(usedMin)} usado de ${fmtHM(availableMin)} disponível`}
                       style={{
                         fontSize: 10, color: metricColor,
-                        fontFamily: "'IBM Plex Mono', monospace", fontWeight: 600,
+                        fontFamily: 'var(--font-mono)', fontWeight: 600,
                       }}
                     >
                       {isExceeded
@@ -1542,7 +1687,7 @@ function OverdueTasksBanner({ tasks, onToToday, onReschedule, onDiscard }: {
                 </div>
                 <div style={{
                   fontSize: 9, color: 'var(--color-text-tertiary)', marginTop: 2,
-                  fontFamily: "'IBM Plex Mono', monospace", letterSpacing: '0.05em',
+                  fontFamily: 'var(--font-mono)', letterSpacing: '0.05em',
                 }}>
                   {daysAway(t.scheduled_date)}
                   {t.duration_minutes ? ` · ~${t.duration_minutes}min` : ''}
@@ -1559,7 +1704,7 @@ function OverdueTasksBanner({ tasks, onToToday, onReschedule, onDiscard }: {
                     style={{
                       background: 'var(--color-bg-primary)', border: '1px solid var(--color-border)',
                       color: 'var(--color-text-primary)', fontSize: 11, padding: '4px 6px', borderRadius: 3,
-                      outline: 'none', colorScheme: 'dark', fontFamily: "'IBM Plex Mono', monospace",
+                      outline: 'none', colorScheme: 'dark', fontFamily: 'var(--font-mono)',
                     } as any}
                   />
                   <button
@@ -1908,7 +2053,7 @@ function AvailableCard({ item, areas, projects, delivsByProject, onDragStart, on
       <div style={{
         marginTop: 3, display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap',
         fontSize: 9, color: 'var(--color-text-tertiary)',
-        fontFamily: "'IBM Plex Mono', monospace",
+        fontFamily: 'var(--font-mono)',
       }}>
         <span style={{ color, textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 600 }}>
           {typeLabel}

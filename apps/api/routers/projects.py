@@ -83,10 +83,11 @@ def create_project(body: ProjectCreate):
         conn.execute(
             """INSERT INTO projects
                  (id, title, area_slug, status, priority, deadline, notes,
-                  sort_order, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                  sort_order, valor_acordado, cliente_id, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (project_id, title, body.area_slug, body.status, body.priority,
-             body.deadline, body.notes, sort_order, now, now),
+             body.deadline, body.notes, sort_order, body.valor_acordado,
+             body.cliente_id, now, now),
         )
         conn.commit()
         row = conn.execute(

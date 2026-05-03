@@ -22,6 +22,7 @@ from routers import (
     areas,
     calendar,
     deliverables,
+    finance,
     health,
     micro_tasks,
     profile,
@@ -72,6 +73,7 @@ app.include_router(active_session.router)
 app.include_router(profile.router)
 app.include_router(micro_tasks.router)
 app.include_router(calendar.router)
+app.include_router(finance.router)
 
 
 def _service_flags() -> dict:

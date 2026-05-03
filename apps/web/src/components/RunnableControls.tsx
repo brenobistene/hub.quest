@@ -28,7 +28,7 @@ import { SessionHistoryModal } from './SessionHistoryModal'
 export function RunnableControls({ runnableType, id, sessions, activeSession, onSessionUpdate, target, done, onReopen }: {
   runnableType: 'quest' | 'task' | 'routine'
   id: string
-  sessions: { started_at: string; ended_at: string | null }[]
+  sessions: { id?: number; started_at: string; ended_at: string | null }[]
   activeSession: ActiveSession | null
   onSessionUpdate: () => void
   target?: string
@@ -131,7 +131,7 @@ export function RunnableControls({ runnableType, id, sessions, activeSession, on
               onClick={() => canShowHistory && setShowHistory(true)}
               title={canShowHistory ? 'ver histórico' : undefined}
               style={{
-                fontSize: 10, color: 'var(--color-text-tertiary)', fontFamily: "'IBM Plex Mono', monospace",
+                fontSize: 10, color: 'var(--color-text-tertiary)', fontFamily: 'var(--font-mono)',
                 cursor: canShowHistory ? 'pointer' : 'default', transition: 'color 0.15s',
               }}
               onMouseEnter={e => { if (canShowHistory) e.currentTarget.style.color = 'var(--color-text-primary)' }}
@@ -163,7 +163,7 @@ export function RunnableControls({ runnableType, id, sessions, activeSession, on
             </button>
           )}
         </div>
-        {showHistory && <SessionHistoryModal sessions={sessions} onClose={() => setShowHistory(false)} />}
+        {showHistory && <SessionHistoryModal sessions={sessions} kind={runnableType} onChanged={onSessionUpdate} onClose={() => setShowHistory(false)} />}
       </>
     )
   }
@@ -177,7 +177,7 @@ export function RunnableControls({ runnableType, id, sessions, activeSession, on
               onClick={() => canShowHistory && setShowHistory(true)}
               title={canShowHistory ? 'ver histórico' : undefined}
               style={{
-                fontSize: 10, color: 'var(--color-text-tertiary)', fontFamily: "'IBM Plex Mono', monospace",
+                fontSize: 10, color: 'var(--color-text-tertiary)', fontFamily: 'var(--font-mono)',
                 cursor: canShowHistory ? 'pointer' : 'default',
                 transition: 'color 0.15s',
               }}
@@ -210,7 +210,7 @@ export function RunnableControls({ runnableType, id, sessions, activeSession, on
             play
           </button>
         </div>
-        {showHistory && <SessionHistoryModal sessions={sessions} onClose={() => setShowHistory(false)} />}
+        {showHistory && <SessionHistoryModal sessions={sessions} kind={runnableType} onChanged={onSessionUpdate} onClose={() => setShowHistory(false)} />}
       </>
     )
   }
@@ -224,7 +224,7 @@ export function RunnableControls({ runnableType, id, sessions, activeSession, on
           style={{
             fontSize: 12, fontWeight: 700,
             color: running ? 'var(--color-accent-primary)' : 'var(--color-text-tertiary)',
-            fontFamily: "'IBM Plex Mono', monospace",
+            fontFamily: 'var(--font-mono)',
             cursor: canShowHistory ? 'pointer' : 'default',
             transition: 'color 0.15s',
           }}
@@ -260,7 +260,7 @@ export function RunnableControls({ runnableType, id, sessions, activeSession, on
           finalizar
         </button>
       </div>
-      {showHistory && <SessionHistoryModal sessions={sessions} onClose={() => setShowHistory(false)} />}
+      {showHistory && <SessionHistoryModal sessions={sessions} kind={runnableType} onChanged={onSessionUpdate} onClose={() => setShowHistory(false)} />}
     </>
   )
 }

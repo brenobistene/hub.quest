@@ -22,18 +22,26 @@ def get_active_session(
     (quest done, task done, routine logada no dia) não qualificam.
     """
     with get_conn() as conn:
+        # Defesa contra loop de banner: sessões "órfãs" (entidade já marcada
+        # done mas sessão segue aberta — ex: dado legado, falha no PATCH)
+        # ficavam aparecendo aqui e o frontend entrava em ping-pong com o
+        # efeito que zera activeSession quando vê q.status=='done'.
+        # Filtramos por status da entidade na query global também.
         row = conn.execute(
             """SELECT 'quest' AS type, qs.quest_id AS id, q.title, q.area_slug, qs.started_at, qs.ended_at, qs.id AS sid
                FROM quest_sessions qs JOIN quests q ON qs.quest_id = q.id
-               WHERE qs.ended_at IS NULL
+               WHERE qs.ended_at IS NULL AND q.status NOT IN ('done','cancelled')
                UNION ALL
                SELECT 'task' AS type, ts.task_id AS id, t.title, NULL AS area_slug, ts.started_at, ts.ended_at, ts.id AS sid
                FROM task_sessions ts JOIN tasks t ON ts.task_id = t.id
-               WHERE ts.ended_at IS NULL
+               WHERE ts.ended_at IS NULL AND t.done = 0
                UNION ALL
                SELECT 'routine' AS type, rs.routine_id AS id, r.title, NULL AS area_slug, rs.started_at, rs.ended_at, rs.id AS sid
-               FROM routine_sessions rs JOIN routines r ON rs.routine_id = r.id
-               WHERE rs.ended_at IS NULL
+               FROM routine_sessions rs
+                 JOIN routines r ON rs.routine_id = r.id
+                 LEFT JOIN routine_logs rl
+                   ON rl.routine_id = rs.routine_id AND rl.completed_date = rs.date
+               WHERE rs.ended_at IS NULL AND rl.id IS NULL
                LIMIT 1"""
         ).fetchone()
 

@@ -1,5 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
-import { Sun, CalendarDays, Target, Layers, AlertTriangle, RotateCcw, Clock, LayoutGrid, ListTodo } from 'lucide-react'
+import {
+  Sun, CalendarDays, Crosshair, Folders, Archive, Repeat, Lightbulb, LayoutDashboard,
+  ListChecks, Wallet, PanelLeftClose, PanelLeftOpen, Pause, Play, CheckCircle2,
+} from 'lucide-react'
 import { Routes, Route, NavLink, Navigate, useNavigate, useLocation } from 'react-router-dom'
 import {
   fetchQuests, fetchProjects, fetchAreas, fetchProfile, fetchActiveSession,
@@ -21,17 +24,23 @@ import { RoutinesView } from './pages/RoutinesPage'
 import { TasksView } from './pages/TasksPage'
 import { MicroDumpView } from './pages/MicroDumpPage'
 import { ArquivadosView } from './pages/ArquivadosPage'
+import { HubFinanceLayout } from './pages/finance/HubFinanceLayout'
+import { VisaoGeralPage } from './pages/finance/VisaoGeralPage'
+import { LancamentosPage } from './pages/finance/LancamentosPage'
+import { FreelasPage } from './pages/finance/FreelasPage'
+import { CategoriasPage } from './pages/finance/CategoriasPage'
 
 const NAV: { path: string; label: string; Icon: React.FC<{ size?: number; strokeWidth?: number }> }[] = [
-  { path: '/dashboard',   label: 'Dashboard',       Icon: LayoutGrid    },
-  { path: '/dia',         label: 'Dia',             Icon: Sun           },
-  { path: '/calendario',  label: 'Calendário',      Icon: CalendarDays  },
-  { path: '/quests',      label: 'Quests',          Icon: Target        },
-  { path: '/areas',       label: 'Áreas',           Icon: Layers        },
-  { path: '/rotinas',     label: 'Rotinas',         Icon: RotateCcw     },
-  { path: '/tarefas',     label: 'Tarefas',         Icon: ListTodo      },
-  { path: '/micro-dump',  label: 'Dump',            Icon: Clock         },
-  { path: '/arquivados',  label: 'Arquivados',      Icon: AlertTriangle },
+  { path: '/dashboard',   label: 'Dashboard',       Icon: LayoutDashboard },
+  { path: '/dia',         label: 'Dia',             Icon: Sun             },
+  { path: '/calendario',  label: 'Calendário',      Icon: CalendarDays    },
+  { path: '/quests',      label: 'Quests',          Icon: Crosshair       },
+  { path: '/areas',       label: 'Áreas',           Icon: Folders         },
+  { path: '/rotinas',     label: 'Rotinas',         Icon: Repeat          },
+  { path: '/tarefas',     label: 'Tarefas',         Icon: ListChecks      },
+  { path: '/hub-finance', label: 'Finance',         Icon: Wallet          },
+  { path: '/micro-dump',  label: 'Dump',            Icon: Lightbulb       },
+  { path: '/arquivados',  label: 'Arquivados',      Icon: Archive         },
 ]
 
 export default function App() {
@@ -325,196 +334,314 @@ export default function App() {
 
   return (
     <div style={{ display: 'flex', minHeight: '100vh' }}>
-      <aside style={{
-        position: 'fixed', left: 0, top: 0, bottom: 0, right: 'auto',
-        width: sidebarCollapsed ? 70 : 210, flexShrink: 0, borderRight: '1px solid var(--color-border)',
-        padding: '32px 0', display: 'flex', flexDirection: 'column', gap: 1,
-        background: 'var(--color-bg-primary)', transition: 'width 0.3s',
-        height: '100vh', overflowY: 'auto', zIndex: 100,
-        boxSizing: 'border-box',
-      }}>
-        {/* Logo */}
+      <aside
+        className="hq-grain"
+        style={{
+          position: 'fixed', left: 0, top: 0, bottom: 0,
+          width: sidebarCollapsed ? 72 : 220,
+          flexShrink: 0,
+          borderRight: '1px solid var(--color-border)',
+          padding: 'var(--space-4) 0 var(--space-3)',
+          display: 'flex', flexDirection: 'column',
+          background: 'rgba(8, 8, 10, 0.55)',
+          backdropFilter: 'blur(24px) saturate(140%)',
+          WebkitBackdropFilter: 'blur(24px) saturate(140%)',
+          transition: 'width var(--motion-base) var(--ease-emphasis)',
+          height: '100vh', overflowY: 'auto', overflowX: 'hidden',
+          zIndex: 100, boxSizing: 'border-box',
+        }}
+      >
+        {/* Header: logo + toggle inline */}
         <div style={{
-          padding: sidebarCollapsed ? '0 12px 32px' : '0 16px 32px',
-          display: 'flex', alignItems: 'center', gap: 10,
-          justifyContent: sidebarCollapsed ? 'center' : 'flex-start',
-          transition: 'padding 0.3s',
-          marginBottom: 24,
+          display: 'flex',
+          alignItems: 'center',
+          padding: sidebarCollapsed ? '0 var(--space-3)' : '0 var(--space-3) 0 var(--space-4)',
+          marginBottom: 'var(--space-6)',
+          gap: 'var(--space-2)',
+          minHeight: 36,
         }}>
-          <img src="/hub-quest-mark.svg" alt="Hub Quest" style={{ width: 36, height: 36, opacity: 0.9 }} />
-          {!sidebarCollapsed && (
-            <span style={{ fontSize: 11, letterSpacing: '0.25em', textTransform: 'uppercase', color: 'var(--color-text-tertiary)', fontWeight: 700 }}>
-              HUB QUEST
-            </span>
+          {sidebarCollapsed ? (
+            // Collapsed: só o toggle centralizado, logo some (a aside fica icon-only)
+            <button
+              onClick={() => setSidebarCollapsed(false)}
+              className="hq-icon-btn-bare"
+              title="Expandir menu"
+              aria-label="Expandir menu"
+              style={{ margin: '0 auto' }}
+            >
+              <PanelLeftOpen size={16} strokeWidth={1.8} />
+            </button>
+          ) : (
+            <>
+              <img
+                src="/hub-quest-mark.svg"
+                alt=""
+                style={{ width: 28, height: 28, opacity: 0.9, flexShrink: 0 }}
+              />
+              <span style={{
+                fontSize: 'var(--text-xs)',
+                letterSpacing: '0.22em',
+                textTransform: 'uppercase',
+                color: 'var(--color-text-secondary)',
+                fontWeight: 700,
+                flex: 1,
+              }}>
+                HUB QUEST
+              </span>
+              <button
+                onClick={() => setSidebarCollapsed(true)}
+                className="hq-icon-btn-bare"
+                title="Recolher menu"
+                aria-label="Recolher menu"
+              >
+                <PanelLeftClose size={14} strokeWidth={1.8} />
+              </button>
+            </>
           )}
         </div>
 
-        {NAV.map(n => (
-          <NavLink
-            key={n.path}
-            to={n.path}
-            title={sidebarCollapsed ? n.label : undefined}
-            style={({ isActive }) => ({
-              background: isActive ? 'var(--color-bg-tertiary)' : 'transparent',
-              border: 'none', cursor: 'pointer',
-              textAlign: 'left', padding: sidebarCollapsed ? '12px 14px' : '10px 16px',
-              color: isActive ? 'var(--color-text-primary)' : 'var(--color-text-secondary)',
-              fontSize: 12, fontWeight: isActive ? 600 : 400,
-              borderLeft: isActive ? '3px solid var(--color-accent-primary)' : '3px solid transparent',
-              transition: 'all 0.2s cubic-bezier(0.3, 0, 0.7, 1)',
-              display: 'flex', alignItems: 'center', gap: sidebarCollapsed ? 0 : 10,
-              justifyContent: sidebarCollapsed ? 'center' : 'flex-start',
-              letterSpacing: '0.02em',
-              textDecoration: 'none',
-            })}
-          >
-            {({ isActive }) => (
-              <>
-                <n.Icon size={14} strokeWidth={isActive ? 2.2 : 1.8} />
-                {!sidebarCollapsed && n.label}
-              </>
-            )}
-          </NavLink>
-        ))}
+        {/* Nav items — com stagger entrance */}
+        <nav className="hq-stagger" style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 2,
+          padding: '0 var(--space-2)',
+        }}>
+          {NAV.map((n, i) => (
+            <NavLink
+              key={n.path}
+              to={n.path}
+              title={sidebarCollapsed ? n.label : undefined}
+              className="hq-animate-fade-up"
+              style={({ isActive }) => ({
+                position: 'relative',
+                background: isActive ? 'var(--glass-bg-elevated)' : 'transparent',
+                border: '1px solid transparent',
+                cursor: 'pointer',
+                textAlign: 'left',
+                padding: sidebarCollapsed ? '10px' : '9px 12px',
+                color: isActive ? 'var(--color-text-primary)' : 'var(--color-text-tertiary)',
+                fontSize: 'var(--text-sm)',
+                fontWeight: isActive ? 600 : 500,
+                borderRadius: 'var(--radius-sm)',
+                transition: 'background var(--motion-fast) var(--ease-smooth), color var(--motion-fast) var(--ease-smooth), border-color var(--motion-fast) var(--ease-smooth)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: sidebarCollapsed ? 0 : 'var(--space-3)',
+                justifyContent: sidebarCollapsed ? 'center' : 'flex-start',
+                textDecoration: 'none',
+                ['--stagger-i' as any]: i,
+              })}
+              onMouseEnter={e => {
+                if (!e.currentTarget.classList.contains('active')) {
+                  e.currentTarget.style.background = 'var(--glass-bg-hover)'
+                  e.currentTarget.style.color = 'var(--color-text-primary)'
+                }
+              }}
+              onMouseLeave={e => {
+                if (!e.currentTarget.classList.contains('active')) {
+                  e.currentTarget.style.background = 'transparent'
+                  e.currentTarget.style.color = 'var(--color-text-tertiary)'
+                }
+              }}
+            >
+              {({ isActive }) => (
+                <>
+                  {/* Indicator: chrome shimmer sutil quando ativo (não mais barra vermelha) */}
+                  {isActive && (
+                    <span
+                      aria-hidden="true"
+                      style={{
+                        position: 'absolute',
+                        left: -1, top: '22%', bottom: '22%',
+                        width: 2,
+                        background: 'var(--chrome-grad)',
+                        borderRadius: 'var(--radius-pill)',
+                        boxShadow: '0 0 8px rgba(201, 204, 210, 0.4)',
+                      }}
+                    />
+                  )}
+                  <n.Icon
+                    size={17}
+                    strokeWidth={isActive ? 1.6 : 1.25}
+                  />
+                  {!sidebarCollapsed && (
+                    <span style={{ flex: 1 }}>{n.label}</span>
+                  )}
+                </>
+              )}
+            </NavLink>
+          ))}
+        </nav>
 
-        {/* Collapse button - Fixed at bottom of page */}
-        <button onClick={() => setSidebarCollapsed(!sidebarCollapsed)} style={{
-          position: 'fixed', bottom: 0, left: 0,
-          width: sidebarCollapsed ? 70 : 210,
-          background: 'var(--color-accent-primary)',
-          border: 'none', cursor: 'pointer',
-          color: 'var(--color-bg-primary)', padding: '14px',
-          fontSize: 14, fontWeight: 700, letterSpacing: '0.05em',
-          transition: 'all 0.3s cubic-bezier(0.3, 0, 0.7, 1)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          borderTop: `1px solid var(--color-border)`,
-          zIndex: 101,
-        }}
-          onMouseEnter={e => {
-            e.currentTarget.style.opacity = '0.9'
-            e.currentTarget.style.background = 'var(--color-accent-secondary)'
-          }}
-          onMouseLeave={e => {
-            e.currentTarget.style.opacity = '1'
-            e.currentTarget.style.background = 'var(--color-accent-primary)'
-          }}
-          title={sidebarCollapsed ? "Expandir menu ←" : "Recolher menu →"}
-        >
-          {sidebarCollapsed ? '←' : '→'}
-        </button>
+        {/* Spacer pra empurrar versão pro fim — bottom mark sutil */}
+        <div style={{ flex: 1 }} />
+        {!sidebarCollapsed && (
+          <div style={{
+            padding: '0 var(--space-4)',
+            fontSize: 9,
+            color: 'var(--color-text-muted)',
+            letterSpacing: '0.1em',
+            opacity: 0.6,
+          }}>
+            v0.2.0
+          </div>
+        )}
       </aside>
 
       {isHydrated && activeSession && (
-        <div style={{
-          position: 'fixed', top: 0, left: sidebarCollapsed ? 70 : 210, right: 0,
-          height: 80, background: 'linear-gradient(to bottom, var(--color-bg-tertiary), var(--color-bg-secondary))',
-          borderBottom: `1px solid ${activeSession.is_active ? 'var(--color-accent-primary)' : 'var(--color-success)'}`,
-          boxShadow: `inset 0 1px 0 rgba(139, 46, 46, 0.2), 0 4px 12px rgba(0, 0, 0, 0.5)`,
-          display: 'flex', alignItems: 'center', gap: 24, padding: '0 32px',
-          transition: 'all 0.3s', zIndex: 99,
-        }}>
+        <div
+          className="hq-animate-fade-down hq-grain hq-chrome-hairline"
+          style={{
+            position: 'fixed', top: 0,
+            left: sidebarCollapsed ? 72 : 220,
+            right: 0,
+            height: 64,
+            background: 'rgba(8, 8, 10, 0.65)',
+            backdropFilter: 'blur(20px) saturate(140%)',
+            WebkitBackdropFilter: 'blur(20px) saturate(140%)',
+            borderBottom: '1px solid var(--color-border)',
+            display: 'flex', alignItems: 'center',
+            gap: 'var(--space-5)',
+            padding: '0 var(--space-6)',
+            transition: 'left var(--motion-base) var(--ease-emphasis)',
+            zIndex: 99,
+          }}
+        >
+          {/* Status dot pulsante */}
+          <div
+            className={activeSession.is_active ? 'hq-pulse-dot' : 'hq-pulse-dot hq-pulse-dot--success'}
+            aria-hidden="true"
+          />
 
-          {/* Session info */}
-          <div style={{ flex: 1, minWidth: 0 }}>
+          {/* Session info — compacto */}
+          <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
             <div style={{
-              fontSize: 11,
-              color: activeSession.is_active ? 'var(--color-accent-light)' : 'var(--color-success)',
-              fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.15em', marginBottom: 6,
-              display: 'flex', alignItems: 'center', gap: 10,
+              display: 'flex', alignItems: 'center', gap: 'var(--space-2)',
+              fontSize: 'var(--text-xs)',
+              color: activeSession.is_active ? 'var(--color-accent-light)' : 'var(--color-success-light)',
+              fontWeight: 600,
+              letterSpacing: '0.12em',
+              textTransform: 'uppercase',
             }}>
-              <span>{activeSession.is_active ? 'EM EXECUÇÃO' : 'PAUSADO'}</span>
+              <span>{activeSession.is_active ? 'ao vivo' : 'pausado'}</span>
               <span style={{
-                fontSize: 9, padding: '2px 6px', borderRadius: 2,
-                background: 'var(--color-bg-primary)', color: 'var(--color-text-tertiary)',
+                fontSize: 9, padding: '1px 6px',
+                borderRadius: 'var(--radius-pill)',
+                background: 'var(--glass-bg)',
+                color: 'var(--color-text-tertiary)',
                 border: '1px solid var(--color-border)',
+                letterSpacing: '0.08em',
               }}>
-                {activeSession.type === 'task' ? 'TAREFA' : activeSession.type === 'routine' ? 'ROTINA' : 'QUEST'}
+                {activeSession.type}
               </span>
             </div>
-            <div style={{ fontSize: 16, color: 'var(--color-text-primary)', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {activeSession.title}
-            </div>
-            {(activeSession.parent_title || activeSession.deliverable_title) && (
-              <div style={{
-                marginTop: 4, fontSize: 10, color: 'var(--color-text-tertiary)',
-                display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap',
-                letterSpacing: '0.02em',
+            <div style={{
+              display: 'flex', alignItems: 'baseline', gap: 'var(--space-2)',
+              minWidth: 0,
+            }}>
+              <span style={{
+                fontSize: 'var(--text-base)',
+                color: 'var(--color-text-primary)',
+                fontWeight: 600,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+                flexShrink: 1,
               }}>
-                {activeSession.parent_title && <span>{activeSession.parent_title}</span>}
-                {activeSession.parent_title && activeSession.deliverable_title && (
-                  <span style={{ color: 'var(--color-text-muted)' }}>›</span>
-                )}
-                {activeSession.deliverable_title && (
-                  <span style={{ color: 'var(--color-accent-light)' }}>{activeSession.deliverable_title}</span>
-                )}
-              </div>
-            )}
+                {activeSession.title}
+              </span>
+              {(activeSession.parent_title || activeSession.deliverable_title) && (
+                <span style={{
+                  fontSize: 'var(--text-xs)',
+                  color: 'var(--color-text-muted)',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  flexShrink: 0,
+                }}>
+                  {activeSession.parent_title && <span>· {activeSession.parent_title}</span>}
+                  {activeSession.parent_title && activeSession.deliverable_title && (
+                    <span>›</span>
+                  )}
+                  {activeSession.deliverable_title && (
+                    <span style={{ color: 'var(--color-text-tertiary)' }}>{activeSession.deliverable_title}</span>
+                  )}
+                </span>
+              )}
+            </div>
           </div>
 
-          {/* Timer (clickable to show full history). Big number is the
-              accumulated total across all sessions for this entity; the
-              smaller row below shows just the current sitting. */}
-          <div style={{ textAlign: 'center', minWidth: 90 }}>
-            <div
-              onClick={async () => {
-                if (!activeSession) return
-                try {
-                  const loader = activeSession.type === 'quest'
-                    ? fetchSessions(activeSession.id)
-                    : activeSession.type === 'task'
-                      ? fetchTaskSessions(activeSession.id)
-                      : fetchRoutineSessions(activeSession.id)
-                  const list = await loader
-                  setBannerHistorySessions(
-                    (list as any[]).map(s => ({
-                      started_at: s?.started_at ?? '',
-                      ended_at: s?.ended_at ?? null,
-                    }))
-                  )
-                  setBannerHistoryOpen(true)
-                } catch {
-                  setBannerHistorySessions([])
-                  setBannerHistoryOpen(true)
-                }
-              }}
-              title="ver histórico"
-              style={{
-                cursor: 'pointer',
-                transition: 'opacity 0.15s',
-                display: 'inline-flex', flexDirection: 'column', alignItems: 'center',
-              }}
-              onMouseEnter={e => (e.currentTarget.style.opacity = '0.7')}
-              onMouseLeave={e => (e.currentTarget.style.opacity = '1')}
-            >
-              <div style={{
-                fontSize: 24, fontWeight: 700,
-                color: activeSession.is_active ? 'var(--color-accent-vivid)' : 'var(--color-success-light)',
-                fontFamily: "'IBM Plex Mono', monospace",
-                lineHeight: 1,
-              }}>
-                {formatHMS(bannerTimer)}
-              </div>
-              {bannerClosedSec > 0 && (() => {
-                const mins = Math.round(bannerClosedSec / 60)
-                const h = Math.floor(mins / 60)
-                const m = mins % 60
-                const label = h > 0 && m > 0 ? `${h}h ${m}m` : h > 0 ? `${h}h` : `${m}m`
-                return (
-                  <div style={{
-                    fontSize: 10, color: 'var(--color-text-tertiary)', marginTop: 4,
-                    fontFamily: "'IBM Plex Mono', monospace",
-                    letterSpacing: '0.05em',
-                  }}>
-                    anterior {label}
-                  </div>
+          {/* Timer — clicável (vai pra histórico) */}
+          <button
+            type="button"
+            className="hq-icon-btn-bare"
+            onClick={async () => {
+              if (!activeSession) return
+              try {
+                const loader = activeSession.type === 'quest'
+                  ? fetchSessions(activeSession.id)
+                  : activeSession.type === 'task'
+                    ? fetchTaskSessions(activeSession.id)
+                    : fetchRoutineSessions(activeSession.id)
+                const list = await loader
+                setBannerHistorySessions(
+                  (list as any[]).map(s => ({
+                    started_at: s?.started_at ?? '',
+                    ended_at: s?.ended_at ?? null,
+                  }))
                 )
-              })()}
-            </div>
-          </div>
+                setBannerHistoryOpen(true)
+              } catch {
+                setBannerHistorySessions([])
+                setBannerHistoryOpen(true)
+              }
+            }}
+            title="ver histórico de sessões"
+            aria-label="ver histórico de sessões"
+            style={{
+              padding: 'var(--space-2) var(--space-3)',
+              minWidth: 'auto', minHeight: 'auto',
+              display: 'flex', flexDirection: 'column',
+              alignItems: 'flex-end', gap: 0,
+              fontFamily: 'var(--font-mono)',
+              fontVariantNumeric: 'tabular-nums',
+            }}
+          >
+            <span style={{
+              fontSize: 'var(--text-xl)',
+              fontWeight: 700,
+              color: activeSession.is_active
+                ? 'var(--color-text-primary)'
+                : 'var(--color-text-secondary)',
+              lineHeight: 1,
+              letterSpacing: '-0.02em',
+            }}>
+              {formatHMS(bannerTimer)}
+            </span>
+            {bannerClosedSec > 0 && (() => {
+              const mins = Math.round(bannerClosedSec / 60)
+              const h = Math.floor(mins / 60)
+              const m = mins % 60
+              const label = h > 0 && m > 0 ? `${h}h ${m}m` : h > 0 ? `${h}h` : `${m}m`
+              return (
+                <span style={{
+                  fontSize: 9,
+                  color: 'var(--color-text-muted)',
+                  marginTop: 2,
+                  letterSpacing: '0.05em',
+                }}>
+                  +{label}
+                </span>
+              )
+            })()}
+          </button>
 
-          {/* Controls */}
-          <div style={{ display: 'flex', gap: 10 }}>
+          {/* Controls — minimais, icon-only */}
+          <div style={{ display: 'flex', gap: 'var(--space-1)' }}>
             <button
+              type="button"
+              className="hq-icon-btn"
               onClick={() => {
                 if (!activeSession) return
                 const { type, id, is_active } = activeSession
@@ -523,27 +650,21 @@ export default function App() {
                   : (type === 'quest' ? resumeSession(id) : type === 'task' ? resumeTaskSession(id) : resumeRoutineSession(id))
                 call.then(() => onSessionUpdate()).catch(err => reportApiError('App', err))
               }}
-              style={{
-                background: activeSession.is_active ? 'var(--color-accent-primary)' : 'var(--color-success)',
-                border: 'none', cursor: 'pointer',
-                color: 'var(--color-bg-primary)', padding: '10px 18px', fontSize: 11,
-                borderRadius: 4, fontWeight: 700, transition: 'all 0.2s cubic-bezier(0.3, 0, 0.7, 1)',
-                textTransform: 'uppercase', letterSpacing: '0.08em',
-              }}
-              onMouseEnter={e => {
-                e.currentTarget.style.opacity = '0.9'
-                e.currentTarget.style.transform = 'translateY(-1px)'
-              }}
-              onMouseLeave={e => {
-                e.currentTarget.style.opacity = '1'
-                e.currentTarget.style.transform = 'translateY(0)'
-              }}
               title={activeSession.is_active ? `Pausar ${activeSession.type}` : `Retomar ${activeSession.type}`}
+              aria-label={activeSession.is_active ? `Pausar ${activeSession.type}` : `Retomar ${activeSession.type}`}
+              style={{ padding: '8px 14px', minHeight: 36, gap: 6 }}
             >
-              {activeSession.is_active ? 'PAUSAR' : 'RETOMAR'}
+              {activeSession.is_active
+                ? <Pause size={13} strokeWidth={2} />
+                : <Play size={13} strokeWidth={2} />}
+              <span style={{ fontSize: 'var(--text-xs)', fontWeight: 600, letterSpacing: '0.05em' }}>
+                {activeSession.is_active ? 'pausar' : 'retomar'}
+              </span>
             </button>
 
             <button
+              type="button"
+              className="hq-icon-btn hq-icon-btn--accent"
               onClick={() => {
                 if (!activeSession) return
                 const { type, id, is_active } = activeSession
@@ -574,23 +695,14 @@ export default function App() {
                   }).catch(err => reportApiError('App', err))
                 }
               }}
-              style={{
-                background: 'var(--color-success)', border: 'none', cursor: 'pointer',
-                color: 'var(--color-bg-primary)', padding: '10px 18px', fontSize: 11,
-                borderRadius: 4, fontWeight: 700, transition: 'all 0.2s cubic-bezier(0.3, 0, 0.7, 1)',
-                textTransform: 'uppercase', letterSpacing: '0.08em',
-              }}
-              onMouseEnter={e => {
-                e.currentTarget.style.opacity = '0.9'
-                e.currentTarget.style.transform = 'translateY(-1px)'
-              }}
-              onMouseLeave={e => {
-                e.currentTarget.style.opacity = '1'
-                e.currentTarget.style.transform = 'translateY(0)'
-              }}
               title={`Finalizar ${activeSession.type}`}
+              aria-label={`Finalizar ${activeSession.type}`}
+              style={{ padding: '8px 14px', minHeight: 36, gap: 6 }}
             >
-              FINALIZAR
+              <CheckCircle2 size={13} strokeWidth={2} />
+              <span style={{ fontSize: 'var(--text-xs)', fontWeight: 600, letterSpacing: '0.05em' }}>
+                finalizar
+              </span>
             </button>
           </div>
         </div>
@@ -604,23 +716,45 @@ export default function App() {
       )}
 
       <main style={{
-        flex: 1, padding: location.pathname.startsWith('/calendario') ? '24px 32px' : '48px 60px', maxWidth: '100%',
-        marginLeft: sidebarCollapsed ? 70 : 210, marginTop: (isHydrated && activeSession) ? 80 : 0,
-        transition: 'margin-top 0.3s, margin-left 0.3s',
+        flex: 1,
+        padding: location.pathname.startsWith('/calendario') ? '24px 32px' : '48px 60px',
+        maxWidth: '100%',
+        marginLeft: sidebarCollapsed ? 72 : 220,
+        marginTop: (isHydrated && activeSession) ? 64 : 0,
+        transition: 'margin-top var(--motion-base) var(--ease-emphasis), margin-left var(--motion-base) var(--ease-emphasis)',
         minHeight: '100vh',
-        background: 'var(--color-bg-primary)',
+        background: 'transparent',
       }}>
+        {/* Wrapper com key={pathname} re-anima conteúdo a cada navegação.
+            Cuidado: isso desmonta/monta a página. State efêmero da página
+            é perdido na navegação — é o trade-off pra ter entrance animation. */}
+        <div key={location.pathname} className="hq-animate-fade-up">
         <Routes>
           <Route path="/" element={<Navigate to="/dia" replace />} />
           <Route path="/dashboard" element={<DashboardView projects={projects} quests={quests} areas={areas} profile={profile} onProfileUpdate={setProfile} onSelectProject={setSelectedProjectId} />} />
           <Route path="/dia" element={<DiaView projects={projects} quests={quests} areas={areas} activeSession={activeSession} onSessionUpdate={onSessionUpdate} onSelectProject={setSelectedProjectId} />} />
-          <Route path="/calendario" element={<CalendarView projects={projects} quests={quests} areas={areas} sessionUpdateTrigger={sessionUpdateTrigger} />} />
+          <Route path="/calendario" element={<CalendarView projects={projects} quests={quests} areas={areas} sessionUpdateTrigger={sessionUpdateTrigger} onSessionUpdate={onSessionUpdate} />} />
           <Route path="/quests" element={<QuestsView projects={projects} quests={quests} areas={areas} onSessionUpdate={onSessionUpdate} sessionUpdateTrigger={sessionUpdateTrigger} onQuestUpdate={(id, patch) => {
             setQuests(qs => qs.map(q => q.id === id ? { ...q, ...patch } : q))
-            patchQuest(id, patch).catch(err => reportApiError('App', err))
+            patchQuest(id, patch)
+              .then(() => {
+                // Backend fecha sessão aberta ao mover status pra terminal —
+                // refresca o estado da sessão ativa pro banner sumir.
+                if ('status' in patch) onSessionUpdate()
+              })
+              .catch(err => reportApiError('App', err))
           }} />} />
           <Route path="/rotinas" element={<RoutinesView />} />
           <Route path="/tarefas" element={<TasksView activeSession={activeSession} onSessionUpdate={onSessionUpdate} sessionUpdateTrigger={sessionUpdateTrigger} />} />
+          {/* Hub Finance — layout com sub-rotas (visão geral, lançamentos, etc).
+              `/hub-finance` redireciona pra `/hub-finance/visao-geral`. */}
+          <Route path="/hub-finance" element={<HubFinanceLayout />}>
+            <Route index element={<Navigate to="visao-geral" replace />} />
+            <Route path="visao-geral" element={<VisaoGeralPage />} />
+            <Route path="lancamentos" element={<LancamentosPage />} />
+            <Route path="freelas" element={<FreelasPage />} />
+            <Route path="categorias" element={<CategoriasPage />} />
+          </Route>
           <Route path="/micro-dump" element={<MicroDumpView areas={areas} projects={projects} onArchive={(idea) => setArchivedIdeas([...archivedIdeas, idea])} />} />
           <Route path="/arquivados" element={<ArquivadosView archivedIdeas={archivedIdeas} onDelete={(id) => setArchivedIdeas(prev => prev.filter(i => i.id !== id))} />} />
           <Route path="/areas" element={
@@ -655,7 +789,13 @@ export default function App() {
               }}
               onQuestUpdate={(id, patch) => {
                 setQuests(qs => qs.map(q => q.id === id ? { ...q, ...patch } : q))
-                patchQuest(id, patch).catch(err => reportApiError('App', err))
+                patchQuest(id, patch)
+                  .then(() => {
+                    // Backend fecha sessão aberta ao mover status pra terminal —
+                    // refresca o estado da sessão ativa pro banner sumir.
+                    if ('status' in patch) onSessionUpdate()
+                  })
+                  .catch(err => reportApiError('App', err))
               }}
               onSessionUpdate={onSessionUpdate}
               onProjectCreate={(p) => setProjects(ps => [p, ...ps])}
@@ -666,6 +806,7 @@ export default function App() {
           } />
           <Route path="*" element={<Navigate to="/dia" replace />} />
         </Routes>
+        </div>
       </main>
     </div>
   )

@@ -1,8 +1,10 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
+import { ChevronLeft, ChevronRight, Target } from 'lucide-react'
 import type { Area, Deliverable, Project, Quest, Routine, Task } from '../types'
 import { fetchAllRoutines, fetchSessions, fetchTasks, fetchTaskSessions, fetchRoutineSessions, fetchDeliverables, deleteRoutine, reportApiError } from '../api'
 import { parseIsoAsUtc } from '../utils/datetime'
 import { effectiveQuestDeadline, getAreaColor } from '../utils/quests'
+import { SessionHistoryModal } from '../components/SessionHistoryModal'
 import type { UnproductiveBlock } from '../utils/blocks'
 import { getAllBlockRangesForDay } from '../utils/blocks'
 
@@ -68,6 +70,34 @@ function laneStyle(col: number, cols: number): { left: string; width: string } {
   }
 }
 
+/**
+ * Devolve o intervalo (em minutos do dia 0..1440) em que uma sessão
+ * `[start, end]` se sobrepõe ao dia `dateIso`. Null se não tem sobreposição.
+ *
+ * Usado pra renderizar sessões que atravessam meia-noite: a sessão vira até
+ * 2 segmentos visuais (um até 24:00 do dia A, outro a partir de 00:00 do
+ * dia B) — cada chamada por dia retorna o segmento daquele dia.
+ *
+ * `crossesIn` = sessão começou ANTES de hoje (segmento começa em 00:00).
+ * `crossesOut` = sessão termina DEPOIS de hoje (segmento termina em 24:00).
+ * UI usa esses flags pra mostrar borda chanfrada ou seta de continuação.
+ */
+function intersectDay(start: Date, end: Date, dateIso: string): {
+  startMin: number; endMin: number; crossesIn: boolean; crossesOut: boolean
+} | null {
+  const dayStart = new Date(`${dateIso}T00:00:00`)
+  const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000)
+  if (end <= dayStart || start >= dayEnd) return null
+  const segStart = start < dayStart ? dayStart : start
+  const segEnd = end > dayEnd ? dayEnd : end
+  return {
+    startMin: (segStart.getTime() - dayStart.getTime()) / 60000,
+    endMin: (segEnd.getTime() - dayStart.getTime()) / 60000,
+    crossesIn: start < dayStart,
+    crossesOut: end > dayEnd,
+  }
+}
+
 function routineMatchesDay(r: Routine, jsDay: number): boolean {
   if (r.recurrence === 'daily') return true
   if (r.recurrence === 'weekdays') return jsDay >= 1 && jsDay <= 5
@@ -82,7 +112,7 @@ function routineMatchesDay(r: Routine, jsDay: number): boolean {
  * via `getAllBlockRangesForDay`). Clicar num slot abre o modal de edição de
  * bloco improdutivo.
  */
-export function CalendarView({ projects, quests, areas, sessionUpdateTrigger }: { projects: Project[]; quests: Quest[]; areas: Area[]; sessionUpdateTrigger: number }) {
+export function CalendarView({ projects, quests, areas, sessionUpdateTrigger, onSessionUpdate }: { projects: Project[]; quests: Quest[]; areas: Area[]; sessionUpdateTrigger: number; onSessionUpdate?: () => void }) {
   const [routines, setRoutines] = useState<Routine[]>([])
   const [viewMode, setViewMode] = useState<'dia' | 'semana' | 'mês' | 'ano'>('dia')
   const [currentDate, setCurrentDate] = useState(new Date())
@@ -94,6 +124,10 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger }: 
   // (quest herda deadline do entregável → projeto). Buscado em paralelo no
   // mount + sempre que a lista de project_ids das quests muda.
   const [delivsByProject, setDelivsByProject] = useState<Record<string, Deliverable[]>>({})
+  // Modal de histórico/edição de sessão. Setado quando user clica num bloco
+  // do timeline. Carrega as sessões já populadas em allSessions/...,
+  // filtrando pela entity escolhida.
+  const [sessionModal, setSessionModal] = useState<{ kind: 'quest' | 'task' | 'routine'; entityId: string } | null>(null)
   // Tick por minuto pra linha de "agora" seguir o relógio — antes estava
   // congelado no instante do mount, o que dava sensação de atraso conforme
   // o tempo passa.
@@ -220,49 +254,36 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger }: 
   // Coleta todos os blocos timeline do `dateIso` — sessões de quest/task/
   // rotina + rotinas agendadas — e atribui `col` + `cols` pra cada um via
   // `computeEventLayout`. Ids devem bater com os usados no render abaixo.
+  // Sessões cross-midnight aparecem como segmento clipado nos dias afetados.
   const dayEventLayout = useMemo(() => {
     const evs: Array<{ id: string; startMin: number; endMin: number }> = []
-    const minutesOf = (d: Date) => d.getHours() * 60 + d.getMinutes()
 
-    quests.forEach(quest => {
-      const sessions = allSessions.get(quest.id) || []
-      sessions.forEach((s: any, idx: number) => {
-        if (!s?.started_at) return
-        const start = parseIsoAsUtc(s.started_at)
-        const stIso = `${start.getFullYear()}-${String(start.getMonth()+1).padStart(2,'0')}-${String(start.getDate()).padStart(2,'0')}`
-        if (stIso !== dateIso) return
-        const end = s.ended_at ? parseIsoAsUtc(s.ended_at) : new Date()
-        const sm = minutesOf(start)
-        const em = Math.max(sm + 15, minutesOf(end))
-        evs.push({ id: `q:${quest.id}:${idx}`, startMin: sm, endMin: em })
+    const collectSessions = <T extends { id: string }>(
+      items: T[],
+      sessionsMap: Map<string, any[]>,
+      idPrefix: string,
+    ) => {
+      items.forEach(item => {
+        const sessions = sessionsMap.get(item.id) || []
+        sessions.forEach((s: any, idx: number) => {
+          if (!s?.started_at) return
+          const start = parseIsoAsUtc(s.started_at)
+          const end = s.ended_at ? parseIsoAsUtc(s.ended_at) : new Date()
+          const seg = intersectDay(start, end, dateIso)
+          if (!seg) return
+          // Mantém piso de 15min só pra sessão "real" (sem clip) — segmentos
+          // clipados devem mostrar a duração visível exata, sem inflar.
+          const em = (seg.crossesIn || seg.crossesOut)
+            ? seg.endMin
+            : Math.max(seg.startMin + 15, seg.endMin)
+          evs.push({ id: `${idPrefix}:${item.id}:${idx}`, startMin: seg.startMin, endMin: em })
+        })
       })
-    })
+    }
 
-    tasks.forEach(task => {
-      const sessions = allTaskSessions.get(task.id) || []
-      sessions.forEach((s: any, idx: number) => {
-        if (!s?.started_at) return
-        const start = parseIsoAsUtc(s.started_at)
-        const stIso = `${start.getFullYear()}-${String(start.getMonth()+1).padStart(2,'0')}-${String(start.getDate()).padStart(2,'0')}`
-        if (stIso !== dateIso) return
-        const end = s.ended_at ? parseIsoAsUtc(s.ended_at) : new Date()
-        const sm = minutesOf(start)
-        const em = Math.max(sm + 15, minutesOf(end))
-        evs.push({ id: `t:${task.id}:${idx}`, startMin: sm, endMin: em })
-      })
-    })
-
-    routines.forEach(routine => {
-      const sessions = allRoutineSessions.get(routine.id) || []
-      sessions.forEach((s: any, idx: number) => {
-        if (!s?.started_at) return
-        const start = parseIsoAsUtc(s.started_at)
-        const end = s.ended_at ? parseIsoAsUtc(s.ended_at) : new Date()
-        const sm = minutesOf(start)
-        const em = Math.max(sm + 15, minutesOf(end))
-        evs.push({ id: `rs:${routine.id}:${idx}`, startMin: sm, endMin: em })
-      })
-    })
+    collectSessions(quests, allSessions, 'q')
+    collectSessions(tasks, allTaskSessions, 't')
+    collectSessions(routines, allRoutineSessions, 'rs')
 
     routinesForDay(dateIso).forEach(routine => {
       if (!routine.start_time || !routine.end_time) return
@@ -301,90 +322,124 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger }: 
             {viewMode === 'dia' ? 'Visão do dia' : viewMode === 'semana' ? 'Visão da semana' : viewMode === 'mês' ? 'Visão do mês' : 'Visão do ano'}
           </div>
         </div>
-        <div style={{ display: 'flex', gap: 2 }}>
-          {(['dia', 'semana', 'mês', 'ano'] as const).map((mode) => (
-            <button
-              key={mode}
-              onClick={() => setViewMode(mode)}
-              style={{
-                background: 'none', border: 'none', cursor: 'pointer',
-                color: viewMode === mode ? 'var(--color-text-primary)' : 'var(--color-text-muted)',
-                fontSize: 10, fontWeight: viewMode === mode ? 700 : 500,
-                padding: '6px 12px', textTransform: 'uppercase',
-                letterSpacing: '0.1em',
-                borderBottom: viewMode === mode ? '2px solid var(--color-accent-primary)' : '2px solid transparent',
-                transition: 'all 0.15s',
-              }}
-              onMouseEnter={e => { if (viewMode !== mode) e.currentTarget.style.color = 'var(--color-text-secondary)' }}
-              onMouseLeave={e => { if (viewMode !== mode) e.currentTarget.style.color = 'var(--color-text-muted)' }}
-            >
-              {mode}
-            </button>
-          ))}
+        {/* Mode tabs — segmented control glass */}
+        <div
+          className="hq-glass"
+          style={{
+            display: 'inline-flex',
+            padding: 3,
+            borderRadius: 'var(--radius-pill)',
+            gap: 2,
+          }}
+        >
+          {(['dia', 'semana', 'mês', 'ano'] as const).map((mode) => {
+            const active = viewMode === mode
+            return (
+              <button
+                key={mode}
+                onClick={() => setViewMode(mode)}
+                style={{
+                  background: active ? 'var(--chrome-grad)' : 'transparent',
+                  border: 'none',
+                  cursor: 'pointer',
+                  color: active ? '#1a1a1c' : 'var(--color-text-tertiary)',
+                  fontSize: 'var(--text-xs)',
+                  fontWeight: active ? 700 : 500,
+                  padding: '6px 14px',
+                  borderRadius: 'var(--radius-pill)',
+                  letterSpacing: '0.04em',
+                  textTransform: 'lowercase',
+                  fontFamily: 'var(--font-body)',
+                  boxShadow: active ? 'var(--shadow-chrome-inner)' : 'none',
+                  transition: 'background var(--motion-fast) var(--ease-smooth), color var(--motion-fast) var(--ease-smooth)',
+                }}
+              >
+                {mode}
+              </button>
+            )
+          })}
         </div>
       </header>
 
       {viewMode === 'dia' && (
         <div>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
+          {/* Day nav — chevron icons + glass "hoje" button */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 'var(--space-3)', marginBottom: 'var(--space-6)' }}>
             <button
+              type="button"
+              className="hq-icon-btn-bare"
               onClick={() => setCurrentDate(new Date(currentDate.getTime() - 86400000))}
-              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-secondary)', fontSize: 18, padding: '4px 10px', lineHeight: 1, transition: 'color 0.2s' }}
-              onMouseEnter={e => (e.currentTarget.style.color = 'var(--color-text-primary)')}
-              onMouseLeave={e => (e.currentTarget.style.color = 'var(--color-text-secondary)')}
-            >←</button>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <div style={{ fontSize: 12, color: 'var(--color-text-primary)', fontWeight: 500 }}>{dateLabel}</div>
+              title="Dia anterior"
+              aria-label="Dia anterior"
+            >
+              <ChevronLeft size={16} strokeWidth={1.5} />
+            </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
+              <div style={{
+                fontSize: 'var(--text-md)',
+                color: 'var(--color-text-primary)',
+                fontWeight: 500,
+                fontFamily: 'var(--font-display)',
+                letterSpacing: '-0.01em',
+                minWidth: 220,
+                textAlign: 'center',
+              }}>
+                {dateLabel}
+              </div>
               <button
+                type="button"
+                className="hq-btn hq-btn--ghost"
                 onClick={() => setCurrentDate(new Date())}
-                style={{
-                  background: 'none', border: '1px solid var(--color-border)', cursor: 'pointer',
-                  color: 'var(--color-text-secondary)', fontSize: 10, padding: '4px 10px', lineHeight: 1,
-                  textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 600,
-                  borderRadius: 3, transition: 'all 0.2s'
-                }}
-                onMouseEnter={e => {
-                  e.currentTarget.style.borderColor = 'var(--color-accent-light)'
-                  e.currentTarget.style.color = 'var(--color-accent-light)'
-                }}
-                onMouseLeave={e => {
-                  e.currentTarget.style.borderColor = 'var(--color-border)'
-                  e.currentTarget.style.color = 'var(--color-text-secondary)'
-                }}
-              >hoje</button>
+                style={{ padding: '4px 12px', fontSize: 'var(--text-xs)' }}
+              >
+                hoje
+              </button>
             </div>
             <button
+              type="button"
+              className="hq-icon-btn-bare"
               onClick={() => setCurrentDate(new Date(currentDate.getTime() + 86400000))}
-              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-secondary)', fontSize: 18, padding: '4px 10px', lineHeight: 1, transition: 'color 0.2s' }}
-              onMouseEnter={e => (e.currentTarget.style.color = 'var(--color-text-primary)')}
-              onMouseLeave={e => (e.currentTarget.style.color = 'var(--color-text-secondary)')}
-            >→</button>
+              title="Próximo dia"
+              aria-label="Próximo dia"
+            >
+              <ChevronRight size={16} strokeWidth={1.5} />
+            </button>
           </div>
 
+          {/* Legend — pills compactos */}
           <div style={{
             display: 'flex',
-            gap: 20,
-            marginBottom: 16,
-            padding: '12px 8px',
-            fontSize: 11,
-            color: 'var(--color-text-tertiary)',
+            gap: 'var(--space-2)',
+            marginBottom: 'var(--space-4)',
+            flexWrap: 'wrap',
           }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <div style={{ width: 16, height: 16, background: 'var(--color-accent-light)', borderRadius: 2 }} />
-              <span>Quests</span>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <div style={{ width: 16, height: 16, background: 'var(--color-gold)', borderRadius: 2 }} />
-              <span>Tarefas</span>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <div style={{ width: 16, height: 16, background: 'var(--color-routine-block)', borderRadius: 2 }} />
-              <span>Rotinas</span>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <div style={{ width: 16, height: 16, background: 'rgba(107, 100, 96, 0.3)', border: '1px solid var(--color-text-muted)', borderRadius: 2 }} />
-              <span>Improdutivo</span>
-            </div>
+            {[
+              { label: 'Quests', color: 'var(--color-accent-light)' },
+              { label: 'Tarefas', color: 'var(--color-gold)' },
+              { label: 'Rotinas', color: 'var(--color-routine-block-border)' },
+              { label: 'Improdutivo', color: 'var(--color-text-muted)' },
+            ].map(item => (
+              <div
+                key={item.label}
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 6,
+                  fontSize: 'var(--text-xs)',
+                  color: 'var(--color-text-tertiary)',
+                  padding: '4px 10px',
+                  background: 'var(--glass-bg)',
+                  border: '1px solid var(--color-border)',
+                  borderRadius: 'var(--radius-pill)',
+                }}
+              >
+                <div style={{
+                  width: 8, height: 8,
+                  background: item.color,
+                  borderRadius: '50%',
+                  flexShrink: 0,
+                }} />
+                {item.label}
+              </div>
+            ))}
           </div>
 
           <div style={{ overflow: 'auto', height: '80vh' }}>
@@ -392,10 +447,41 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger }: 
               const dayProjects = projects.filter(p => p.deadline === dateIso && !p.archived_at)
               if (!dayProjects.length) return null
               return (
-                <div style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--color-bg-secondary)', borderBottom: '1px solid var(--color-border)', padding: '2px 8px', marginBottom: 4, display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center' }}>
+                <div
+                  className="hq-glass"
+                  style={{
+                    position: 'sticky', top: 0, zIndex: 10,
+                    padding: 'var(--space-2) var(--space-3)',
+                    marginBottom: 'var(--space-2)',
+                    display: 'flex', gap: 'var(--space-2)',
+                    flexWrap: 'wrap', alignItems: 'center',
+                  }}
+                >
+                  <span style={{
+                    fontSize: 'var(--text-xs)',
+                    color: 'var(--color-text-tertiary)',
+                    letterSpacing: '0.12em',
+                    textTransform: 'uppercase',
+                    fontWeight: 600,
+                    marginRight: 'var(--space-2)',
+                  }}>
+                    deadlines hoje
+                  </span>
                   {dayProjects.map(q => (
-                    <span key={q.id} style={{ fontSize: 13, color: 'var(--color-accent-light)', background: 'var(--color-bg-tertiary)', border: '1px solid var(--color-accent-light)33', borderRadius: 3, padding: '4px 10px' }}>
-                      📋 {q.title}
+                    <span
+                      key={q.id}
+                      style={{
+                        display: 'inline-flex', alignItems: 'center', gap: 6,
+                        fontSize: 'var(--text-xs)',
+                        color: 'var(--color-text-primary)',
+                        background: 'var(--glass-bg-elevated)',
+                        border: '1px solid var(--color-border-chrome)',
+                        borderRadius: 'var(--radius-pill)',
+                        padding: '4px 10px',
+                      }}
+                    >
+                      <Target size={11} strokeWidth={1.6} style={{ color: 'var(--color-accent-light)' }} />
+                      {q.title}
                     </span>
                   ))}
                 </div>
@@ -484,7 +570,7 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger }: 
                       transition: 'background-color 0.2s',
                     }}
                     onMouseEnter={(e) => {
-                      e.currentTarget.style.backgroundColor = 'rgba(196, 106, 90, 0.05)'
+                      e.currentTarget.style.backgroundColor = 'var(--glass-bg-hover)'
                     }}
                     onMouseLeave={(e) => {
                       e.currentTarget.style.backgroundColor = 'transparent'
@@ -513,14 +599,24 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger }: 
                     style={{
                       position: 'absolute',
                       top: `${20 + (currentTime.getHours() + currentTime.getMinutes() / 60) * 60 * timelineZoom}px`,
-                      left: 0,
-                      right: 0,
-                      height: '2px',
-                      background: 'var(--color-accent-light)',
+                      left: 0, right: 0,
+                      height: 1,
+                      background: 'linear-gradient(90deg, var(--color-accent-primary), var(--color-accent-light) 50%, transparent)',
+                      boxShadow: '0 0 12px rgba(159, 18, 57, 0.45)',
                       zIndex: 100,
                       pointerEvents: 'none',
                     }}
-                  />
+                  >
+                    {/* Dot vivo no início da linha */}
+                    <div
+                      className="hq-pulse-dot"
+                      style={{
+                        position: 'absolute',
+                        left: -5, top: -4,
+                        width: 9, height: 9,
+                      }}
+                    />
+                  </div>
                 )}
 
                 {getAllBlockRangesForDay(unproductiveBlocks, currentDate).map((r, idx) => {
@@ -576,35 +672,32 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger }: 
 
                 {quests.map((quest) => {
                   const sessions = allSessions.get(quest.id) || []
-                  const todaySessions = sessions.filter(s => {
+                  // Pra cada sessão, computa o segmento que se sobrepõe ao
+                  // dia atual. Sessão que atravessa meia-noite aparece nos
+                  // dois dias clipada — `crossesIn/crossesOut` indica isso.
+                  const todaySegments = sessions.flatMap((s, idx) => {
+                    if (!s?.started_at) return []
                     const start = parseIsoAsUtc(s.started_at)
-                    const startDate = `${start.getFullYear()}-${String(start.getMonth()+1).padStart(2,'0')}-${String(start.getDate()).padStart(2,'0')}`
-                    return startDate === dateIso
+                    const end = s.ended_at ? parseIsoAsUtc(s.ended_at) : new Date()
+                    const seg = intersectDay(start, end, dateIso)
+                    return seg ? [{ session: s, idx, start, end, seg }] : []
                   })
                   const parentQuest = quest.project_id ? projects.find(p => p.id === quest.project_id) : null
 
-                  return todaySessions.map((session, idx) => {
-                    const start = parseIsoAsUtc(session.started_at)
-                    const end = session.ended_at ? parseIsoAsUtc(session.ended_at) : new Date()
-                    const startHour = start.getHours() + start.getMinutes() / 60
-                    const duration = (end.getTime() - start.getTime()) / (1000 * 60 * 60)
-                    const topPercent = 20 + (startHour % 24) * 60 * timelineZoom
-                    // Altura 100% proporcional à duração real (1 min = 1px no
-                    // zoom padrão). Sem piso mínimo — blocos curtos ficam
-                    // finos, e o usuário pode dar zoom in pra inspecionar.
-                    const heightPercent = duration * 60 * timelineZoom
+                  return todaySegments.map(({ idx, start, end, seg }) => {
+                    const startHour = seg.startMin / 60
+                    const durationMin = seg.endMin - seg.startMin
+                    const topPercent = 20 + startHour * 60 * timelineZoom
+                    const heightPercent = durationMin * timelineZoom
                     const displayTitle = parentQuest ? `${parentQuest.title} > ${quest.title}` : quest.title
 
                     const lay = dayEventLayout.get(`q:${quest.id}:${idx}`) ?? { col: 0, cols: 1 }
                     const lane = laneStyle(lay.col, lay.cols)
-                    // Eventos < 25min são finos demais pra caber título +
-                    // horário dentro. Move o título pra LINHA ACIMA do bloco;
-                    // o bloco vira só a faixa colorida, e um tooltip completa
-                    // o contexto (título + horário) no hover.
-                    const durationMin = duration * 60
                     const isShort = durationMin < 25
-                    const timeLabel = start.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', hour12: false })
-                      + (end ? ` → ${end.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', hour12: false })}` : '')
+                    const fmtTime = (d: Date) => d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', hour12: false })
+                    // Label sempre mostra horário REAL da sessão (não o do
+                    // segmento clipado), com setas indicando continuação.
+                    const timeLabel = `${seg.crossesIn ? '↪ ' : ''}${fmtTime(start)} → ${fmtTime(end)}${seg.crossesOut ? ' ↩' : ''}`
                     return (
                       <Fragment key={`q-${quest.id}-${idx}`}>
                         {isShort && (
@@ -617,7 +710,7 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger }: 
                                 top: `${topPercent - 24}px`,
                                 fontSize: 8, fontWeight: 400, lineHeight: 1,
                                 color: 'var(--color-text-muted)',
-                                fontFamily: "'IBM Plex Mono', monospace",
+                                fontFamily: 'var(--font-mono)',
                                 whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
                                 paddingLeft: 2, paddingRight: 2,
                                 zIndex: 3,
@@ -643,7 +736,8 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger }: 
                           </>
                         )}
                         <div
-                          title={`${displayTitle} · ${timeLabel}`}
+                          title={`${displayTitle} · ${timeLabel} — clique pra ver / editar histórico`}
+                          onClick={() => setSessionModal({ kind: 'quest', entityId: quest.id })}
                           style={{
                             position: 'absolute',
                             left: lane.left,
@@ -662,6 +756,12 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger }: 
                             transition: 'opacity 0.15s, box-shadow 0.15s',
                             boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
                             border: '1px solid rgba(255,255,255,0.2)',
+                            // Cross-midnight: tira borda do lado da continuação
+                            // (visual indica que o bloco "continua" no outro dia)
+                            borderTopLeftRadius: seg.crossesIn ? 0 : 3,
+                            borderTopRightRadius: seg.crossesIn ? 0 : 3,
+                            borderBottomLeftRadius: seg.crossesOut ? 0 : 3,
+                            borderBottomRightRadius: seg.crossesOut ? 0 : 3,
                           }}
                           onMouseEnter={e => {
                             e.currentTarget.style.opacity = '1'
@@ -691,29 +791,24 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger }: 
                 {/* Sessões de TAREFAS (play/pause/stop → blocos no timeline) */}
                 {tasks.map((task) => {
                   const sessions = allTaskSessions.get(task.id) || []
-                  const todaySessions = sessions.filter(s => {
-                    if (!s?.started_at) return false
-                    const st = parseIsoAsUtc(s.started_at)
-                    const stDate = `${st.getFullYear()}-${String(st.getMonth()+1).padStart(2,'0')}-${String(st.getDate()).padStart(2,'0')}`
-                    return stDate === dateIso
+                  const todaySegments = sessions.flatMap((s, idx) => {
+                    if (!s?.started_at) return []
+                    const start = parseIsoAsUtc(s.started_at)
+                    const end = s.ended_at ? parseIsoAsUtc(s.ended_at) : new Date()
+                    const seg = intersectDay(start, end, dateIso)
+                    return seg ? [{ session: s, idx, start, end, seg }] : []
                   })
-                  return todaySessions.map((session, idx) => {
-                    const start = parseIsoAsUtc(session.started_at)
-                    const end = session.ended_at ? parseIsoAsUtc(session.ended_at) : new Date()
-                    const startHour = start.getHours() + start.getMinutes() / 60
-                    const duration = (end.getTime() - start.getTime()) / (1000 * 60 * 60)
-                    const topPercent = 20 + (startHour % 24) * 60 * timelineZoom
-                    // Altura 100% proporcional à duração real (1 min = 1px no
-                    // zoom padrão). Sem piso mínimo — blocos curtos ficam
-                    // finos, e o usuário pode dar zoom in pra inspecionar.
-                    const heightPercent = duration * 60 * timelineZoom
+                  return todaySegments.map(({ session, idx, start, end, seg }) => {
+                    const startHour = seg.startMin / 60
+                    const durationMin = seg.endMin - seg.startMin
+                    const topPercent = 20 + startHour * 60 * timelineZoom
+                    const heightPercent = durationMin * timelineZoom
                     const running = !session.ended_at
                     const lay = dayEventLayout.get(`t:${task.id}:${idx}`) ?? { col: 0, cols: 1 }
                     const lane = laneStyle(lay.col, lay.cols)
-                    const durationMin = duration * 60
                     const isShort = durationMin < 25
-                    const timeLabel = start.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', hour12: false })
-                      + ` → ${end.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', hour12: false })}`
+                    const fmtTime = (d: Date) => d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', hour12: false })
+                    const timeLabel = `${seg.crossesIn ? '↪ ' : ''}${fmtTime(start)} → ${fmtTime(end)}${seg.crossesOut ? ' ↩' : ''}`
                     return (
                       <Fragment key={`task-sess-${task.id}-${idx}`}>
                         {isShort && (
@@ -726,7 +821,7 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger }: 
                                 top: `${topPercent - 24}px`,
                                 fontSize: 8, fontWeight: 400, lineHeight: 1,
                                 color: 'var(--color-text-muted)',
-                                fontFamily: "'IBM Plex Mono', monospace",
+                                fontFamily: 'var(--font-mono)',
                                 whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
                                 paddingLeft: 2, paddingRight: 2,
                                 zIndex: 3,
@@ -752,13 +847,18 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger }: 
                           </>
                         )}
                         <div
-                          title={`${task.title} · ${running ? 'rodando' : 'finalizada'} · ${timeLabel}`}
+                          title={`${task.title} · ${running ? 'rodando' : 'finalizada'} · ${timeLabel} — clique pra ver / editar histórico`}
+                          onClick={() => setSessionModal({ kind: 'task', entityId: task.id })}
                           style={{
                             position: 'absolute', left: lane.left, width: lane.width,
                             top: `${topPercent}px`, height: `${heightPercent}px`,
                             background: 'var(--color-gold)',
                             border: running ? '1px dashed #fff' : '1px solid rgba(255,255,255,0.2)',
-                            borderRadius: 3, padding: isShort ? '0' : '4px',
+                            borderTopLeftRadius: seg.crossesIn ? 0 : 3,
+                            borderTopRightRadius: seg.crossesIn ? 0 : 3,
+                            borderBottomLeftRadius: seg.crossesOut ? 0 : 3,
+                            borderBottomRightRadius: seg.crossesOut ? 0 : 3,
+                            padding: isShort ? '0' : '4px',
                             overflow: 'hidden',
                             display: 'flex', flexDirection: 'column', justifyContent: 'space-between',
                             opacity: 0.85,
@@ -784,24 +884,24 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger }: 
                 {/* Sessões de ROTINAS (play/pause/stop real, separado do horário fixo agendado) */}
                 {routines.map((routine) => {
                   const sessions = allRoutineSessions.get(routine.id) || []
-                  return sessions.map((session, idx) => {
-                    if (!session?.started_at) return null
-                    const start = parseIsoAsUtc(session.started_at)
-                    const end = session.ended_at ? parseIsoAsUtc(session.ended_at) : new Date()
-                    const startHour = start.getHours() + start.getMinutes() / 60
-                    const duration = (end.getTime() - start.getTime()) / (1000 * 60 * 60)
-                    const topPercent = 20 + (startHour % 24) * 60 * timelineZoom
-                    // Altura 100% proporcional à duração real (1 min = 1px no
-                    // zoom padrão). Sem piso mínimo — blocos curtos ficam
-                    // finos, e o usuário pode dar zoom in pra inspecionar.
-                    const heightPercent = duration * 60 * timelineZoom
+                  const todaySegments = sessions.flatMap((s, idx) => {
+                    if (!s?.started_at) return []
+                    const start = parseIsoAsUtc(s.started_at)
+                    const end = s.ended_at ? parseIsoAsUtc(s.ended_at) : new Date()
+                    const seg = intersectDay(start, end, dateIso)
+                    return seg ? [{ session: s, idx, start, end, seg }] : []
+                  })
+                  return todaySegments.map(({ session, idx, start, end, seg }) => {
+                    const startHour = seg.startMin / 60
+                    const durationMin = seg.endMin - seg.startMin
+                    const topPercent = 20 + startHour * 60 * timelineZoom
+                    const heightPercent = durationMin * timelineZoom
                     const running = !session.ended_at
                     const lay = dayEventLayout.get(`rs:${routine.id}:${idx}`) ?? { col: 0, cols: 1 }
                     const lane = laneStyle(lay.col, lay.cols)
-                    const durationMin = duration * 60
                     const isShort = durationMin < 25
-                    const timeLabel = start.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', hour12: false })
-                      + ` → ${end.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', hour12: false })}`
+                    const fmtTime = (d: Date) => d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', hour12: false })
+                    const timeLabel = `${seg.crossesIn ? '↪ ' : ''}${fmtTime(start)} → ${fmtTime(end)}${seg.crossesOut ? ' ↩' : ''}`
                     return (
                       <Fragment key={`routine-sess-${routine.id}-${idx}`}>
                         {isShort && (
@@ -814,7 +914,7 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger }: 
                                 top: `${topPercent - 24}px`,
                                 fontSize: 8, fontWeight: 400, lineHeight: 1,
                                 color: 'var(--color-text-muted)',
-                                fontFamily: "'IBM Plex Mono', monospace",
+                                fontFamily: 'var(--font-mono)',
                                 whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
                                 paddingLeft: 2, paddingRight: 2,
                                 zIndex: 3,
@@ -840,13 +940,18 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger }: 
                           </>
                         )}
                         <div
-                          title={`${routine.title} · ${running ? 'rodando' : 'finalizada'} · ${timeLabel}`}
+                          title={`${routine.title} · ${running ? 'rodando' : 'finalizada'} · ${timeLabel} — clique pra ver / editar histórico`}
+                          onClick={() => setSessionModal({ kind: 'routine', entityId: routine.id })}
                           style={{
                             position: 'absolute', left: lane.left, width: lane.width,
                             top: `${topPercent}px`, height: `${heightPercent}px`,
                             background: 'var(--color-routine-block)',
                             border: running ? '1px dashed #fff' : '1px solid var(--color-routine-block-border)',
-                            borderRadius: 3, padding: isShort ? '0' : '4px',
+                            borderTopLeftRadius: seg.crossesIn ? 0 : 3,
+                            borderTopRightRadius: seg.crossesIn ? 0 : 3,
+                            borderBottomLeftRadius: seg.crossesOut ? 0 : 3,
+                            borderBottomRightRadius: seg.crossesOut ? 0 : 3,
+                            padding: isShort ? '0' : '4px',
                             overflow: 'hidden',
                             display: 'flex', flexDirection: 'column', justifyContent: 'space-between',
                             opacity: 0.9,
@@ -901,7 +1006,7 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger }: 
                               top: `${topPercent - 24}px`,
                               fontSize: 8, fontWeight: 400, lineHeight: 1,
                               color: 'var(--color-text-muted)',
-                              fontFamily: "'IBM Plex Mono', monospace",
+                              fontFamily: 'var(--font-mono)',
                               whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
                               paddingLeft: 2, paddingRight: 2,
                               zIndex: 3,
@@ -928,7 +1033,8 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger }: 
                         </>
                       )}
                       <div
-                        title={`${routine.title} · ${timeLabel}`}
+                        title={`${routine.title} · ${timeLabel} — clique pra ver / editar histórico`}
+                        onClick={() => setSessionModal({ kind: 'routine', entityId: routine.id })}
                         style={{
                           position: 'absolute',
                           left: lane.left,
@@ -1299,23 +1405,21 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger }: 
 
                   {quests.map((quest) => {
                     const sessions = allSessions.get(quest.id) || []
-                    const daySessions = sessions.filter(s => {
+                    const daySegments = sessions.flatMap((s, idx) => {
+                      if (!s?.started_at) return []
                       const start = parseIsoAsUtc(s.started_at)
-                      const startDate = `${start.getFullYear()}-${String(start.getMonth()+1).padStart(2,'0')}-${String(start.getDate()).padStart(2,'0')}`
-                      return startDate === dayIso
+                      const end = s.ended_at ? parseIsoAsUtc(s.ended_at) : new Date()
+                      const seg = intersectDay(start, end, dayIso)
+                      return seg ? [{ idx, seg }] : []
                     })
                     const parentQuest = quest.project_id ? projects.find(p => p.id === quest.project_id) : null
                     const displayTitle = parentQuest ? `${parentQuest.title} > ${quest.title}` : quest.title
 
-                    return daySessions.map((session, idx) => {
-                      const start = parseIsoAsUtc(session.started_at)
-                      const end = session.ended_at ? parseIsoAsUtc(session.ended_at) : new Date()
-
-                      const startHour = start.getHours() + start.getMinutes() / 60
-                      const duration = (end.getTime() - start.getTime()) / (1000 * 60 * 60)
-
-                      const topPercent = (startHour % 24) * 40 * timelineZoom
-                      const heightPercent = Math.max(10, duration * 40 * timelineZoom)
+                    return daySegments.map(({ idx, seg }) => {
+                      const startHour = seg.startMin / 60
+                      const durationMin = seg.endMin - seg.startMin
+                      const topPercent = startHour * 40 * timelineZoom
+                      const heightPercent = Math.max(10, durationMin / 60 * 40 * timelineZoom)
 
                       return (
                         <div
@@ -1327,7 +1431,10 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger }: 
                             top: `${40 + topPercent}px`,
                             height: `${heightPercent}px`,
                             background: getAreaColor(quest.area_slug, areas),
-                            borderRadius: 2,
+                            borderTopLeftRadius: seg.crossesIn ? 0 : 2,
+                            borderTopRightRadius: seg.crossesIn ? 0 : 2,
+                            borderBottomLeftRadius: seg.crossesOut ? 0 : 2,
+                            borderBottomRightRadius: seg.crossesOut ? 0 : 2,
                             padding: '2px',
                             overflow: 'hidden',
                             display: 'flex',
@@ -2131,7 +2238,7 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger }: 
                       </div>
                       <div style={{
                         fontSize: 10, color: 'var(--color-text-tertiary)', marginTop: 2,
-                        fontFamily: "'IBM Plex Mono', monospace",
+                        fontFamily: 'var(--font-mono)',
                       }}>
                         {opt.desc}
                       </div>
@@ -2264,6 +2371,28 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger }: 
           `}</style>
         </div>
       )}
+
+      {sessionModal && (() => {
+        const sessMap = sessionModal.kind === 'quest'
+          ? allSessions
+          : sessionModal.kind === 'task'
+            ? allTaskSessions
+            : allRoutineSessions
+        const raw = sessMap.get(sessionModal.entityId) ?? []
+        const sess = raw.map((s: any) => ({
+          id: s?.id,
+          started_at: s?.started_at ?? '',
+          ended_at: s?.ended_at ?? null,
+        }))
+        return (
+          <SessionHistoryModal
+            sessions={sess}
+            kind={sessionModal.kind}
+            onChanged={() => onSessionUpdate?.()}
+            onClose={() => setSessionModal(null)}
+          />
+        )
+      })()}
     </div>
   )
 }

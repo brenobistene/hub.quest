@@ -125,7 +125,7 @@ export function MicroDumpView({ areas, projects, onArchive }: { areas: Area[]; p
           </div>
           <div style={{
             fontSize: 10, color: 'var(--color-text-muted)',
-            fontFamily: "'IBM Plex Mono', monospace",
+            fontFamily: 'var(--font-mono)',
           }}>
             {microTasks.length}
           </div>
@@ -146,15 +146,14 @@ export function MicroDumpView({ areas, projects, onArchive }: { areas: Area[]; p
         </div>
 
         {microTasks.length > 0 ? (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div className="hq-stagger" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
             {microTasks.map((task, idx) => (
               <div
                 key={task.id}
+                className="hq-glass hq-grain hq-card-hoverable hq-animate-fade-up"
                 style={{
-                  padding: '12px',
-                  background: 'var(--color-bg-primary)',
-                  border: '1px solid var(--color-border)',
-                  borderRadius: 4,
+                  padding: 'var(--space-3) var(--space-4)',
+                  ['--stagger-i' as any]: idx,
                 }}
               >
                 <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 8 }}>
@@ -431,7 +430,7 @@ export function MicroDumpView({ areas, projects, onArchive }: { areas: Area[]; p
                       style={{
                         flex: 1, background: 'var(--color-bg-tertiary)', border: '1px solid var(--color-border)', color: 'var(--color-text-primary)',
                         padding: '8px 10px', fontSize: 12, borderRadius: 3, outline: 'none',
-                        fontFamily: "'IBM Plex Mono', monospace", fontWeight: 500, colorScheme: 'dark',
+                        fontFamily: 'var(--font-mono)', fontWeight: 500, colorScheme: 'dark',
                       } as any}
                     />
                     <span style={{ color: 'var(--color-text-secondary)' }}>–</span>
@@ -443,7 +442,7 @@ export function MicroDumpView({ areas, projects, onArchive }: { areas: Area[]; p
                       style={{
                         flex: 1, background: 'var(--color-bg-tertiary)', border: '1px solid var(--color-border)', color: 'var(--color-text-primary)',
                         padding: '8px 10px', fontSize: 12, borderRadius: 3, outline: 'none',
-                        fontFamily: "'IBM Plex Mono', monospace", fontWeight: 500, colorScheme: 'dark',
+                        fontFamily: 'var(--font-mono)', fontWeight: 500, colorScheme: 'dark',
                       } as any}
                     />
                   </div>
@@ -467,7 +466,7 @@ export function MicroDumpView({ areas, projects, onArchive }: { areas: Area[]; p
                     style={{
                       width: '100%', background: 'var(--color-bg-tertiary)', border: '1px solid var(--color-border)', color: 'var(--color-text-primary)',
                       padding: '8px 10px', fontSize: 12, borderRadius: 3, outline: 'none', boxSizing: 'border-box',
-                      fontFamily: "'IBM Plex Mono', monospace", fontWeight: 500,
+                      fontFamily: 'var(--font-mono)', fontWeight: 500,
                     }}
                   />
                 </div>
@@ -501,7 +500,7 @@ export function MicroDumpView({ areas, projects, onArchive }: { areas: Area[]; p
                       style={{
                         flex: 1, background: 'var(--color-bg-tertiary)', border: '1px solid var(--color-border)', color: 'var(--color-text-primary)',
                         padding: '8px 10px', fontSize: 12, borderRadius: 3, outline: 'none',
-                        fontFamily: "'IBM Plex Mono', monospace", fontWeight: 500,
+                        fontFamily: 'var(--font-mono)', fontWeight: 500,
                         transition: 'all 0.2s cubic-bezier(0.3, 0, 0.7, 1)',
                       }}
                     />
@@ -522,7 +521,7 @@ export function MicroDumpView({ areas, projects, onArchive }: { areas: Area[]; p
                       style={{
                         flex: 1, background: 'var(--color-bg-tertiary)', border: '1px solid var(--color-border)', color: 'var(--color-text-primary)',
                         padding: '8px 10px', fontSize: 12, borderRadius: 3, outline: 'none',
-                        fontFamily: "'IBM Plex Mono', monospace", fontWeight: 500,
+                        fontFamily: 'var(--font-mono)', fontWeight: 500,
                         transition: 'all 0.2s cubic-bezier(0.3, 0, 0.7, 1)',
                       }}
                     />
@@ -592,7 +591,7 @@ export function MicroDumpView({ areas, projects, onArchive }: { areas: Area[]; p
                       style={{
                         width: '100%', background: 'var(--color-bg-tertiary)', border: '1px solid var(--color-border)', color: 'var(--color-text-primary)',
                         padding: '8px 10px', fontSize: 12, borderRadius: 3, outline: 'none', boxSizing: 'border-box',
-                        fontFamily: "'IBM Plex Mono', monospace", fontWeight: 500,
+                        fontFamily: 'var(--font-mono)', fontWeight: 500,
                         transition: 'all 0.2s cubic-bezier(0.3, 0, 0.7, 1)',
                       }}
                     />

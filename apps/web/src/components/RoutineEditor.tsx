@@ -195,7 +195,7 @@ export function RoutineEditor({
               style={{
                 width: 50, background: 'var(--color-bg-tertiary)', border: '1px solid var(--color-border)', color: 'var(--color-text-primary)',
                 padding: '4px 6px', fontSize: 12, borderRadius: 3, outline: 'none',
-                fontFamily: "'IBM Plex Mono', monospace", fontWeight: 600,
+                fontFamily: 'var(--font-mono)', fontWeight: 600,
                 transition: 'all 0.2s cubic-bezier(0.3, 0, 0.7, 1)',
               }}
             />
@@ -261,7 +261,7 @@ export function RoutineEditor({
                     style={{
                       flex: 1, background: 'var(--color-bg-tertiary)', border: '1px solid var(--color-border)', color: 'var(--color-text-primary)',
                       padding: '6px 8px', fontSize: 12, borderRadius: 3, outline: 'none',
-                      fontFamily: "'IBM Plex Mono', monospace", fontWeight: 500,
+                      fontFamily: 'var(--font-mono)', fontWeight: 500,
                       transition: 'all 0.2s cubic-bezier(0.3, 0, 0.7, 1)',
                     }}
                   />
@@ -282,7 +282,7 @@ export function RoutineEditor({
                     style={{
                       flex: 1, background: 'var(--color-bg-tertiary)', border: '1px solid var(--color-border)', color: 'var(--color-text-primary)',
                       padding: '6px 8px', fontSize: 12, borderRadius: 3, outline: 'none',
-                      fontFamily: "'IBM Plex Mono', monospace", fontWeight: 500,
+                      fontFamily: 'var(--font-mono)', fontWeight: 500,
                       transition: 'all 0.2s cubic-bezier(0.3, 0, 0.7, 1)',
                     }}
                   />
@@ -318,7 +318,7 @@ export function RoutineEditor({
                 style={{
                   width: '100%', background: 'var(--color-bg-tertiary)', border: '1px solid var(--color-border)', color: 'var(--color-text-primary)',
                   padding: '6px 8px', fontSize: 12, borderRadius: 3, outline: 'none', boxSizing: 'border-box',
-                  fontFamily: "'IBM Plex Mono', monospace", fontWeight: 500,
+                  fontFamily: 'var(--font-mono)', fontWeight: 500,
                   transition: 'all 0.2s cubic-bezier(0.3, 0, 0.7, 1)',
                 }}
           />

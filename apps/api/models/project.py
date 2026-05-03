@@ -18,6 +18,15 @@ class ProjectOut(BaseModel):
     completed_at: Optional[str] = None
     archived_at: Optional[str] = None
     sort_order: int = 0
+    # Hub Finance — valor cobrado/acordado do projeto (freelance). Nullable
+    # quando o projeto não é monetizado (estudo, hobby, área Trabalho fixa).
+    valor_acordado: Optional[float] = None
+    # Template informativo de pagamento (a_vista | 50_50 | parcelado_3x |
+    # parcelado_4x | custom). Não é validado ainda — só pra UI lembrar.
+    forma_pagamento_template: Optional[str] = None
+    # Cliente vinculado (FK pra fin_client). Habilita auto-vínculo de
+    # receita por CPF/CNPJ na descrição da transação.
+    cliente_id: Optional[str] = None
 
 
 class ProjectCreate(BaseModel):
@@ -27,6 +36,9 @@ class ProjectCreate(BaseModel):
     status: str = "pending"
     deadline: Optional[str] = None
     notes: Optional[str] = None
+    valor_acordado: Optional[float] = None
+    forma_pagamento_template: Optional[str] = None
+    cliente_id: Optional[str] = None
 
 
 class ProjectUpdate(BaseModel):
@@ -41,8 +53,12 @@ class ProjectUpdate(BaseModel):
     # archived_at = ISO string pra arquivar, None pra desarquivar. Sentinel
     # é detectado via `model_fields_set` no router.
     archived_at: Optional[str] = None
+    valor_acordado: Optional[float] = None
+    forma_pagamento_template: Optional[str] = None
+    cliente_id: Optional[str] = None
 
 
 # Lista de colunas para SELECTs consistentes
 PROJECT_COLUMNS = """id, title, area_slug, status, priority, deadline, notes,
-                     calendar_event_id, completed_at, archived_at, sort_order"""
+                     calendar_event_id, completed_at, archived_at, sort_order,
+                     valor_acordado, forma_pagamento_template, cliente_id"""

@@ -6,25 +6,40 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Hub Quest</title>
 
+    <!-- Fonts: JetBrains Mono via Google (body/labels/values) + Geist via Google (display fallback) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Geist:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
     <style>
+      /* ─── PP Neue Machina ─── (paid font from Pangram Pangram).
+         Quando você baixar os arquivos PPNeueMachina-*.woff2 e colocar
+         em /public/fonts/, eles ativam automaticamente. Enquanto isso,
+         a stack cai pra Geist como fallback (visualmente próxima). */
       @font-face {
-        font-family: 'Satoshi';
-        src: url('/fonts/Satoshi-Regular.otf') format('opentype');
+        font-family: 'PP Neue Machina';
+        src: url('/fonts/PPNeueMachina-Regular.woff2') format('woff2');
         font-weight: 400;
         font-style: normal;
+        font-display: swap;
       }
       @font-face {
-        font-family: 'Satoshi';
-        src: url('/fonts/Satoshi-Bold.otf') format('opentype');
-        font-weight: 700;
-        font-style: normal;
-      }
-      @font-face {
-        font-family: 'Satoshi';
-        src: url('/fonts/Satoshi-Medium.otf') format('opentype');
+        font-family: 'PP Neue Machina';
+        src: url('/fonts/PPNeueMachina-Medium.woff2') format('woff2');
         font-weight: 500;
         font-style: normal;
+        font-display: swap;
       }
+      @font-face {
+        font-family: 'PP Neue Machina';
+        src: url('/fonts/PPNeueMachina-Bold.woff2') format('woff2');
+        font-weight: 700;
+        font-style: normal;
+        font-display: swap;
+      }
+
+      /* IBM Plex Mono — kept for backward compat (some components import it
+         explicitly). Novos usos devem usar JetBrains Mono via --font-mono. */
       @font-face {
         font-family: 'IBM Plex Mono';
         src: url('/fonts/IBMPlexMono-Regular.ttf') format('truetype');
@@ -39,55 +54,141 @@
       }
 
       :root {
-        /* Primary palette - dark & tactical */
-        --color-bg-primary: #0a0908;
-        --color-bg-secondary: #141618;
-        --color-bg-tertiary: #1a1c1f;
+        /* ─── Font stacks ─── */
+        --font-display: 'PP Neue Machina', 'Geist', -apple-system, 'Segoe UI', sans-serif;
+        --font-body:    'JetBrains Mono', 'IBM Plex Mono', ui-monospace, 'Cascadia Mono', 'Menlo', monospace;
+        --font-mono:    'JetBrains Mono', 'IBM Plex Mono', ui-monospace, monospace;
 
-        /* Text colors */
-        --color-text-primary: #ece7e1;
-        --color-text-secondary: #bdb0a0;
-        --color-text-tertiary: #8c847e;
-        --color-text-muted: #6d6762;
+        /* ─── Palette: True Black + Chromado primary + Oxblood semantic-only ─── */
 
-        /* Accents - red/crimson palette */
-        --color-accent-primary: #8b2e2e;
-        --color-accent-secondary: #a63a3a;
-        --color-accent-light: #c46a5a;
-        --color-accent-subtle: #5a3333;
-        /* accent-vivid: bright orange-red, used for running-session highlights
-           and "urgent" hover states. Brighter than accent-primary. */
-        --color-accent-vivid: #e85d3a;
+        /* Backgrounds — true black warm undertone */
+        --color-bg-primary: #08080a;
+        --color-bg-secondary: #131214;
+        --color-bg-tertiary: #1c1a1d;
 
-        /* Functional colors */
-        --color-success: #5a7a6a;
-        --color-success-light: #7a9a8a;
-        --color-success-hover: #9ec4b4;
-        --color-warning: #9d7a4a;
-        --color-error: #8b2e2e;
-        /* Purple: used for "retornar"/"reopen" affordances (neither
-           destructive nor confirmational — a neutral undo). */
-        --color-purple: #9d6cff;
+        /* Text — warm soft scale */
+        --color-text-primary: #ece8e3;
+        --color-text-secondary: #b8b0a8;
+        --color-text-tertiary: #7c7570;
+        --color-text-muted: #585350;
 
-        /* Border & divider */
-        --color-border: #343638;
-        --color-divider: #24272a;
+        /* ─── Chromado (cromo): primary visual accent ─── */
+        --chrome-base: #c9ccd2;       /* highlight chrome silver */
+        --chrome-mid:  #8e93a0;       /* steel mid */
+        --chrome-deep: #5a5e69;       /* deep steel */
+        --chrome-shadow: #2a2c33;     /* shadow steel */
 
-        /* Gold accent (tactical elements) */
-        --color-gold: #8b7a5a;
+        /* Chrome gradients (use no `background` ou `background-image`) */
+        --chrome-grad: linear-gradient(135deg, #c9ccd2 0%, #8e93a0 50%, #5a5e69 100%);
+        --chrome-grad-hover: linear-gradient(135deg, #d8dbe1 0%, #a0a5b1 50%, #6c707b 100%);
+        --chrome-grad-subtle: linear-gradient(135deg, rgba(201,204,210,0.20), rgba(142,147,160,0.05) 50%, rgba(90,94,105,0.20));
+        --chrome-hairline: linear-gradient(90deg, transparent, rgba(201,204,210,0.35), transparent);
+        --chrome-text: linear-gradient(180deg, #ece8e3 0%, #b8b0a8 60%, #7c7570 100%);
 
-        /* Calendar routine blocks (week view) */
-        --color-routine-block: #4a5566;
-        --color-routine-block-border: #6b7a8f;
+        /* Accents — oxblood SEMÂNTICO ONLY: destrutivo, despesa, ao-vivo, erro.
+           Não usar como brand color — chrome é o brand. */
+        --color-accent-primary: #9f1239;
+        --color-accent-secondary: #be123c;
+        --color-accent-light: #fb7185;
+        --color-accent-subtle: #4c0519;
+        --color-accent-vivid: #dc2626;
 
-        /* Shadows */
-        --shadow-sm: 0 2px 6px rgba(0, 0, 0, 0.4);
-        --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.5);
-        --shadow-lg: 0 8px 20px rgba(0, 0, 0, 0.6);
+        /* Functional */
+        --color-success: #5e7a52;
+        --color-success-light: #7d9a6f;
+        --color-success-hover: #98b58a;
+        --color-warning: #c08a3a;
+        --color-error: #dc2626;
+        --color-purple: #9b7dd9;
+
+        /* Borders & dividers — warm subtle, near-invisible */
+        --color-border: rgba(236, 232, 227, 0.06);
+        --color-border-strong: rgba(236, 232, 227, 0.12);
+        --color-border-chrome: rgba(201, 204, 210, 0.18);
+        --color-divider: rgba(236, 232, 227, 0.04);
+
+        /* Gold — restrito */
+        --color-gold: #b8923a;
+
+        /* Calendar routine blocks */
+        --color-routine-block: #221f23;
+        --color-routine-block-border: #3a3438;
+
+        /* ─── Glassmorphism tokens ─── (warm tint) */
+        --glass-bg: rgba(236, 232, 227, 0.025);
+        --glass-bg-elevated: rgba(236, 232, 227, 0.045);
+        --glass-bg-hover: rgba(236, 232, 227, 0.07);
+        --glass-blur: blur(20px) saturate(140%);
+        --glass-blur-strong: blur(32px) saturate(160%);
+
+        /* ─── Glows — chrome primário, red só pra danger ─── */
+        --glow-chrome: 0 0 0 3px rgba(201, 204, 210, 0.20);
+        --glow-chrome-strong: 0 0 24px rgba(201, 204, 210, 0.20);
+        --glow-accent: 0 0 0 3px rgba(159, 18, 57, 0.22);
+        --glow-success: 0 0 0 3px rgba(94, 122, 82, 0.22);
+        --glow-danger: 0 0 0 3px rgba(220, 38, 38, 0.28);
+
+        /* ─── Shadows ─── */
+        --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3), 0 2px 6px rgba(0, 0, 0, 0.2);
+        --shadow-md: 0 4px 8px rgba(0, 0, 0, 0.35), 0 8px 24px rgba(0, 0, 0, 0.25);
+        --shadow-lg: 0 8px 16px rgba(0, 0, 0, 0.4), 0 16px 48px rgba(0, 0, 0, 0.35);
+        --shadow-modal: 0 20px 80px rgba(0, 0, 0, 0.6), 0 4px 16px rgba(0, 0, 0, 0.4);
+        --shadow-chrome-inner: inset 0 1px 0 rgba(255, 255, 255, 0.18), inset 0 -1px 0 rgba(0, 0, 0, 0.3);
+
+        /* ─── Spacing scale (4pt grid) ─── */
+        --space-1: 4px;  --space-2: 8px;  --space-3: 12px; --space-4: 16px;
+        --space-5: 20px; --space-6: 24px; --space-8: 32px; --space-10: 40px;
+        --space-12: 48px;
+
+        /* ─── Typography scale ─── (mono é mais wide, sizes ajustados) */
+        --text-xs:   10px;   /* metadata, captions (mono é mais legível em sizes pequenos) */
+        --text-sm:   11px;
+        --text-base: 12px;
+        --text-md:   14px;
+        --text-lg:   17px;
+        --text-xl:   22px;
+        --text-2xl:  28px;
+        --text-3xl:  40px;   /* hero chrome numbers */
+
+        /* ─── Border radius ─── */
+        --radius-sm: 6px;
+        --radius-md: 10px;
+        --radius-lg: 16px;
+        --radius-xl: 24px;
+        --radius-pill: 999px;
+
+        /* ─── Color tints ─── */
+        --color-overlay: rgba(8, 8, 10, 0.65);
+        --color-success-bg: rgba(94, 122, 82, 0.10);
+        --color-success-border: rgba(94, 122, 82, 0.32);
+        --color-danger-bg: rgba(159, 18, 57, 0.10);
+        --color-danger-border: rgba(159, 18, 57, 0.32);
+        --color-warning-bg: rgba(192, 138, 58, 0.10);
+        --color-warning-border: rgba(192, 138, 58, 0.32);
+
+        /* ─── Motion ─── */
+        --motion-instant: 80ms;
+        --motion-fast: 150ms;
+        --motion-base: 220ms;
+        --motion-slow: 350ms;
+        --motion-modal: 280ms;
+
+        --ease-smooth: cubic-bezier(0.4, 0, 0.2, 1);
+        --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+        --ease-emphasis: cubic-bezier(0.2, 0, 0, 1);
       }
 
+      /* ─── Default font is BODY (mono), display only via class/tag ─── */
       * {
-        font-family: 'Satoshi', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        font-family: var(--font-body);
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+      }
+
+      h1, h2, h3, h4, h5, h6,
+      .hq-display {
+        font-family: var(--font-display);
+        letter-spacing: -0.02em;
       }
 
       html, body, #root {
@@ -95,8 +196,365 @@
         color: var(--color-text-primary);
       }
 
+      /* Background — true black com vinheta + mancha sangue MUITO sutil top-left
+         (vermelho como leve toque, não detalhe). Layer de noise grain por cima. */
+      body {
+        background:
+          radial-gradient(ellipse 70% 50% at 0% 0%, rgba(159, 18, 57, 0.04), transparent 55%),
+          radial-gradient(ellipse 100% 80% at 50% 120%, rgba(0, 0, 0, 0.5), transparent 70%),
+          var(--color-bg-primary);
+        min-height: 100vh;
+        position: relative;
+      }
+      /* Grain global — overlay em TODA tela. */
+      body::before {
+        content: '';
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        z-index: 1;
+        opacity: 0.085;
+        mix-blend-mode: overlay;
+        background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 0.6 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+      }
+      /* Garante que conteúdo fique acima do grain global */
+      #root { position: relative; z-index: 2; }
+
       code, pre {
-        font-family: 'IBM Plex Mono', 'Courier New', monospace;
+        font-family: var(--font-mono);
+        font-variant-numeric: tabular-nums;
+      }
+
+      /* ─── Acessibilidade global ─── */
+
+      button:focus-visible,
+      a:focus-visible,
+      input:focus-visible,
+      select:focus-visible,
+      textarea:focus-visible,
+      [tabindex]:focus-visible {
+        outline: none;
+        box-shadow: var(--glow-chrome);
+        border-radius: var(--radius-sm);
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        *, *::before, *::after {
+          animation-duration: 0.01ms !important;
+          transition-duration: 0.01ms !important;
+        }
+      }
+
+      /* ─── Keyframes ─── */
+
+      @keyframes hq-fade-in {
+        from { opacity: 0; }
+        to { opacity: 1; }
+      }
+      @keyframes hq-fade-up {
+        from { opacity: 0; transform: translateY(8px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+      @keyframes hq-fade-down {
+        from { opacity: 0; transform: translateY(-8px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+      @keyframes hq-modal-in {
+        from { opacity: 0; transform: scale(0.96) translateY(8px); }
+        to { opacity: 1; transform: scale(1) translateY(0); }
+      }
+      @keyframes hq-overlay-in {
+        from { opacity: 0; backdrop-filter: blur(0px); }
+        to { opacity: 1; backdrop-filter: blur(8px); }
+      }
+      @keyframes hq-shimmer {
+        from { background-position: -200% 0; }
+        to { background-position: 200% 0; }
+      }
+      @keyframes hq-pulse-dot {
+        0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(159, 18, 57, 0.5); }
+        70% { opacity: 0.7; box-shadow: 0 0 0 8px rgba(159, 18, 57, 0); }
+      }
+      @keyframes hq-chrome-shimmer {
+        0% { background-position: 200% center; }
+        100% { background-position: -200% center; }
+      }
+      @keyframes hq-slide-in-right {
+        from { opacity: 0; transform: translateX(16px); }
+        to { opacity: 1; transform: translateX(0); }
+      }
+
+      /* ─── Animation utility classes ─── */
+      .hq-animate-fade-up {
+        animation: hq-fade-up var(--motion-base) var(--ease-emphasis) both;
+      }
+      .hq-animate-fade-down {
+        animation: hq-fade-down var(--motion-base) var(--ease-emphasis) both;
+      }
+      .hq-animate-modal-in {
+        animation: hq-modal-in var(--motion-modal) var(--ease-spring) both;
+      }
+      .hq-animate-overlay-in {
+        animation: hq-overlay-in var(--motion-base) var(--ease-smooth) both;
+      }
+      .hq-animate-slide-right {
+        animation: hq-slide-in-right var(--motion-base) var(--ease-emphasis) both;
+      }
+      /* Stagger — set --stagger-i no item: style={{ '--stagger-i': i }} */
+      .hq-stagger > * { animation-delay: calc(var(--motion-instant) * var(--stagger-i, 0)); }
+
+      /* ─── Indicador "ao vivo" ─── (vermelho pulsante, leve toque) */
+      .hq-pulse-dot {
+        width: 8px; height: 8px; border-radius: 50%;
+        background: var(--color-accent-primary);
+        animation: hq-pulse-dot 2s var(--ease-smooth) infinite;
+      }
+      .hq-pulse-dot--success {
+        background: var(--color-success);
+        animation-name: none;
+      }
+
+      /* ─── Glass surfaces ─── */
+      .hq-glass {
+        background: var(--glass-bg);
+        backdrop-filter: var(--glass-blur);
+        -webkit-backdrop-filter: var(--glass-blur);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-md);
+        position: relative;
+      }
+      .hq-glass-elevated {
+        background: var(--glass-bg-elevated);
+        backdrop-filter: var(--glass-blur-strong);
+        -webkit-backdrop-filter: var(--glass-blur-strong);
+        border: 1px solid var(--color-border-strong);
+        border-radius: var(--radius-lg);
+        box-shadow: var(--shadow-md);
+        position: relative;
+      }
+      .hq-card-hoverable {
+        transition:
+          transform var(--motion-base) var(--ease-spring),
+          border-color var(--motion-base) var(--ease-smooth),
+          box-shadow var(--motion-base) var(--ease-smooth),
+          background var(--motion-base) var(--ease-smooth);
+      }
+      .hq-card-hoverable:hover {
+        transform: translateY(-2px);
+        background: var(--glass-bg-hover);
+        border-color: var(--color-border-chrome);
+        box-shadow: var(--shadow-md);
+      }
+
+      /* ─── Grain layer pra cards/modais (overlay localizado) ─── */
+      .hq-grain {
+        position: relative;
+        isolation: isolate;
+      }
+      .hq-grain::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        opacity: 0.11;
+        mix-blend-mode: overlay;
+        background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 0.6 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+        border-radius: inherit;
+        z-index: 1;
+      }
+      .hq-grain > * { position: relative; z-index: 2; }
+
+      /* ─── Chrome accents ─── */
+
+      /* Hairline chrome no topo de cards (sutil shimmer) */
+      .hq-chrome-hairline {
+        position: relative;
+      }
+      .hq-chrome-hairline::before {
+        content: '';
+        position: absolute;
+        top: 0; left: 0; right: 0;
+        height: 1px;
+        background: var(--chrome-hairline);
+        pointer-events: none;
+      }
+
+      /* Chrome text gradient (pra hero numbers) */
+      .hq-chrome-text {
+        background: var(--chrome-text);
+        -webkit-background-clip: text;
+        background-clip: text;
+        -webkit-text-fill-color: transparent;
+        color: transparent;
+      }
+
+      /* ─── Buttons ─── */
+
+      button {
+        transition:
+          transform var(--motion-fast) var(--ease-smooth),
+          background var(--motion-fast) var(--ease-smooth),
+          border-color var(--motion-fast) var(--ease-smooth),
+          color var(--motion-fast) var(--ease-smooth),
+          box-shadow var(--motion-base) var(--ease-smooth),
+          opacity var(--motion-fast) var(--ease-smooth);
+      }
+      button:not(:disabled):active {
+        transform: scale(0.97);
+        transition-duration: var(--motion-instant);
+      }
+      button:disabled {
+        cursor: not-allowed;
+        opacity: 0.4;
+      }
+
+      .hq-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: var(--space-2);
+        padding: var(--space-2) var(--space-4);
+        border-radius: var(--radius-sm);
+        font-size: var(--text-sm);
+        font-weight: 600;
+        font-family: var(--font-body);
+        letter-spacing: 0.02em;
+        cursor: pointer;
+        border: 1px solid transparent;
+        position: relative;
+      }
+
+      /* Primary chrome — gradient steel + inner highlight */
+      .hq-btn--primary {
+        background: var(--chrome-grad);
+        color: #1a1a1c;
+        box-shadow: var(--shadow-chrome-inner), var(--shadow-sm);
+        font-weight: 700;
+      }
+      .hq-btn--primary:not(:disabled):hover {
+        background: var(--chrome-grad-hover);
+        transform: translateY(-1px);
+        box-shadow: var(--shadow-chrome-inner), var(--glow-chrome), var(--shadow-md);
+      }
+
+      .hq-btn--ghost {
+        background: var(--glass-bg);
+        backdrop-filter: var(--glass-blur);
+        -webkit-backdrop-filter: var(--glass-blur);
+        border: 1px solid var(--color-border);
+        color: var(--color-text-secondary);
+        font-weight: 500;
+      }
+      .hq-btn--ghost:not(:disabled):hover {
+        background: var(--glass-bg-hover);
+        border-color: var(--color-border-chrome);
+        color: var(--color-text-primary);
+        transform: translateY(-1px);
+      }
+
+      .hq-btn--danger {
+        background: var(--color-danger-bg);
+        border: 1px solid var(--color-danger-border);
+        color: var(--color-error);
+        font-weight: 500;
+      }
+      .hq-btn--danger:not(:disabled):hover {
+        background: var(--color-error);
+        border-color: var(--color-error);
+        color: white;
+        transform: translateY(-1px);
+        box-shadow: var(--glow-danger);
+      }
+
+      /* Icon buttons */
+      .hq-icon-btn {
+        background: transparent;
+        border: 1px solid transparent;
+        border-radius: var(--radius-sm);
+        cursor: pointer;
+        color: var(--color-text-tertiary);
+        padding: var(--space-2);
+        min-width: 32px;
+        min-height: 32px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-family: var(--font-body);
+      }
+      .hq-icon-btn:not(:disabled):hover {
+        background: var(--glass-bg-hover);
+        border-color: var(--color-border-chrome);
+        color: var(--color-text-primary);
+        transform: translateY(-1px);
+      }
+      .hq-icon-btn--danger:not(:disabled):hover {
+        background: var(--color-danger-bg);
+        border-color: var(--color-danger-border);
+        color: var(--color-error);
+      }
+      .hq-icon-btn--accent:not(:disabled):hover {
+        background: rgba(201, 204, 210, 0.06);
+        border-color: var(--color-border-chrome);
+        color: var(--color-text-primary);
+      }
+      .hq-icon-btn-bare {
+        background: none;
+        border: none;
+        cursor: pointer;
+        color: var(--color-text-tertiary);
+        padding: var(--space-2);
+        min-width: 32px;
+        min-height: 32px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: var(--radius-sm);
+        font-family: var(--font-body);
+      }
+      .hq-icon-btn-bare:hover {
+        color: var(--color-text-primary);
+        background: var(--glass-bg-hover);
+      }
+
+      /* ─── Row hoverable ─── */
+      .hq-row-hoverable {
+        transition:
+          background var(--motion-fast) var(--ease-smooth),
+          border-color var(--motion-fast) var(--ease-smooth);
+      }
+      .hq-row-hoverable:hover {
+        background: var(--glass-bg-hover);
+      }
+
+      /* ─── Inputs (chrome focus) ─── */
+      input, select, textarea {
+        font-family: var(--font-body);
+        transition:
+          border-color var(--motion-fast) var(--ease-smooth),
+          background var(--motion-fast) var(--ease-smooth),
+          box-shadow var(--motion-base) var(--ease-smooth);
+      }
+      input:focus, select:focus, textarea:focus {
+        border-color: var(--color-border-chrome) !important;
+      }
+
+      /* ─── Scrollbar ─── */
+      ::-webkit-scrollbar {
+        width: 10px;
+        height: 10px;
+      }
+      ::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: var(--color-border);
+        border-radius: var(--radius-pill);
+        border: 2px solid transparent;
+        background-clip: padding-box;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: var(--color-border-chrome);
+        background-clip: padding-box;
       }
     </style>
   </head>

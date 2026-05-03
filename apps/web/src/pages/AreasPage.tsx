@@ -725,15 +725,13 @@ function AreaProjectRow({
   return (
     <div
       onClick={onOpen}
+      className={isSelected ? 'hq-glass hq-grain' : 'hq-row-hoverable'}
       style={{
-        padding: '12px 14px',
+        padding: 'var(--space-3) var(--space-4)',
         borderBottom: '1px solid var(--color-border)',
         cursor: 'pointer',
-        background: isSelected ? 'var(--color-bg-secondary)' : 'transparent',
-        transition: 'background 0.15s',
+        borderRadius: isSelected ? 'var(--radius-sm)' : undefined,
       }}
-      onMouseEnter={e => { if (!isSelected) (e.currentTarget as HTMLElement).style.background = 'var(--color-bg-primary)' }}
-      onMouseLeave={e => { if (!isSelected) (e.currentTarget as HTMLElement).style.background = 'transparent' }}
     >
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
         <div style={{
@@ -752,7 +750,7 @@ function AreaProjectRow({
           <div style={{
             marginTop: 6,
             display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'center',
-            fontSize: 10, fontFamily: "'IBM Plex Mono', monospace",
+            fontSize: 10, fontFamily: 'var(--font-mono)',
           }}>
             <span style={{
               color: priority.color,
@@ -819,7 +817,7 @@ function AreaProjectRow({
                 }} />
               </div>
               <span style={{
-                fontSize: 9, fontFamily: "'IBM Plex Mono', monospace",
+                fontSize: 9, fontFamily: 'var(--font-mono)',
                 color: 'var(--color-text-muted)', minWidth: 28, textAlign: 'right',
               }}>
                 {pct}%

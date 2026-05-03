@@ -149,7 +149,7 @@ export function NewQuestRow({ areaSlug, areas, projects, onCreated }: {
             width: 72, background: 'transparent', border: 'none',
             borderBottom: '2px solid var(--color-border)', color: 'var(--color-text-primary)',
             fontSize: 12, outline: 'none', padding: '6px 4px',
-            fontFamily: "'IBM Plex Mono', monospace",
+            fontFamily: 'var(--font-mono)',
             transition: 'all 0.2s cubic-bezier(0.3, 0, 0.7, 1)',
           }}
           onFocus={e => { e.currentTarget.style.borderBottomColor = 'var(--color-accent-primary)' }}

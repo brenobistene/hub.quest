@@ -1,11 +1,14 @@
 import { useEffect, useState } from 'react'
-import { CheckCircle2, XCircle, GripVertical } from 'lucide-react'
-import type { Area, Project, Quest } from '../types'
+import { CheckCircle2, CheckCircle, Pencil, Trash2, XCircle, GripVertical } from 'lucide-react'
+import type { Area, Project, Quest, FinParcela, FinPaymentTemplate, FinClient, FinHourlyRateStats } from '../types'
 import {
   fetchQuestsByProject, fetchDeliverables,
   createQuest, deleteQuest,
   createDeliverable, updateDeliverable, deleteDeliverable, reorderDeliverables,
   fetchSessions,
+  fetchFinParcelas, createFinParcela, applyFinParcelaTemplate,
+  updateFinParcela, deleteFinParcela,
+  fetchFinClients, fetchFinHourlyRateStats,
   reportApiError,
 } from '../api'
 import { parseIsoAsUtc, sumClosedSessionsSeconds, formatHMS, parseTimeToMinutes, minutesToHmm, isValidDateInput } from '../utils/datetime'
@@ -158,17 +161,33 @@ export function QuestDetailPanel({
   }, [notesDraft, project.notes, project.id, onProjectUpdate])
 
   // Update otimista de subtask + dispara o callback global do App.
-  // Quando o patch muda `status` ou `deliverable_id`, o backend pode
-  // marcar/desmarcar o `done` do entregável (auto-sync: todas as quests
-  // fechadas → entregável vira done). Refazemos o fetch dos deliverables
-  // pra UI refletir sem F5.
+  // Quando o patch muda `status` ou `deliverable_id`, espelhamos a regra
+  // do backend (entregável vira done quando todas as quests filhas estão
+  // fechadas) AQUI mesmo, otimisticamente — assim a checkbox e a barra
+  // atualizam na hora.
+  //
+  // ATENÇÃO: NÃO fazer refetch aqui. `onQuestUpdate` dispara `patchQuest`
+  // assíncrono no App.tsx. Um fetchDeliverables imediato corre em paralelo
+  // com o PATCH e frequentemente ganha — vê o estado antigo e sobrescreve o
+  // `done` otimista. Resultado: tickar/destickar a última quest faz o
+  // entregável "piscar" pro estado errado. A reconciliação acontece no
+  // próximo mount do painel.
   const handleUpdate = (id: string, patch: Partial<Quest>) => {
-    setSubtasks(sts => sts.map(st => st.id === id ? { ...st, ...patch } : st))
+    const prev = subtasks.find(st => st.id === id)
+    const newSubtasks = subtasks.map(st => st.id === id ? { ...st, ...patch } : st)
+    setSubtasks(newSubtasks)
     onQuestUpdate(id, patch)
     if ('status' in patch || 'deliverable_id' in patch) {
-      fetchDeliverables(project.id)
-        .then(setDeliverables)
-        .catch(err => reportApiError('QuestDetailPanel', err))
+      const affected = new Set<string>()
+      if (prev?.deliverable_id) affected.add(prev.deliverable_id)
+      const newDelivId = (patch.deliverable_id ?? prev?.deliverable_id) as string | null | undefined
+      if (newDelivId) affected.add(newDelivId)
+      setDeliverables(ds => ds.map(d => {
+        if (!affected.has(d.id)) return d
+        const sibs = newSubtasks.filter(q => q.deliverable_id === d.id)
+        const allClosed = sibs.length > 0 && sibs.every(q => q.status === 'done' || q.status === 'cancelled')
+        return { ...d, done: allClosed }
+      }))
     }
   }
 
@@ -420,7 +439,7 @@ export function QuestDetailPanel({
           <div style={{
             display: 'flex', alignItems: 'center', gap: 18, flexWrap: 'wrap',
             marginTop: 10,
-            fontSize: 11, fontFamily: "'IBM Plex Mono', monospace",
+            fontSize: 11, fontFamily: 'var(--font-mono)',
             color: 'var(--color-text-tertiary)',
           }}>
             {totalEstimatedMin > 0 && (
@@ -486,6 +505,18 @@ export function QuestDetailPanel({
         )}
       </div>
 
+      {/* Hub Finance — bloco financeiro do projeto. Mostrado pra área
+          'freelas' ou quando valor_acordado já foi definido (não atrapalha
+          quem não usa). Veja docs/hub-finance/PLAN.md. */}
+      {(project.area_slug === 'freelas' || project.valor_acordado != null) && (
+        <FinanceBlock
+          project={project}
+          totalExecutedMin={totalExecutedMin}
+          onUpdateValor={(v) => onProjectUpdate(project.id, { valor_acordado: v })}
+          onUpdateCliente={(id) => onProjectUpdate(project.id, { cliente_id: id })}
+        />
+      )}
+
       {/* Meta row: área · deadline · prioridade · finalizar/cancelar/reabrir. */}
       <div style={{
         display: 'flex', gap: 18, alignItems: 'center', flexWrap: 'wrap',
@@ -515,7 +546,7 @@ export function QuestDetailPanel({
                 background: 'transparent', border: 'none',
                 borderBottom: '1px solid transparent',
                 color: 'var(--color-text-primary)', fontSize: 12, padding: '4px 2px',
-                outline: 'none', colorScheme: 'dark', fontFamily: "'IBM Plex Mono', monospace",
+                outline: 'none', colorScheme: 'dark', fontFamily: 'var(--font-mono)',
                 transition: 'border-color 0.15s',
               } as any}
               onMouseEnter={e => (e.currentTarget.style.borderBottomColor = 'var(--color-border)')}
@@ -723,7 +754,7 @@ export function QuestDetailPanel({
               borderBottom: '1px solid var(--color-border)',
               color: 'var(--color-text-primary)', padding: '6px 2px', fontSize: 12,
               outline: 'none', colorScheme: 'dark',
-              fontFamily: "'IBM Plex Mono', monospace",
+              fontFamily: 'var(--font-mono)',
               transition: 'border-color 0.15s',
             } as any}
             onFocus={e => (e.currentTarget.style.borderBottomColor = 'var(--color-accent-light)')}
@@ -783,7 +814,14 @@ export function QuestDetailPanel({
             const executed = d.executed_minutes ?? 0
             // Tempo estimado = soma dos tempos das quests filhas (calculado dinamicamente)
             const estimated = delivQuests.reduce((sum, q) => sum + (q.estimated_minutes ?? 0), 0)
-            const pct = estimated > 0 ? Math.min(100, Math.round((executed / estimated) * 100)) : 0
+            // Quando o entregável está feito (todas quests fechadas), barra crava 100%
+            // mesmo que o tempo executado tenha ficado abaixo do estimado — senão fica
+            // travada em 97% e parece bug.
+            const pct = d.done
+              ? 100
+              : estimated > 0
+                ? Math.min(100, Math.round((executed / estimated) * 100))
+                : 0
             const over = estimated > 0 && executed > estimated
             const barColor = over
               ? 'var(--color-accent-primary)'
@@ -842,7 +880,7 @@ export function QuestDetailPanel({
                         textDecoration: d.done ? 'line-through' : 'none',
                       }}
                     />
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginTop: 5, flexWrap: 'wrap', fontSize: 10, fontFamily: "'IBM Plex Mono', monospace" }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginTop: 5, flexWrap: 'wrap', fontSize: 10, fontFamily: 'var(--font-mono)' }}>
                       {/* Deadline — display por padrão, input ao clicar. */}
                       {editingField === `${d.id}:deadline` ? (
                         <input
@@ -864,7 +902,7 @@ export function QuestDetailPanel({
                             border: '1px solid var(--color-accent-light)',
                             color: 'var(--color-text-primary)',
                             fontSize: 10, padding: '2px 5px', borderRadius: 2, outline: 'none',
-                            fontFamily: "'IBM Plex Mono', monospace",
+                            fontFamily: 'var(--font-mono)',
                             colorScheme: 'dark',
                           } as any}
                         />
@@ -876,7 +914,7 @@ export function QuestDetailPanel({
                             color: d.deadline
                               ? (deadlineOverdue ? 'var(--color-accent-light)' : 'var(--color-text-secondary)')
                               : 'var(--color-text-muted)',
-                            fontSize: 10, padding: '2px 0', fontFamily: "'IBM Plex Mono', monospace",
+                            fontSize: 10, padding: '2px 0', fontFamily: 'var(--font-mono)',
                             fontStyle: d.deadline ? 'normal' : 'italic',
                           }}
                           onMouseEnter={e => (e.currentTarget.style.color = 'var(--color-accent-light)')}
@@ -895,7 +933,7 @@ export function QuestDetailPanel({
                       {estimated > 0 && (
                         <span style={{
                           color: 'var(--color-text-secondary)', fontSize: 10,
-                          fontFamily: "'IBM Plex Mono', monospace",
+                          fontFamily: 'var(--font-mono)',
                         }}>
                           ~{fmtMin(estimated)} previsto
                         </span>
@@ -930,7 +968,7 @@ export function QuestDetailPanel({
                 </div>
 
                 {/* Progress bar executado/previsto */}
-                {estimated > 0 && (
+                {(estimated > 0 || d.done) && (
                   <div style={{ marginTop: 8, height: 3, background: 'var(--color-border)', borderRadius: 2, overflow: 'hidden' }}>
                     <div style={{
                       height: '100%', width: `${pct}%`, background: barColor,
@@ -997,7 +1035,7 @@ export function QuestDetailPanel({
                                 title="Tempo estimado"
                                 style={{
                                   fontSize: 10, color: 'var(--color-text-tertiary)',
-                                  fontFamily: "'IBM Plex Mono', monospace",
+                                  fontFamily: 'var(--font-mono)',
                                 }}
                               >
                                 ~{fmtMin(q.estimated_minutes)}
@@ -1009,7 +1047,7 @@ export function QuestDetailPanel({
                                 style={{
                                   fontSize: 10,
                                   color: q.status === 'done' ? 'var(--color-success)' : 'var(--color-text-secondary)',
-                                  fontFamily: "'IBM Plex Mono', monospace",
+                                  fontFamily: 'var(--font-mono)',
                                 }}
                               >
                                 {formatHMS(sec)}
@@ -1068,7 +1106,7 @@ export function QuestDetailPanel({
                                     borderBottom: '1px solid var(--color-border)',
                                     color: 'var(--color-text-primary)',
                                     fontSize: 11, padding: '4px 2px', outline: 'none',
-                                    fontFamily: "'IBM Plex Mono', monospace",
+                                    fontFamily: 'var(--font-mono)',
                                     transition: 'border-color 0.15s',
                                   }}
                                   onFocus={e => (e.currentTarget.style.borderBottomColor = 'var(--color-accent-light)')}
@@ -1148,7 +1186,7 @@ export function QuestDetailPanel({
                           color: 'var(--color-text-primary)',
                           padding: '4px 2px', fontSize: 11,
                           outline: 'none',
-                          fontFamily: "'IBM Plex Mono', monospace",
+                          fontFamily: 'var(--font-mono)',
                           transition: 'border-color 0.15s',
                         }}
                         onFocus={e => (e.currentTarget.style.borderBottomColor = 'var(--color-accent-light)')}
@@ -1216,4 +1254,780 @@ export function QuestDetailPanel({
       )}
     </div>
   )
+}
+
+// ─── Hub Finance — bloco financeiro do projeto ───────────────────────────
+// Painel que mostra valor acordado, tempo trabalhado, e R$/hora estimado.
+// Cálculo: R$/hora = valor_acordado / (totalExecutedMin / 60).
+// Doc: docs/hub-finance/PLAN.md (v1 — integração com Hub Quest).
+
+function FinanceBlock({ project, totalExecutedMin, onUpdateValor, onUpdateCliente }: {
+  project: Project
+  totalExecutedMin: number
+  onUpdateValor: (valor: number | null) => void
+  onUpdateCliente: (clienteId: string | null) => void
+}) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState<string>(
+    project.valor_acordado != null ? String(project.valor_acordado) : ''
+  )
+  const [parcelas, setParcelas] = useState<FinParcela[]>([])
+  const [clients, setClients] = useState<FinClient[]>([])
+  const [hourlyStats, setHourlyStats] = useState<FinHourlyRateStats | null>(null)
+  const [editingParcela, setEditingParcela] = useState<FinParcela | null | 'new'>(null)
+  const [showTemplateModal, setShowTemplateModal] = useState(false)
+  const [parcelaActionsBusy, setParcelaActionsBusy] = useState(false)
+
+  // Carrega parcelas + clientes + média histórica no mount.
+  useEffect(() => {
+    if (!project.id) return
+    let cancelled = false
+    fetchFinParcelas(project.id)
+      .then(list => { if (!cancelled) setParcelas(list) })
+      .catch(err => reportApiError('FinanceBlock.fetchParcelas', err))
+    fetchFinClients()
+      .then(list => { if (!cancelled) setClients(list) })
+      .catch(err => reportApiError('FinanceBlock.fetchClients', err))
+    fetchFinHourlyRateStats()
+      .then(s => { if (!cancelled) setHourlyStats(s) })
+      .catch(err => reportApiError('FinanceBlock.fetchHourlyStats', err))
+    return () => { cancelled = true }
+  }, [project.id])
+
+  const selectedClient = clients.find(c => c.id === project.cliente_id) ?? null
+
+  function refreshParcelas() {
+    fetchFinParcelas(project.id)
+      .then(setParcelas)
+      .catch(err => reportApiError('FinanceBlock.refreshParcelas', err))
+  }
+
+  const valor = project.valor_acordado
+  const horas = totalExecutedMin / 60
+  const hourlyRateEstimado = (valor != null && horas > 0) ? valor / horas : null
+
+  // Total recebido = soma das parcelas com status 'recebido'.
+  const totalRecebido = parcelas
+    .filter(p => p.status === 'recebido')
+    .reduce((s, p) => s + p.valor, 0)
+  const aReceber = (valor ?? 0) - totalRecebido
+  const hourlyRateReal = (totalRecebido > 0 && horas > 0) ? totalRecebido / horas : null
+
+  const formatBRL = (v: number) => new Intl.NumberFormat('pt-BR', {
+    style: 'currency', currency: 'BRL', minimumFractionDigits: 2,
+  }).format(v)
+
+  const fmtHoras = (h: number): string => {
+    const totalMin = Math.round(h * 60)
+    const hh = Math.floor(totalMin / 60)
+    const mm = totalMin % 60
+    if (hh === 0) return `${mm}m`
+    if (mm === 0) return `${hh}h`
+    return `${hh}h ${mm}m`
+  }
+
+  function saveDraft() {
+    const trimmed = draft.trim().replace(',', '.')
+    if (!trimmed) {
+      if (project.valor_acordado != null) onUpdateValor(null)
+      setEditing(false)
+      return
+    }
+    const n = parseFloat(trimmed)
+    if (!isNaN(n) && n >= 0) {
+      if (n !== project.valor_acordado) onUpdateValor(n)
+    }
+    setEditing(false)
+  }
+
+  async function handleApplyTemplate(template: FinPaymentTemplate, dataInicio: string | null) {
+    setParcelaActionsBusy(true)
+    try {
+      const list = await applyFinParcelaTemplate(project.id, { template, data_inicio: dataInicio })
+      setParcelas(list)
+      setShowTemplateModal(false)
+    } catch (err: any) {
+      reportApiError('applyTemplate', err)
+      alert(err?.message ?? 'Erro ao aplicar template — veja o console.')
+    } finally {
+      setParcelaActionsBusy(false)
+    }
+  }
+
+  return (
+    <div style={{
+      marginBottom: 24, padding: '14px 16px',
+      background: 'var(--color-bg-secondary)',
+      border: '1px solid var(--color-border)',
+      borderLeft: '3px solid var(--color-accent-light)',
+      borderRadius: 4,
+    }}>
+      <div style={{
+        fontSize: 9, color: 'var(--color-text-tertiary)',
+        letterSpacing: '0.2em', textTransform: 'uppercase', fontWeight: 700,
+        marginBottom: 12,
+      }}>
+        financeiro
+      </div>
+
+      {/* Linha 1: valor acordado / tempo / R$/hora estimado / R$/hora real */}
+      <div style={{
+        display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 16,
+      }}>
+        <div>
+          <div style={fieldLabelMini()}>valor acordado</div>
+          {editing ? (
+            <input
+              autoFocus
+              type="text"
+              inputMode="decimal"
+              value={draft}
+              onChange={e => setDraft(e.target.value)}
+              onBlur={saveDraft}
+              onKeyDown={e => {
+                if (e.key === 'Enter') (e.currentTarget as HTMLInputElement).blur()
+                if (e.key === 'Escape') {
+                  setDraft(project.valor_acordado != null ? String(project.valor_acordado) : '')
+                  setEditing(false)
+                }
+              }}
+              placeholder="ex: 2000"
+              style={{
+                width: '100%', maxWidth: 140,
+                background: 'var(--color-bg-primary)',
+                border: '1px solid var(--color-accent-light)',
+                borderRadius: 3, padding: '6px 8px',
+                color: 'var(--color-text-primary)',
+                fontSize: 14, fontWeight: 600,
+                fontFamily: 'var(--font-mono)',
+              }}
+            />
+          ) : (
+            <div
+              onClick={() => { setDraft(valor != null ? String(valor) : ''); setEditing(true) }}
+              title="clicar pra editar"
+              style={{
+                fontSize: 14, fontWeight: 600,
+                color: valor != null ? 'var(--color-text-primary)' : 'var(--color-text-muted)',
+                fontFamily: 'var(--font-mono)',
+                cursor: 'pointer', padding: '4px 0',
+              }}
+            >
+              {valor != null ? formatBRL(valor) : '— clique pra definir'}
+            </div>
+          )}
+        </div>
+
+        <div>
+          <div style={fieldLabelMini()}>tempo trabalhado</div>
+          <div style={{
+            fontSize: 14, fontWeight: 600,
+            color: horas > 0 ? 'var(--color-text-primary)' : 'var(--color-text-muted)',
+            fontFamily: 'var(--font-mono)',
+            padding: '4px 0',
+          }}>
+            {horas > 0 ? fmtHoras(horas) : '—'}
+          </div>
+        </div>
+
+        <div>
+          <div style={fieldLabelMini()}>R$/hora estimado</div>
+          <div title="Se entregar agora, com o tempo já trabalhado"
+            style={{
+              fontSize: 14, fontWeight: 600,
+              color: hourlyRateEstimado != null ? 'var(--color-accent-light)' : 'var(--color-text-muted)',
+              fontFamily: 'var(--font-mono)',
+              padding: '4px 0',
+            }}>
+            {hourlyRateEstimado != null ? `${formatBRL(hourlyRateEstimado)}/h` : '—'}
+          </div>
+        </div>
+
+        <div>
+          <div style={fieldLabelMini()}>R$/hora real</div>
+          <div title="Baseado em parcelas já recebidas"
+            style={{
+              fontSize: 14, fontWeight: 600,
+              color: hourlyRateReal != null ? 'var(--color-success)' : 'var(--color-text-muted)',
+              fontFamily: 'var(--font-mono)',
+              padding: '4px 0',
+            }}>
+            {hourlyRateReal != null ? `${formatBRL(hourlyRateReal)}/h` : '—'}
+          </div>
+        </div>
+      </div>
+
+      {/* Comparação contra média histórica freela — só mostra se há base */}
+      {hourlyStats && (hourlyRateReal != null || hourlyRateEstimado != null) && (() => {
+        // Compara o R$/hora "preferido" (real se existir, senão estimado) contra
+        // a média correspondente do histórico.
+        const projetoRate = hourlyRateReal ?? hourlyRateEstimado!
+        const mediaRate = hourlyRateReal != null
+          ? hourlyStats.media_real_brl_h
+          : hourlyStats.media_estimada_brl_h
+        if (mediaRate == null) return null
+        const diff = projetoRate - mediaRate
+        const acimaMedia = diff >= 0
+        const tipo = hourlyRateReal != null ? 'real' : 'estimado'
+        return (
+          <div style={{
+            marginTop: 10, padding: '8px 12px',
+            background: 'var(--color-bg-primary)',
+            border: '1px solid var(--color-border)',
+            borderRadius: 3,
+            display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+            fontSize: 11, color: 'var(--color-text-secondary)',
+          }}>
+            <span>
+              esse projeto ({tipo}): <strong style={{
+                fontFamily: 'var(--font-mono)',
+                color: 'var(--color-text-primary)',
+              }}>{formatBRL(projetoRate)}/h</strong>
+            </span>
+            <span style={{ color: 'var(--color-text-muted)' }}>vs</span>
+            <span>
+              sua média {tipo}: <strong style={{
+                fontFamily: 'var(--font-mono)',
+                color: 'var(--color-text-primary)',
+              }}>{formatBRL(mediaRate)}/h</strong>
+            </span>
+            <span style={{
+              fontSize: 10, fontWeight: 700,
+              padding: '3px 8px', borderRadius: 3,
+              letterSpacing: '0.1em', textTransform: 'uppercase',
+              color: acimaMedia ? 'var(--color-success)' : 'var(--color-accent-primary)',
+              border: `1px solid ${acimaMedia ? 'var(--color-success)' : 'var(--color-accent-primary)'}`,
+            }}>
+              {acimaMedia ? '↑' : '↓'} {formatBRL(Math.abs(diff))}/h {acimaMedia ? 'acima' : 'abaixo'}
+            </span>
+          </div>
+        )
+      })()}
+
+      {/* Cliente — habilita auto-vínculo de receita por CPF/CNPJ */}
+      <div style={{
+        marginTop: 12, paddingTop: 12,
+        borderTop: '1px solid var(--color-border)',
+        display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap',
+      }}>
+        <div style={fieldLabelMini()}>cliente</div>
+        <select
+          value={project.cliente_id ?? ''}
+          onChange={e => onUpdateCliente(e.target.value || null)}
+          style={{
+            background: 'var(--color-bg-primary)',
+            border: '1px solid var(--color-border)',
+            borderRadius: 3, padding: '6px 10px',
+            color: 'var(--color-text-primary)',
+            fontSize: 12, fontFamily: 'inherit',
+            minWidth: 200,
+          }}
+        >
+          <option value="">— sem cliente —</option>
+          {clients.map(c => (
+            <option key={c.id} value={c.id}>
+              {c.nome}{c.cpf_cnpj ? ` (${c.cpf_cnpj})` : ''}
+            </option>
+          ))}
+        </select>
+        {selectedClient?.cpf_cnpj && (
+          <span style={{
+            fontSize: 10, color: 'var(--color-text-muted)', fontStyle: 'italic',
+          }}>
+            auto-vínculo ativo via CPF/CNPJ
+          </span>
+        )}
+        {selectedClient && !selectedClient.cpf_cnpj && (
+          <span style={{
+            fontSize: 10, color: 'var(--color-warning)', fontStyle: 'italic',
+          }}>
+            cliente sem CPF/CNPJ — auto-vínculo desativado
+          </span>
+        )}
+      </div>
+
+      {/* Sub-resumo: recebido / a receber */}
+      {valor != null && parcelas.length > 0 && (
+        <div style={{
+          marginTop: 12, paddingTop: 12,
+          borderTop: '1px solid var(--color-border)',
+          display: 'flex', gap: 18, fontSize: 11, color: 'var(--color-text-secondary)',
+          flexWrap: 'wrap',
+        }}>
+          <span>
+            <strong style={{ color: 'var(--color-success)', fontFamily: 'var(--font-mono)' }}>
+              {formatBRL(totalRecebido)}
+            </strong>
+            <span style={{ color: 'var(--color-text-muted)' }}> recebido</span>
+          </span>
+          <span>
+            <strong style={{ color: 'var(--color-accent-light)', fontFamily: 'var(--font-mono)' }}>
+              {formatBRL(Math.max(0, aReceber))}
+            </strong>
+            <span style={{ color: 'var(--color-text-muted)' }}> a receber</span>
+          </span>
+        </div>
+      )}
+
+      {/* Seção de parcelas */}
+      {valor != null && (
+        <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--color-border)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+            <div style={fieldLabelMini()}>parcelas esperadas</div>
+            <div style={{ flex: 1 }} />
+            <button
+              onClick={() => setShowTemplateModal(true)}
+              disabled={parcelaActionsBusy}
+              style={ghostButtonMini()}
+            >
+              {project.forma_pagamento_template ? 'reaplicar template' : 'aplicar template'}
+            </button>
+            <button
+              onClick={() => setEditingParcela('new')}
+              disabled={parcelaActionsBusy}
+              style={ghostButtonMini()}
+            >
+              + nova parcela
+            </button>
+          </div>
+
+          {parcelas.length === 0 ? (
+            <div style={{
+              fontSize: 11, color: 'var(--color-text-muted)', fontStyle: 'italic',
+              padding: '12px 14px',
+              border: '1px dashed var(--color-border)', borderRadius: 3,
+            }}>
+              nenhuma parcela cadastrada. use "aplicar template" pra gerar
+              automaticamente (50/50, parcelado, etc) ou "+ nova parcela" pra
+              criar uma manual.
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {parcelas.map(p => (
+                <ParcelaRow
+                  key={p.id}
+                  parcela={p}
+                  onEdit={() => setEditingParcela(p)}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {editingParcela && (
+        <ParcelaModal
+          parcela={editingParcela === 'new' ? null : editingParcela}
+          projectId={project.id}
+          onClose={() => setEditingParcela(null)}
+          onSaved={() => { setEditingParcela(null); refreshParcelas() }}
+          onDeleted={() => { setEditingParcela(null); refreshParcelas() }}
+        />
+      )}
+
+      {showTemplateModal && (
+        <TemplateModal
+          currentTemplate={(project.forma_pagamento_template ?? null) as FinPaymentTemplate | null}
+          onClose={() => setShowTemplateModal(false)}
+          onApply={handleApplyTemplate}
+        />
+      )}
+    </div>
+  )
+}
+
+// ─── Parcela row + modais ─────────────────────────────────────────────────
+
+const PARCELA_STATUS_META: Record<FinParcela['status'], { label: string; color: string }> = {
+  pendente:   { label: 'PENDENTE',  color: 'var(--color-text-tertiary)' },
+  recebido:   { label: 'RECEBIDO',  color: 'var(--color-success)' },
+  atrasado:   { label: 'ATRASADO',  color: 'var(--color-accent-primary)' },
+  cancelada:  { label: 'CANCELADA', color: 'var(--color-text-muted)' },
+}
+
+function ParcelaRow({ parcela, onEdit }: { parcela: FinParcela; onEdit: () => void }) {
+  const meta = PARCELA_STATUS_META[parcela.status]
+  const formatBRL = (v: number) => new Intl.NumberFormat('pt-BR', {
+    style: 'currency', currency: 'BRL', minimumFractionDigits: 2,
+  }).format(v)
+  const formatDate = (iso: string | null): string => {
+    if (!iso) return 'sem data'
+    const [y, m, d] = iso.split('-')
+    return `${d}/${m}/${y.slice(2)}`
+  }
+  return (
+    <div style={{
+      display: 'grid', gridTemplateColumns: '36px 1fr 100px 90px auto', gap: 10,
+      alignItems: 'center', padding: '8px 10px',
+      background: 'var(--color-bg-primary)',
+      border: '1px solid var(--color-border)',
+      borderLeft: `3px solid ${meta.color}`,
+      borderRadius: 3,
+    }}>
+      <span style={{
+        fontSize: 11, fontWeight: 700, color: 'var(--color-text-tertiary)',
+        fontFamily: 'var(--font-mono)',
+      }}>
+        #{parcela.numero}
+      </span>
+      <span style={{
+        fontSize: 13, fontWeight: 600,
+        color: 'var(--color-text-primary)',
+        fontFamily: 'var(--font-mono)',
+      }}>
+        {formatBRL(parcela.valor)}
+      </span>
+      <span style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>
+        {formatDate(parcela.data_prevista)}
+      </span>
+      <span style={{
+        fontSize: 9, fontWeight: 700, color: meta.color,
+        letterSpacing: '0.12em',
+      }}>
+        {meta.label}
+      </span>
+      <button
+        onClick={onEdit}
+        title="editar parcela"
+        style={{
+          background: 'none', border: 'none', cursor: 'pointer',
+          color: 'var(--color-text-tertiary)', padding: 4,
+          display: 'inline-flex', alignItems: 'center',
+        }}
+        onMouseEnter={e => { e.currentTarget.style.color = 'var(--color-accent-light)' }}
+        onMouseLeave={e => { e.currentTarget.style.color = 'var(--color-text-tertiary)' }}
+      >
+        <Pencil size={11} strokeWidth={1.8} />
+      </button>
+    </div>
+  )
+}
+
+function ParcelaModal({ parcela, projectId, onClose, onSaved, onDeleted }: {
+  parcela: FinParcela | null
+  projectId: string
+  onClose: () => void
+  onSaved: () => void
+  onDeleted: () => void
+}) {
+  const isNew = parcela === null
+  const [valor, setValor] = useState<string>(parcela ? String(parcela.valor) : '')
+  const [dataPrevista, setDataPrevista] = useState<string>(parcela?.data_prevista ?? '')
+  const [status, setStatus] = useState<FinParcela['status']>(parcela?.status ?? 'pendente')
+  const [observacao, setObservacao] = useState<string>(parcela?.observacao ?? '')
+  const [busy, setBusy] = useState(false)
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault()
+    const v = parseFloat(valor.replace(',', '.'))
+    if (isNaN(v) || v <= 0) { alert('Valor inválido (> 0).'); return }
+    setBusy(true)
+    try {
+      if (isNew) {
+        await createFinParcela(projectId, {
+          valor: v,
+          data_prevista: dataPrevista || null,
+          observacao: observacao || null,
+        })
+      } else {
+        // Status: só envia se mudou (evita sobrescrever auto-status do backend
+        // por engano).
+        const patch: Partial<FinParcela> = {
+          valor: v,
+          data_prevista: dataPrevista || null,
+          observacao: observacao || null,
+        }
+        if (status !== parcela!.status) patch.status = status
+        await updateFinParcela(parcela!.id, patch)
+      }
+      onSaved()
+    } catch (err: any) {
+      reportApiError('ParcelaModal.submit', err)
+      alert(err?.message ?? 'Erro ao salvar — veja o console.')
+      setBusy(false)
+    }
+  }
+
+  async function handleDelete() {
+    if (!parcela) return
+    if (!window.confirm(
+      `Deletar parcela #${parcela.numero}? Transação vinculada (se existir) ` +
+      `continua existindo, mas perde o vínculo.`
+    )) return
+    setBusy(true)
+    try {
+      await deleteFinParcela(parcela.id)
+      onDeleted()
+    } catch (err) {
+      reportApiError('ParcelaModal.delete', err)
+      alert('Erro ao deletar — veja o console.')
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div onClick={onClose} style={modalOverlay()}>
+      <div onClick={e => e.stopPropagation()} style={{
+        ...modalBox(),
+        minWidth: 380, maxWidth: 460,
+      }}>
+        <div style={modalLabel()}>
+          {isNew ? 'Nova parcela' : `Editar parcela #${parcela!.numero}`}
+        </div>
+        <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            <div>
+              <label style={modalFieldLabel()}>Valor</label>
+              <input
+                autoFocus
+                type="text" inputMode="decimal" placeholder="ex: 1000,00"
+                value={valor} onChange={e => setValor(e.target.value)}
+                style={{ ...modalInput(), fontFamily: 'var(--font-mono)' }}
+              />
+            </div>
+            <div>
+              <label style={modalFieldLabel()}>Data prevista (opcional)</label>
+              <input
+                type="date"
+                value={dataPrevista} onChange={e => setDataPrevista(e.target.value)}
+                style={modalInput()}
+              />
+            </div>
+          </div>
+          {!isNew && (
+            <div>
+              <label style={modalFieldLabel()}>Status</label>
+              <select
+                value={status}
+                onChange={e => setStatus(e.target.value as FinParcela['status'])}
+                style={modalInput()}
+              >
+                <option value="pendente">pendente</option>
+                <option value="recebido">recebido</option>
+                <option value="atrasado">atrasado</option>
+                <option value="cancelada">cancelada</option>
+              </select>
+              <div style={{
+                fontSize: 9, color: 'var(--color-text-muted)', marginTop: 4, fontStyle: 'italic',
+              }}>
+                normalmente o status é automático: vincular transação na lista
+                vira "recebido". Mude manualmente só pra "cancelada" ou "atrasado".
+              </div>
+            </div>
+          )}
+          <div>
+            <label style={modalFieldLabel()}>Observação (opcional)</label>
+            <input
+              type="text" placeholder="ex: condicional à entrega da v1"
+              value={observacao} onChange={e => setObservacao(e.target.value)}
+              style={modalInput()}
+            />
+          </div>
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'space-between', marginTop: 8 }}>
+            {!isNew ? (
+              <button type="button" onClick={handleDelete} disabled={busy} style={{
+                ...modalGhost(),
+                color: 'var(--color-accent-primary)',
+                borderColor: 'var(--color-accent-primary)',
+              }}>
+                <Trash2 size={11} strokeWidth={1.8} style={{ marginRight: 4 }} />
+                deletar
+              </button>
+            ) : <div />}
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button type="button" onClick={onClose} style={modalGhost()}>cancelar</button>
+              <button type="submit" disabled={busy} style={modalPrimary()}>
+                {busy ? 'salvando…' : (isNew ? 'criar' : 'salvar')}
+              </button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+function TemplateModal({ currentTemplate, onClose, onApply }: {
+  currentTemplate: FinPaymentTemplate | null
+  onClose: () => void
+  onApply: (template: FinPaymentTemplate, dataInicio: string | null) => void
+}) {
+  const [template, setTemplate] = useState<FinPaymentTemplate>(currentTemplate ?? '50_50')
+  const [dataInicio, setDataInicio] = useState<string>('')
+  const [confirming, setConfirming] = useState(false)
+
+  const TEMPLATES: { value: FinPaymentTemplate; label: string; desc: string }[] = [
+    { value: 'a_vista',       label: '100% no fim',        desc: '1 parcela no valor total' },
+    { value: '50_50',         label: '50/50 sinal+entrega', desc: '2 parcelas iguais' },
+    { value: 'parcelado_3x',  label: 'Parcelado 3x',       desc: '3 parcelas mensais iguais' },
+    { value: 'parcelado_4x',  label: 'Parcelado 4x',       desc: '4 parcelas mensais iguais' },
+    { value: 'custom',        label: 'Custom',              desc: '1 parcela vazia, edite à mão' },
+  ]
+
+  function tryApply() {
+    onApply(template, dataInicio || null)
+  }
+
+  return (
+    <div onClick={onClose} style={modalOverlay()}>
+      <div onClick={e => e.stopPropagation()} style={{
+        ...modalBox(), minWidth: 420, maxWidth: 520,
+      }}>
+        <div style={modalLabel()}>Aplicar template de parcelas</div>
+        <div style={{
+          fontSize: 11, color: 'var(--color-text-muted)', marginBottom: 14, lineHeight: 1.5,
+        }}>
+          Apaga todas as parcelas <em>pendentes</em> existentes e cria novas a
+          partir do valor acordado do projeto. Parcelas <strong>já recebidas</strong> são
+          preservadas.
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 14 }}>
+          {TEMPLATES.map(t => (
+            <label key={t.value} style={{
+              display: 'flex', alignItems: 'flex-start', gap: 8,
+              padding: '8px 10px', cursor: 'pointer',
+              border: `1px solid ${template === t.value ? 'var(--color-accent-light)' : 'var(--color-border)'}`,
+              background: template === t.value ? 'rgba(157, 108, 255, 0.05)' : 'var(--color-bg-secondary)',
+              borderRadius: 3,
+            }}>
+              <input
+                type="radio"
+                name="template"
+                value={t.value}
+                checked={template === t.value}
+                onChange={() => setTemplate(t.value)}
+                style={{ marginTop: 2, accentColor: 'var(--color-accent-light)' }}
+              />
+              <div>
+                <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-primary)' }}>
+                  {t.label}
+                </div>
+                <div style={{ fontSize: 10, color: 'var(--color-text-muted)' }}>
+                  {t.desc}
+                </div>
+              </div>
+            </label>
+          ))}
+        </div>
+
+        <div style={{ marginBottom: 14 }}>
+          <label style={modalFieldLabel()}>Data da 1ª parcela (opcional)</label>
+          <input
+            type="date"
+            value={dataInicio} onChange={e => setDataInicio(e.target.value)}
+            style={modalInput()}
+          />
+          <div style={{
+            fontSize: 9, color: 'var(--color-text-muted)', marginTop: 4, fontStyle: 'italic',
+          }}>
+            se preencher, parcelas seguintes ficam mensais a partir dessa data.
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+          <button onClick={onClose} style={modalGhost()}>cancelar</button>
+          {!confirming ? (
+            <button onClick={() => setConfirming(true)} style={modalPrimary()}>aplicar</button>
+          ) : (
+            <button onClick={tryApply} style={{
+              ...modalPrimary(),
+              background: 'var(--color-accent-primary)',
+            }}>
+              <CheckCircle size={11} strokeWidth={2} style={{ marginRight: 4 }} />
+              confirmar (apaga pendentes)
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Style helpers (modais + bloco financeiro) ───────────────────────────
+
+function fieldLabelMini(): React.CSSProperties {
+  return {
+    fontSize: 9, color: 'var(--color-text-muted)',
+    letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 4,
+    fontWeight: 600,
+  }
+}
+
+function ghostButtonMini(): React.CSSProperties {
+  return {
+    background: 'none',
+    border: '1px solid var(--color-border)', cursor: 'pointer',
+    color: 'var(--color-text-tertiary)',
+    padding: '5px 10px', borderRadius: 3,
+    fontSize: 9, fontWeight: 600,
+    letterSpacing: '0.08em', textTransform: 'uppercase',
+  }
+}
+
+function modalOverlay(): React.CSSProperties {
+  return {
+    position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    zIndex: 100,
+  }
+}
+
+function modalBox(): React.CSSProperties {
+  return {
+    background: 'var(--color-bg-primary)',
+    border: '1px solid var(--color-border)',
+    borderRadius: 4, padding: 24,
+  }
+}
+
+function modalLabel(): React.CSSProperties {
+  return {
+    fontSize: 10, color: 'var(--color-text-tertiary)',
+    letterSpacing: '0.2em', textTransform: 'uppercase', fontWeight: 600,
+    marginBottom: 16,
+  }
+}
+
+function modalFieldLabel(): React.CSSProperties {
+  return {
+    display: 'block', marginBottom: 4,
+    fontSize: 9, color: 'var(--color-text-tertiary)',
+    letterSpacing: '0.1em', textTransform: 'uppercase', fontWeight: 600,
+  }
+}
+
+function modalInput(): React.CSSProperties {
+  return {
+    width: '100%', boxSizing: 'border-box',
+    background: 'var(--color-bg-secondary)',
+    border: '1px solid var(--color-border)',
+    borderRadius: 3, padding: '8px 10px',
+    color: 'var(--color-text-primary)',
+    fontSize: 12, fontFamily: 'inherit',
+  }
+}
+
+function modalPrimary(): React.CSSProperties {
+  return {
+    background: 'var(--color-accent-primary)',
+    border: 'none', cursor: 'pointer',
+    color: 'var(--color-bg-primary)',
+    padding: '8px 14px', borderRadius: 3,
+    fontSize: 11, fontWeight: 700,
+    letterSpacing: '0.1em', textTransform: 'uppercase',
+    display: 'inline-flex', alignItems: 'center',
+  }
+}
+
+function modalGhost(): React.CSSProperties {
+  return {
+    background: 'none',
+    border: '1px solid var(--color-border)', cursor: 'pointer',
+    color: 'var(--color-text-tertiary)',
+    padding: '8px 14px', borderRadius: 3,
+    fontSize: 11, fontWeight: 600,
+    letterSpacing: '0.1em', textTransform: 'uppercase',
+    display: 'inline-flex', alignItems: 'center',
+  }
 }

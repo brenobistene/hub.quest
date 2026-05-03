@@ -8,3 +8,6 @@ python-dotenv>=1.0
 # `zoneinfo` da stdlib não acha "America/Sao_Paulo" no SO. No-op em
 # Linux/macOS (já têm tzinfo do sistema, mas funciona como fallback).
 tzdata>=2024.1
+# Necessário pro FastAPI processar multipart/form-data (upload de CSV no
+# Hub Finance — endpoint /api/finance/import/nubank-csv).
+python-multipart>=0.0.7

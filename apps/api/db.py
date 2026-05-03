@@ -25,6 +25,25 @@ AREAS = [
     ("health",     "Health",     "Sono, saúde e rotina física.", 5, "#f5a962"),
 ]
 
+# Seed inicial de categorias do Hub Finance. Aplicado só em DB sem nenhuma
+# categoria — usuário pode editar/deletar/criar à vontade. Decisão registrada
+# em docs/hub-finance/PLAN.md seção 8.
+FIN_CATEGORIES = [
+    # (nome, tipo, cor, sort_order)
+    ("Salário",                "receita",        "#7fb069", 1),
+    ("Freelas",                "receita",        "#e85d3a", 2),
+    ("Estornos",               "estorno",        "#9d6cff", 3),
+    ("Transferência Interna",  "transferencia",  "#4a9eff", 4),
+    ("Alimentação",            "despesa",        "#f5a962", 5),
+    ("Transporte",             "despesa",        "#4a9eff", 6),
+    ("Moradia",                "despesa",        "#e85d3a", 7),
+    ("Lazer",                  "despesa",        "#9d6cff", 8),
+    ("Saúde",                  "despesa",        "#7fb069", 9),
+    ("Cuidado Pessoal",        "despesa",        "#f5a962", 10),
+    ("Faculdade",              "despesa",        "#4a9eff", 11),
+    ("Dívidas",                "despesa",        "#e85d3a", 12),
+]
+
 
 def get_conn() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_PATH, timeout=10)
@@ -193,6 +212,139 @@ def init_db() -> None:
             ended_at     TEXT,
             UNIQUE(routine_id, date, session_num)
         );
+
+        -- ─── Hub Finance (v0) ──────────────────────────────────────────────
+        -- Módulo financeiro pessoal. Schema mínimo da primeira fatia vertical:
+        -- contas, categorias e transações manuais. Cartão de crédito (faturas),
+        -- dívidas, parcelas e integração pynubank vêm em fases posteriores.
+        -- Doc autoritativa: docs/hub-finance/PLAN.md
+        CREATE TABLE IF NOT EXISTS fin_account (
+            id            TEXT PRIMARY KEY,
+            nome          TEXT NOT NULL,
+            tipo          TEXT NOT NULL,        -- 'corrente' | 'credito' | 'wallet' | 'wise'
+            moeda         TEXT NOT NULL DEFAULT 'BRL',
+            origem_dados  TEXT NOT NULL DEFAULT 'manual',  -- 'manual' | 'pynubank'
+            sort_order    INTEGER DEFAULT 0,
+            created_at    TEXT DEFAULT (datetime('now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS fin_category (
+            id              TEXT PRIMARY KEY,
+            nome            TEXT NOT NULL,
+            tipo            TEXT NOT NULL,      -- 'receita' | 'despesa' | 'estorno' | 'transferencia'
+            cor             TEXT,
+            categoria_pai_id TEXT REFERENCES fin_category(id) ON DELETE SET NULL,
+            sort_order      INTEGER DEFAULT 0,
+            created_at      TEXT DEFAULT (datetime('now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS fin_transaction (
+            id            TEXT PRIMARY KEY,
+            data          TEXT NOT NULL,        -- YYYY-MM-DD
+            valor         REAL NOT NULL,        -- positivo entrada, negativo saída (BRL)
+            descricao     TEXT NOT NULL,
+            conta_id      TEXT NOT NULL REFERENCES fin_account(id) ON DELETE CASCADE,
+            categoria_id  TEXT REFERENCES fin_category(id) ON DELETE SET NULL,
+            origem        TEXT NOT NULL DEFAULT 'manual',  -- 'manual' | 'nubank_csv'
+            notas         TEXT,
+            -- Identificador único da transação no extrato Nubank (campo
+            -- "Identificador" do CSV). Permite deduplicar import re-rodado.
+            -- Nullable porque transações manuais não têm.
+            nubank_id     TEXT,
+            created_at    TEXT DEFAULT (datetime('now')),
+            updated_at    TEXT DEFAULT (datetime('now'))
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_fin_tx_data ON fin_transaction(data);
+        CREATE INDEX IF NOT EXISTS idx_fin_tx_conta ON fin_transaction(conta_id);
+        CREATE INDEX IF NOT EXISTS idx_fin_tx_cat ON fin_transaction(categoria_id);
+        -- nubank_id (coluna + índice unique) é criado abaixo via migration
+        -- idempotente, depois do ALTER TABLE garantir que a coluna existe.
+
+        -- Regras de auto-categorização: substring case-insensitive da descrição
+        -- mapeia pra uma categoria. Aplicadas no import CSV e no botão de
+        -- "sugerir categoria". Aprendíveis quando usuário categoriza algo
+        -- manualmente e marca "criar regra".
+        CREATE TABLE IF NOT EXISTS fin_categorization_rule (
+            id              TEXT PRIMARY KEY,
+            pattern         TEXT NOT NULL,        -- substring buscada (lower())
+            categoria_id    TEXT NOT NULL REFERENCES fin_category(id) ON DELETE CASCADE,
+            times_matched   INTEGER DEFAULT 0,    -- contador de uso, debug/UI
+            created_at      TEXT DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_fin_rule_pattern ON fin_categorization_rule(pattern);
+
+        -- Fatura de cartão de crédito. Cada cartão (fin_account tipo='credito')
+        -- tem N faturas. Compras no cartão são vinculadas via
+        -- fin_transaction.fatura_id — saem do saldo do cartão na hora mas só
+        -- contam como despesa do mês quando a fatura é paga (regra de
+        -- competência: ver docs/hub-finance/PLAN.md decisão #1).
+        CREATE TABLE IF NOT EXISTS fin_invoice (
+            id              TEXT PRIMARY KEY,
+            cartao_id       TEXT NOT NULL REFERENCES fin_account(id) ON DELETE CASCADE,
+            mes_referencia  TEXT NOT NULL,           -- YYYY-MM (mês quando paga)
+            data_fechamento TEXT,                    -- YYYY-MM-DD opcional
+            data_vencimento TEXT,                    -- YYYY-MM-DD opcional
+            data_pagamento  TEXT,                    -- YYYY-MM-DD quando paga
+            status          TEXT NOT NULL DEFAULT 'aberta',  -- aberta | fechada | paga | atrasada
+            created_at      TEXT DEFAULT (datetime('now')),
+            updated_at      TEXT DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_fin_invoice_cartao ON fin_invoice(cartao_id, status);
+        CREATE INDEX IF NOT EXISTS idx_fin_invoice_pagto ON fin_invoice(data_pagamento);
+
+        -- Cliente (PF/PJ) que paga projetos freela. Vinculado opcionalmente
+        -- a projects.cliente_id. Usado pra auto-vincular receita: se o
+        -- CPF/CNPJ aparece na descrição da transação E o valor bate com
+        -- uma parcela pendente do cliente, vínculo automático.
+        CREATE TABLE IF NOT EXISTS fin_client (
+            id              TEXT PRIMARY KEY,
+            nome            TEXT NOT NULL,
+            cpf_cnpj        TEXT,
+            notas           TEXT,
+            sort_order      INTEGER DEFAULT 0,
+            created_at      TEXT DEFAULT (datetime('now')),
+            updated_at      TEXT DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_fin_client_cpf ON fin_client(cpf_cnpj);
+
+        -- Parcelas esperadas de recebimento de um projeto freela. Geradas
+        -- a partir de templates (50/50, 100% no fim, parcelado Nx) ou criadas
+        -- manualmente. status muda automaticamente pra 'recebido' quando
+        -- transação de entrada é vinculada via fin_transaction.parcela_id.
+        CREATE TABLE IF NOT EXISTS fin_parcela (
+            id              TEXT PRIMARY KEY,
+            projeto_id      TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            numero          INTEGER NOT NULL,
+            valor           REAL NOT NULL,
+            data_prevista   TEXT,                   -- YYYY-MM-DD opcional
+            status          TEXT NOT NULL DEFAULT 'pendente',  -- pendente | recebido | atrasado | cancelada
+            observacao      TEXT,
+            created_at      TEXT DEFAULT (datetime('now')),
+            updated_at      TEXT DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_fin_parcela_projeto ON fin_parcela(projeto_id);
+        CREATE INDEX IF NOT EXISTS idx_fin_parcela_status ON fin_parcela(status);
+
+        -- Dívidas externas (faculdade, financiamento, qualquer parcelamento
+        -- não-rotativo). saldo_devedor é COMPUTADO: total_original - sum(abs(
+        -- valor de transações vinculadas)). status muda pra 'paid_off' quando
+        -- saldo zera. parcela_mensal é informativo (calcula previsão de fim).
+        CREATE TABLE IF NOT EXISTS fin_debt (
+            id                      TEXT PRIMARY KEY,
+            descricao               TEXT NOT NULL,
+            valor_total_original    REAL NOT NULL,
+            parcela_mensal          REAL,           -- nullable (parcela variável)
+            data_inicio             TEXT,           -- YYYY-MM-DD, opcional
+            categoria_id            TEXT REFERENCES fin_category(id) ON DELETE SET NULL,
+            status                  TEXT NOT NULL DEFAULT 'active',  -- 'active' | 'paid_off' | 'cancelled'
+            sort_order              INTEGER DEFAULT 0,
+            created_at              TEXT DEFAULT (datetime('now')),
+            updated_at              TEXT DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_fin_debt_status ON fin_debt(status);
+        -- divida_id em fin_transaction é adicionado via migration ALTER abaixo
+        -- (depois do CREATE TABLE garantir que fin_transaction existe).
         """)
 
         # Garante que existe 1 linha de profile. Nome default é piada — o usuário
@@ -216,12 +368,131 @@ def init_db() -> None:
                     (slug, name, desc, order, color),
                 )
 
+        # Seed de categorias do Hub Finance — só na primeira instalação. Mesmo
+        # padrão das áreas: se usuário já editou (qualquer linha existe), não
+        # mexemos. Categorias são identificadas por id (uuid), não por nome,
+        # então rename não conflita.
+        import uuid as _uuid
+        existing_cats = conn.execute("SELECT COUNT(*) AS n FROM fin_category").fetchone()["n"]
+        if existing_cats == 0:
+            for nome, tipo, cor, sort_order in FIN_CATEGORIES:
+                conn.execute(
+                    "INSERT INTO fin_category(id, nome, tipo, cor, sort_order) VALUES(?,?,?,?,?)",
+                    (str(_uuid.uuid4())[:8], nome, tipo, cor, sort_order),
+                )
+        else:
+            # Migrações one-shot pra DBs já populados — adiciona categorias que
+            # foram introduzidas depois do seed inicial. Identifica por
+            # (nome, tipo); se usuário deletou intencionalmente, vai voltar (custo
+            # aceitável pra adições raras vindas de feedback de uso).
+            for nome, tipo in [
+                ("Freelas", "receita"),
+                ("Transferência Interna", "transferencia"),
+            ]:
+                exists = conn.execute(
+                    "SELECT 1 FROM fin_category WHERE nome = ? AND tipo = ?",
+                    (nome, tipo),
+                ).fetchone()
+                if not exists:
+                    seed_match = next(
+                        (s for s in FIN_CATEGORIES if s[0] == nome and s[1] == tipo),
+                        None,
+                    )
+                    if seed_match:
+                        max_sort = conn.execute(
+                            "SELECT COALESCE(MAX(sort_order), 0) AS m FROM fin_category"
+                        ).fetchone()["m"]
+                        conn.execute(
+                            "INSERT INTO fin_category(id, nome, tipo, cor, sort_order) "
+                            "VALUES(?,?,?,?,?)",
+                            (str(_uuid.uuid4())[:8], nome, tipo, seed_match[2], max_sort + 1),
+                        )
+
         conn.commit()
 
         # Migrations idempotentes (ALTER TABLE ADD COLUMN é no-op se coluna existe).
         _try_add_column(conn, "ALTER TABLE quests ADD COLUMN calendar_event_id TEXT")
         _try_add_column(conn, "ALTER TABLE routines ADD COLUMN days_of_week TEXT")
         _try_add_column(conn, "ALTER TABLE routines ADD COLUMN day_of_month INTEGER")
+        # Hub Finance — coluna pra deduplicar import CSV do Nubank.
+        _try_add_column(conn, "ALTER TABLE fin_transaction ADD COLUMN nubank_id TEXT")
+        # Índice unique (ignora NULL) — idempotente: CREATE INDEX IF NOT EXISTS.
+        try:
+            conn.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_fin_tx_nubank_id "
+                "ON fin_transaction(conta_id, nubank_id) WHERE nubank_id IS NOT NULL"
+            )
+            conn.commit()
+        except sqlite3.OperationalError:
+            pass
+
+        # Hub Finance — vínculo opcional de transação a uma dívida (faculdade,
+        # financiamento). FK SET NULL pra preservar transação se dívida sumir.
+        _try_add_column(conn, "ALTER TABLE fin_transaction ADD COLUMN divida_id TEXT")
+        try:
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_fin_tx_divida ON fin_transaction(divida_id)"
+            )
+            conn.commit()
+        except sqlite3.OperationalError:
+            pass
+
+        # Hub Finance — vínculo de transação a fatura de cartão de crédito.
+        # Compras de crédito são vinculadas à fatura aberta do cartão; só
+        # entram no resumo mensal quando a fatura é paga.
+        _try_add_column(conn, "ALTER TABLE fin_transaction ADD COLUMN fatura_id TEXT")
+        try:
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_fin_tx_fatura ON fin_transaction(fatura_id)"
+            )
+            conn.commit()
+        except sqlite3.OperationalError:
+            pass
+
+        # Hub Finance — feature "Jornada/Metas" foi removida (decisão do usuário
+        # em 2026-05-03: vai ter um lugar especial pra isso, não no Finance).
+        # Drop idempotente: limpa tabela e dados de DBs onde foi criada.
+        try:
+            conn.execute("DROP TABLE IF EXISTS fin_journey_goal")
+            conn.commit()
+        except sqlite3.OperationalError:
+            pass
+
+        # Hub Finance — valor acordado de um projeto (freelance). Usado pra
+        # calcular R$/hora estimado contra o tempo total trabalhado nas quests
+        # do projeto. Nullable: projetos não-monetizados (ex: estudo) não
+        # precisam preencher.
+        _try_add_column(conn, "ALTER TABLE projects ADD COLUMN valor_acordado REAL")
+        # Cliente do projeto (FK pra fin_client). FK declarativa não funciona
+        # via ALTER, mas tratamos no DELETE de cliente (SET NULL manual).
+        _try_add_column(conn, "ALTER TABLE projects ADD COLUMN cliente_id TEXT")
+        # Template informativo de pagamento — usado pra gerar parcelas iniciais
+        # ('a_vista' | '50_50' | 'parcelado_3x' | 'parcelado_4x' | 'custom').
+        # Após gerar parcelas, usuário pode editar individualmente — o template
+        # serve só pra UX de criação inicial.
+        _try_add_column(conn, "ALTER TABLE projects ADD COLUMN forma_pagamento_template TEXT")
+        # Vínculo opcional de transação a uma Parcela Esperada — quando setado
+        # e valor > 0, marca a parcela como 'recebido' automaticamente.
+        _try_add_column(conn, "ALTER TABLE fin_transaction ADD COLUMN parcela_id TEXT")
+        try:
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_fin_tx_parcela ON fin_transaction(parcela_id)"
+            )
+            conn.commit()
+        except sqlite3.OperationalError:
+            pass
+
+        # Orçamento mensal por categoria — limite em BRL. Nullable: categorias
+        # sem limite simplesmente não aparecem no card de orçamento. Aplica
+        # mesmo critério de competência da monthly-summary (fatura paga conta
+        # no mês do pagamento, não da compra).
+        _try_add_column(conn, "ALTER TABLE fin_category ADD COLUMN limite_mensal REAL")
+
+        # Cotação manual da conta pra BRL — só usada quando moeda != BRL.
+        # Ex: Wise USD com cotacao_brl=5.20 → saldo em USD * 5.20 = saldo BRL.
+        # Null = não converte (não soma no total geral). Update manual via
+        # AccountModal; opcionalmente sync via /api/finance/exchange-rate.
+        _try_add_column(conn, "ALTER TABLE fin_account ADD COLUMN cotacao_brl REAL")
 
         # `completed_at`: adiciona + backfill inicial (só roda uma vez, quando a
         # coluna não existia ainda — o backfill é inócuo em reboots).

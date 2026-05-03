@@ -24,13 +24,15 @@ function ProjectGroupHeader({ project, area, doneCount, totalCount }: {
   const color = area?.color ?? 'var(--color-text-tertiary)'
   const percent = totalCount > 0 ? Math.round((doneCount / totalCount) * 100) : 0
   return (
-    <div style={{
-      display: 'flex', alignItems: 'center', gap: 12,
-      padding: '14px 14px', marginTop: 20, marginBottom: 4,
-      background: 'var(--color-bg-secondary)',
-      borderLeft: `3px solid ${color}`,
-      borderRadius: 3,
-    }}>
+    <div
+      className="hq-glass hq-grain hq-card-hoverable"
+      style={{
+        display: 'flex', alignItems: 'center', gap: 'var(--space-3)',
+        padding: 'var(--space-3) var(--space-4)',
+        marginTop: 'var(--space-5)', marginBottom: 'var(--space-1)',
+        borderLeft: `3px solid ${color}`,
+      }}
+    >
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{
           fontSize: 9, color, letterSpacing: '0.15em', textTransform: 'uppercase',
@@ -47,7 +49,7 @@ function ProjectGroupHeader({ project, area, doneCount, totalCount }: {
       </div>
       <div style={{
         fontSize: 10, color: 'var(--color-text-tertiary)',
-        fontFamily: "'IBM Plex Mono', monospace", fontWeight: 600,
+        fontFamily: 'var(--font-mono)', fontWeight: 600,
         textAlign: 'right', flexShrink: 0,
       }}>
         <div>{doneCount}/{totalCount} feitas</div>

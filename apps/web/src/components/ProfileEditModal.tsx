@@ -1,13 +1,17 @@
 import { useRef, useState } from 'react'
+import { X } from 'lucide-react'
 import type { Profile } from '../types'
 import { updateProfile } from '../api'
-import { Label } from './ui/Label'
+import { ModalFrame, IconButton, Button } from './ui/Primitives'
 
 /**
  * Modal reached from the Dashboard profile block. Edits name, role and
  * avatar. Avatar aceita tanto um upload local (lido como data URL base64)
  * quanto um path relativo `/file.jpg` (resolvido de `public/`) ou URL
  * completa `https://…`.
+ *
+ * Refator (ui-ux-pro-max): usa <ModalFrame> + <IconButton> + <Button>
+ * pra entrance animation + glass + chrome consistente com o resto.
  */
 export function ProfileEditModal({ profile, onClose, onSave }: {
   profile: Profile
@@ -47,51 +51,37 @@ export function ProfileEditModal({ profile, onClose, onSave }: {
   }
 
   return (
-    <div
-      onClick={onClose}
-      style={{
-        position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        zIndex: 1000,
-      }}
-    >
-      <div
-        onClick={e => e.stopPropagation()}
-        style={{
-          background: 'var(--color-bg-secondary)',
-          border: '1px solid var(--color-border)',
-          borderRadius: 6, padding: 24, minWidth: 380, maxWidth: 480,
-          display: 'flex', flexDirection: 'column', gap: 14,
-          boxShadow: '0 16px 48px rgba(0,0,0,0.6)',
-        }}
-      >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <Label>editar perfil</Label>
-          <button
-            onClick={onClose}
-            style={{
-              background: 'none', border: 'none', cursor: 'pointer',
-              color: 'var(--color-text-tertiary)', fontSize: 14, padding: '2px 8px',
-            }}
-          >
-            ✕
-          </button>
+    <ModalFrame onClose={onClose} minWidth={400} maxWidth={500}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-4)' }}>
+        <div style={{
+          fontSize: 'var(--text-xs)',
+          color: 'var(--color-text-tertiary)',
+          letterSpacing: '0.15em',
+          textTransform: 'uppercase',
+          fontWeight: 600,
+        }}>
+          editar perfil
         </div>
+        <IconButton label="fechar" onClick={onClose} variant="bare">
+          <X size={14} strokeWidth={1.8} />
+        </IconButton>
+      </div>
 
-        <div style={{ display: 'flex', gap: 14, alignItems: 'center' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+        <div style={{ display: 'flex', gap: 'var(--space-3)', alignItems: 'center' }}>
           {avatarUrl && (
             <img
               src={avatarUrl}
               alt="preview"
               style={{
                 width: 60, height: 60, borderRadius: '50%',
-                border: '2px solid var(--color-border)', objectFit: 'cover',
-                background: 'var(--color-bg-tertiary)', flexShrink: 0,
+                border: '1px solid var(--color-border-chrome)', objectFit: 'cover',
+                background: 'var(--glass-bg)', flexShrink: 0,
               }}
               onError={e => { (e.currentTarget.style.visibility = 'hidden') }}
             />
           )}
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
             <input
               ref={fileInputRef}
               type="file"
@@ -99,103 +89,83 @@ export function ProfileEditModal({ profile, onClose, onSave }: {
               onChange={handleFilePick}
               style={{ display: 'none' }}
             />
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                style={{
-                  background: 'var(--color-bg-primary)', border: '1px solid var(--color-border)', cursor: 'pointer',
-                  color: 'var(--color-text-secondary)', fontSize: 10, padding: '6px 10px', borderRadius: 3,
-                  letterSpacing: '0.1em', textTransform: 'uppercase', fontWeight: 600,
-                }}
-              >
+            <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
+              <Button variant="ghost" onClick={() => fileInputRef.current?.click()}>
                 Enviar foto
-              </button>
+              </Button>
               {avatarUrl && (
-                <button
-                  onClick={() => setAvatarUrl('')}
-                  style={{
-                    background: 'none', border: '1px solid var(--color-border)', cursor: 'pointer',
-                    color: 'var(--color-text-tertiary)', fontSize: 10, padding: '6px 10px', borderRadius: 3,
-                    letterSpacing: '0.1em', textTransform: 'uppercase',
-                  }}
-                >
+                <Button variant="ghost" onClick={() => setAvatarUrl('')}>
                   Remover
-                </button>
+                </Button>
               )}
             </div>
-            <div style={{ fontSize: 9, color: 'var(--color-text-tertiary)' }}>
+            <div style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', lineHeight: 1.5 }}>
               Ou preencha um path/URL no campo abaixo. Limite do upload: 2 MB.
             </div>
           </div>
         </div>
 
-        <div>
-          <div style={{ fontSize: 10, color: 'var(--color-text-tertiary)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 4 }}>nome</div>
+        <FieldGroup label="nome">
           <input
             value={name}
             onChange={e => setName(e.target.value)}
-            style={{
-              width: '100%', background: 'var(--color-bg-primary)', border: '1px solid var(--color-border)',
-              color: 'var(--color-text-primary)', fontSize: 13, padding: '8px 10px', borderRadius: 3,
-              outline: 'none', boxSizing: 'border-box',
-            }}
+            style={inputCss}
           />
-        </div>
+        </FieldGroup>
 
-        <div>
-          <div style={{ fontSize: 10, color: 'var(--color-text-tertiary)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 4 }}>cargo</div>
+        <FieldGroup label="cargo">
           <input
             value={role}
             onChange={e => setRole(e.target.value)}
-            style={{
-              width: '100%', background: 'var(--color-bg-primary)', border: '1px solid var(--color-border)',
-              color: 'var(--color-text-primary)', fontSize: 13, padding: '8px 10px', borderRadius: 3,
-              outline: 'none', boxSizing: 'border-box',
-            }}
+            style={inputCss}
           />
-        </div>
+        </FieldGroup>
 
-        <div>
-          <div style={{ fontSize: 10, color: 'var(--color-text-tertiary)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 4 }}>foto (url)</div>
+        <FieldGroup label="foto (url)">
           <input
             value={avatarUrl}
             onChange={e => setAvatarUrl(e.target.value)}
             placeholder="/minha-foto.jpg ou https://..."
-            style={{
-              width: '100%', background: 'var(--color-bg-primary)', border: '1px solid var(--color-border)',
-              color: 'var(--color-text-primary)', fontSize: 13, padding: '8px 10px', borderRadius: 3,
-              outline: 'none', boxSizing: 'border-box', fontFamily: 'monospace',
-            }}
+            style={{ ...inputCss, fontFamily: 'var(--font-mono)' }}
           />
-        </div>
+        </FieldGroup>
 
-        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 4 }}>
-          <button
-            onClick={onClose}
-            style={{
-              background: 'none', border: '1px solid var(--color-border)', cursor: 'pointer',
-              color: 'var(--color-text-tertiary)', fontSize: 11, padding: '8px 14px', borderRadius: 3,
-              letterSpacing: '0.1em', textTransform: 'uppercase',
-            }}
-          >
-            Cancelar
-          </button>
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            style={{
-              background: 'var(--color-accent-primary)',
-              color: 'var(--color-bg-primary)',
-              border: 'none', cursor: saving ? 'not-allowed' : 'pointer',
-              fontSize: 11, padding: '8px 16px', borderRadius: 3, fontWeight: 700,
-              letterSpacing: '0.1em', textTransform: 'uppercase',
-              opacity: saving ? 0.6 : 1,
-            }}
-          >
+        <div style={{ display: 'flex', gap: 'var(--space-2)', justifyContent: 'flex-end', marginTop: 'var(--space-1)' }}>
+          <Button variant="ghost" onClick={onClose}>Cancelar</Button>
+          <Button variant="primary" onClick={handleSave} disabled={saving}>
             {saving ? 'Salvando…' : 'Salvar'}
-          </button>
+          </Button>
         </div>
       </div>
+    </ModalFrame>
+  )
+}
+
+function FieldGroup({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <div style={{
+        fontSize: 'var(--text-xs)',
+        color: 'var(--color-text-tertiary)',
+        marginBottom: 'var(--space-1)',
+        fontWeight: 500,
+      }}>
+        {label}
+      </div>
+      {children}
     </div>
   )
+}
+
+const inputCss: React.CSSProperties = {
+  width: '100%',
+  background: 'var(--glass-bg)',
+  border: '1px solid var(--color-border)',
+  color: 'var(--color-text-primary)',
+  fontSize: 'var(--text-sm)',
+  padding: 'var(--space-2) var(--space-3)',
+  borderRadius: 'var(--radius-sm)',
+  outline: 'none',
+  boxSizing: 'border-box',
+  fontFamily: 'var(--font-body)',
 }

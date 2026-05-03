@@ -2,12 +2,19 @@ import uuid
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
+from pydantic import BaseModel
 
 from db import get_conn
 from models.session import TaskSessionOut
 from models.task import TASK_COLUMNS, TaskCreate, TaskOut, TaskUpdate, row_to_task
 from services.active_session import find_active_session
-from services.utils import utcnow_iso_z
+from services.utils import parse_iso, utcnow_iso_z
+
+
+class SessionEdit(BaseModel):
+    started_at: Optional[str] = None
+    ended_at: Optional[str] = None
+
 
 router = APIRouter()
 
@@ -76,6 +83,11 @@ def update_task(task_id: str, body: TaskUpdate):
             prev_done = bool(existing["done"])
             if new_done and not prev_done:
                 fields["completed_at"] = utcnow_iso_z()
+                # Fecha sessão aberta — evita banner piscando e 409 ao iniciar outra.
+                conn.execute(
+                    "UPDATE task_sessions SET ended_at = ? WHERE task_id = ? AND ended_at IS NULL",
+                    (utcnow_iso_z(), task_id),
+                )
             elif not new_done and prev_done:
                 fields["completed_at"] = None
 
@@ -110,6 +122,11 @@ def toggle_task(task_id: str):
         new_done = 0 if row["done"] else 1
         now = utcnow_iso_z()
         completed_at = now if new_done else None
+        if new_done:
+            conn.execute(
+                "UPDATE task_sessions SET ended_at = ? WHERE task_id = ? AND ended_at IS NULL",
+                (now, task_id),
+            )
         conn.execute(
             "UPDATE tasks SET done = ?, completed_at = ?, updated_at = ? WHERE id = ?",
             (new_done, completed_at, now, task_id),
@@ -228,3 +245,70 @@ def task_stop_session(task_id: str):
             (task_id,),
         ).fetchone()
     return row_to_task(row)
+
+
+# ─── Edição manual de sessão (correção retroativa) ─────────────────────────
+
+@router.patch("/api/task-sessions/{session_id}")
+def edit_task_session(session_id: int, body: SessionEdit):
+    fields = {k: v for k, v in body.model_dump(exclude_unset=True).items()}
+    if not fields:
+        raise HTTPException(400, detail="Nada pra atualizar")
+
+    with get_conn() as conn:
+        existing = conn.execute(
+            "SELECT * FROM task_sessions WHERE id = ?", (session_id,)
+        ).fetchone()
+        if not existing:
+            raise HTTPException(404, detail="Sessão não encontrada")
+
+        if existing["ended_at"] is None and "ended_at" in fields and fields["ended_at"] is not None:
+            raise HTTPException(
+                422,
+                detail="Sessão em andamento — pause antes de editar o horário de fim.",
+            )
+
+        new_start = fields.get("started_at", existing["started_at"])
+        new_end = fields.get("ended_at", existing["ended_at"])
+        if new_end is not None:
+            try:
+                if parse_iso(new_end) <= parse_iso(new_start):
+                    raise HTTPException(422, detail="Horário de fim deve ser depois do início.")
+            except HTTPException:
+                raise
+            except Exception:
+                raise HTTPException(422, detail="Datas inválidas.")
+
+        set_clause = ", ".join(f"{k} = ?" for k in fields)
+        conn.execute(
+            f"UPDATE task_sessions SET {set_clause} WHERE id = ?",
+            [*fields.values(), session_id],
+        )
+        conn.commit()
+
+        row = conn.execute(
+            "SELECT * FROM task_sessions WHERE id = ?", (session_id,)
+        ).fetchone()
+
+        overlaps = []
+        if row["ended_at"]:
+            overlaps = conn.execute(
+                """SELECT id FROM task_sessions
+                   WHERE task_id = ? AND id != ?
+                     AND ended_at IS NOT NULL
+                     AND started_at < ?
+                     AND ended_at > ?""",
+                (existing["task_id"], session_id, row["ended_at"], row["started_at"]),
+            ).fetchall()
+
+    return {**dict(row), "overlap_warning": len(overlaps) > 0}
+
+
+@router.delete("/api/task-sessions/{session_id}", status_code=204)
+def delete_task_session(session_id: int):
+    with get_conn() as conn:
+        res = conn.execute("DELETE FROM task_sessions WHERE id = ?", (session_id,))
+        if res.rowcount == 0:
+            raise HTTPException(404, detail="Sessão não encontrada")
+        conn.commit()
+    return None

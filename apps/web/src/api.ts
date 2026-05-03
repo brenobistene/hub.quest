@@ -1,4 +1,11 @@
-import type { DayData, Project, Quest, Area, Routine, MicroTask, Profile, Task, Deliverable } from './types'
+import type {
+  DayData, Project, Quest, Area, Routine, MicroTask, Profile, Task, Deliverable,
+  FinAccount, FinCategory, FinTransaction, FinSummary, FinImportSummary,
+  FinMonthlySummary, FinCategorizationRule, FinDebt, FinDebtStatus,
+  FinParcela, FinPaymentTemplate, FinClient, FinHourlyRateStats, FinFreelaProject,
+  FinInvoice, FinInvoiceStatus, FinBudget, FinExchangeRate,
+  FinAccountType, FinAccountOrigin, FinCategoryType,
+} from './types'
 
 // URL base do backend. Default aponta pro backend local padrão; pode ser
 // sobrescrito em build via `VITE_API_URL` (ex: `.env` com `VITE_API_URL=http://192.168.x.y:8001`).
@@ -361,6 +368,52 @@ export interface QuestSession {
 
 export const fetchSessions = (questId: string) => get<QuestSession[]>(`/api/quests/${questId}/sessions`)
 
+// ─── Edição manual de sessão ───────────────────────────────────────────────
+// 6 endpoints: PATCH + DELETE pra cada um dos 3 tipos. Body do PATCH aceita
+// `started_at` e/ou `ended_at` (ISO). Resposta inclui `overlap_warning: bool`
+// quando a edição cria sobreposição com outra sessão da mesma entity —
+// frontend usa pra exibir aviso amarelo, não bloqueia.
+
+export type EditedSessionResp = QuestSession & { overlap_warning?: boolean }
+
+async function patchSession(path: string, body: { started_at?: string; ended_at?: string | null }): Promise<EditedSessionResp> {
+  const res = await fetch(`${BASE}${path}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) {
+    const text = await res.text()
+    let detail: string | undefined
+    try { detail = JSON.parse(text).detail } catch {}
+    const err: any = new Error(detail || `API error ${res.status}`)
+    err.status = res.status
+    err.detail = detail
+    throw err
+  }
+  return res.json()
+}
+
+async function deleteSession(path: string): Promise<void> {
+  const res = await fetch(`${BASE}${path}`, { method: 'DELETE' })
+  if (!res.ok && res.status !== 204) throw new Error(`API error ${res.status}`)
+}
+
+export const editQuestSession = (sessionId: number, body: { started_at?: string; ended_at?: string | null }) =>
+  patchSession(`/api/quest-sessions/${sessionId}`, body)
+export const deleteQuestSession = (sessionId: number) =>
+  deleteSession(`/api/quest-sessions/${sessionId}`)
+
+export const editTaskSession = (sessionId: number, body: { started_at?: string; ended_at?: string | null }) =>
+  patchSession(`/api/task-sessions/${sessionId}`, body)
+export const deleteTaskSession = (sessionId: number) =>
+  deleteSession(`/api/task-sessions/${sessionId}`)
+
+export const editRoutineSession = (sessionId: number, body: { started_at?: string; ended_at?: string | null }) =>
+  patchSession(`/api/routine-sessions/${sessionId}`, body)
+export const deleteRoutineSessionById = (sessionId: number) =>
+  deleteSession(`/api/routine-sessions/${sessionId}`)
+
 export interface ActiveSession {
   type: 'quest' | 'task' | 'routine'
   id: string
@@ -518,5 +571,422 @@ export async function deleteCalendarEvent(eventId: string): Promise<any> {
     method: 'DELETE',
   })
   if (!res.ok) throw new Error(`API error ${res.status}`)
+  return res.json()
+}
+
+// ─── Hub Finance (v0) ─────────────────────────────────────────────────────
+
+async function jsonOrThrow<T>(res: Response): Promise<T> {
+  if (!res.ok) throw new Error(`API error ${res.status}`)
+  return res.json()
+}
+
+// Accounts
+export const fetchFinAccounts = () => get<FinAccount[]>('/api/finance/accounts')
+
+export async function createFinAccount(body: {
+  nome: string
+  tipo: FinAccountType
+  moeda?: string
+  origem_dados?: FinAccountOrigin
+  cotacao_brl?: number | null
+}): Promise<FinAccount> {
+  return jsonOrThrow<FinAccount>(await fetch(`${BASE}/api/finance/accounts`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  }))
+}
+
+export async function updateFinAccount(id: string, patch: Partial<FinAccount>): Promise<FinAccount> {
+  return jsonOrThrow<FinAccount>(await fetch(`${BASE}/api/finance/accounts/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch),
+  }))
+}
+
+export async function deleteFinAccount(id: string): Promise<void> {
+  const res = await fetch(`${BASE}/api/finance/accounts/${id}`, { method: 'DELETE' })
+  if (!res.ok) throw new Error(`API error ${res.status}`)
+}
+
+export async function reorderFinAccounts(ids: string[]): Promise<void> {
+  const res = await fetch(`${BASE}/api/finance/accounts/reorder`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ids }),
+  })
+  if (!res.ok) throw new Error(`API error ${res.status}`)
+}
+
+export interface FinAccountUsage {
+  account_id: string
+  transactions: number
+  invoices: number
+}
+
+export const fetchFinAccountUsage = (id: string) =>
+  get<FinAccountUsage>(`/api/finance/accounts/${id}/usage`)
+
+/** Busca cotação online via AwesomeAPI (BR, gratuita, sem key).
+ *  Pode falhar (rede bloqueada na corporativa) — UI deve cair pra entrada manual. */
+export const fetchFinExchangeRate = (from: string, to: string = 'BRL') =>
+  get<FinExchangeRate>(`/api/finance/exchange-rate?from=${from}&to=${to}`)
+
+/** Monta a URL de export CSV pra abrir/baixar via window.location ou <a download>. */
+export function buildFinExportTransactionsUrl(filters: {
+  data_de?: string
+  data_ate?: string
+  conta_id?: string
+  categoria_id?: string
+} = {}): string {
+  const params = new URLSearchParams()
+  for (const [k, v] of Object.entries(filters)) {
+    if (v) params.set(k, v)
+  }
+  const qs = params.toString()
+  return `${BASE}/api/finance/transactions/export${qs ? '?' + qs : ''}`
+}
+
+// Categories
+export const fetchFinCategories = (tipo?: FinCategoryType) =>
+  get<FinCategory[]>(tipo ? `/api/finance/categories?tipo=${tipo}` : '/api/finance/categories')
+
+export async function createFinCategory(body: {
+  nome: string
+  tipo: FinCategoryType
+  cor?: string | null
+  categoria_pai_id?: string | null
+  limite_mensal?: number | null
+}): Promise<FinCategory> {
+  return jsonOrThrow<FinCategory>(await fetch(`${BASE}/api/finance/categories`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  }))
+}
+
+export async function updateFinCategory(id: string, patch: Partial<FinCategory>): Promise<FinCategory> {
+  return jsonOrThrow<FinCategory>(await fetch(`${BASE}/api/finance/categories/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch),
+  }))
+}
+
+export async function deleteFinCategory(id: string): Promise<void> {
+  const res = await fetch(`${BASE}/api/finance/categories/${id}`, { method: 'DELETE' })
+  if (!res.ok) throw new Error(`API error ${res.status}`)
+}
+
+// Transactions
+export interface FinTxFilters {
+  conta_id?: string
+  categoria_id?: string
+  data_de?: string
+  data_ate?: string
+  limit?: number
+}
+
+export function fetchFinTransactions(filters: FinTxFilters = {}): Promise<FinTransaction[]> {
+  const params = new URLSearchParams()
+  for (const [k, v] of Object.entries(filters)) {
+    if (v !== undefined && v !== null && v !== '') params.set(k, String(v))
+  }
+  const qs = params.toString()
+  return get<FinTransaction[]>(`/api/finance/transactions${qs ? '?' + qs : ''}`)
+}
+
+export async function createFinTransaction(body: {
+  data: string
+  valor: number
+  descricao: string
+  conta_id: string
+  categoria_id?: string | null
+  origem?: 'manual' | 'pynubank'
+  notas?: string | null
+}): Promise<FinTransaction> {
+  return jsonOrThrow<FinTransaction>(await fetch(`${BASE}/api/finance/transactions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  }))
+}
+
+export async function updateFinTransaction(id: string, patch: Partial<FinTransaction>): Promise<FinTransaction> {
+  return jsonOrThrow<FinTransaction>(await fetch(`${BASE}/api/finance/transactions/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch),
+  }))
+}
+
+export async function deleteFinTransaction(id: string): Promise<void> {
+  const res = await fetch(`${BASE}/api/finance/transactions/${id}`, { method: 'DELETE' })
+  if (!res.ok) throw new Error(`API error ${res.status}`)
+}
+
+// Summary
+export const fetchFinSummary = () => get<FinSummary>('/api/finance/summary')
+
+/** Resumo de um mês civil — receita, despesa, sobra, contagem.
+ *  `month` é 1-indexed (1 = janeiro, 12 = dezembro). */
+export const fetchFinMonthlySummary = (year: number, month: number) =>
+  get<FinMonthlySummary>(`/api/finance/monthly-summary?year=${year}&month=${month}`)
+
+/** Status de orçamento mensal por categoria — só retorna categorias com
+ *  `limite_mensal` definido. Honra regra de competência (fatura). */
+export const fetchFinBudget = (year: number, month: number) =>
+  get<FinBudget>(`/api/finance/budget?year=${year}&month=${month}`)
+
+/** Média histórica de R$/hora — agregado cross-projeto da área freelas.
+ *  Usado pra comparar projetos individuais contra a média geral. */
+export const fetchFinHourlyRateStats = () =>
+  get<FinHourlyRateStats>('/api/finance/hourly-rate-stats')
+
+/** Lista projetos da área freelas com dados financeiros pré-computados
+ *  (cliente, horas, R$/hora real e estimado, próxima parcela). Evita
+ *  N+1 fetches. */
+export const fetchFinFreelaProjects = () =>
+  get<FinFreelaProject[]>('/api/finance/freela-projects')
+
+// Categorization rules — substring (case-insensitive) da descrição mapeia
+// pra uma categoria. Aplicadas no import CSV automaticamente.
+export const fetchFinCategorizationRules = () =>
+  get<FinCategorizationRule[]>('/api/finance/categorization-rules')
+
+export async function createFinCategorizationRule(body: {
+  pattern: string
+  categoria_id: string
+}): Promise<FinCategorizationRule> {
+  return jsonOrThrow<FinCategorizationRule>(await fetch(`${BASE}/api/finance/categorization-rules`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  }))
+}
+
+export async function updateFinCategorizationRule(
+  id: string,
+  patch: Partial<FinCategorizationRule>,
+): Promise<FinCategorizationRule> {
+  return jsonOrThrow<FinCategorizationRule>(await fetch(`${BASE}/api/finance/categorization-rules/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch),
+  }))
+}
+
+export async function deleteFinCategorizationRule(id: string): Promise<void> {
+  const res = await fetch(`${BASE}/api/finance/categorization-rules/${id}`, { method: 'DELETE' })
+  if (!res.ok) throw new Error(`API error ${res.status}`)
+}
+
+export interface FinRuleBackfillPreview {
+  matches_total: number
+  matches_uncategorized: number
+  sample: string[]
+}
+
+export const previewBackfillRule = (id: string) =>
+  get<FinRuleBackfillPreview>(`/api/finance/categorization-rules/${id}/preview-backfill`)
+
+export async function applyBackfillRule(
+  id: string, opts: { overwrite?: boolean } = {},
+): Promise<{ updated: number }> {
+  const qs = opts.overwrite ? '?overwrite=true' : ''
+  return jsonOrThrow<{ updated: number }>(await fetch(
+    `${BASE}/api/finance/categorization-rules/${id}/backfill${qs}`,
+    { method: 'POST' },
+  ))
+}
+
+// Debts — dívidas externas (faculdade, financiamento, parcelamentos não-rotativos).
+// Saldo decrescente computado pelo backend a partir das transações vinculadas
+// (via fin_transaction.divida_id).
+export const fetchFinDebts = (status?: FinDebtStatus) =>
+  get<FinDebt[]>(status ? `/api/finance/debts?status=${status}` : '/api/finance/debts')
+
+export async function createFinDebt(body: {
+  descricao: string
+  valor_total_original: number
+  parcela_mensal?: number | null
+  data_inicio?: string | null
+  categoria_id?: string | null
+}): Promise<FinDebt> {
+  return jsonOrThrow<FinDebt>(await fetch(`${BASE}/api/finance/debts`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  }))
+}
+
+export async function updateFinDebt(id: string, patch: Partial<FinDebt>): Promise<FinDebt> {
+  return jsonOrThrow<FinDebt>(await fetch(`${BASE}/api/finance/debts/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch),
+  }))
+}
+
+export async function deleteFinDebt(id: string): Promise<void> {
+  const res = await fetch(`${BASE}/api/finance/debts/${id}`, { method: 'DELETE' })
+  if (!res.ok) throw new Error(`API error ${res.status}`)
+}
+
+// Parcelas — recebimentos esperados de projetos freela.
+export const fetchFinParcelas = (projectId: string) =>
+  get<FinParcela[]>(`/api/finance/projects/${projectId}/parcelas`)
+
+/** Lista parcelas de TODOS os projetos. Útil pro select "vincular a parcela"
+ *  no CategorizeModal. Retorna shape com `projeto_titulo` pra display. */
+export const fetchAllFinParcelas = (status?: FinParcela['status']) =>
+  get<FinParcela[]>(status ? `/api/finance/parcelas?status=${status}` : '/api/finance/parcelas')
+
+// Clients — pessoas/empresas que pagam projetos freela. Habilita auto-vínculo
+// de receita por CPF/CNPJ na descrição da transação.
+export const fetchFinClients = () => get<FinClient[]>('/api/finance/clients')
+
+export async function createFinClient(body: {
+  nome: string
+  cpf_cnpj?: string | null
+  notas?: string | null
+}): Promise<FinClient> {
+  return jsonOrThrow<FinClient>(await fetch(`${BASE}/api/finance/clients`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  }))
+}
+
+export async function updateFinClient(id: string, patch: Partial<FinClient>): Promise<FinClient> {
+  return jsonOrThrow<FinClient>(await fetch(`${BASE}/api/finance/clients/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch),
+  }))
+}
+
+export async function deleteFinClient(id: string): Promise<void> {
+  const res = await fetch(`${BASE}/api/finance/clients/${id}`, { method: 'DELETE' })
+  if (!res.ok) throw new Error(`API error ${res.status}`)
+}
+
+// Invoices — faturas de cartão de crédito. Compras em conta tipo='credito'
+// são auto-vinculadas à fatura aberta. Pagar a fatura cria 2 transações de
+// Transferência Interna e marca a fatura como paga (ver doc PLAN.md).
+export const fetchFinInvoices = (opts?: {
+  cartao_id?: string
+  status?: FinInvoiceStatus
+}) => {
+  const params = new URLSearchParams()
+  if (opts?.cartao_id) params.set('cartao_id', opts.cartao_id)
+  if (opts?.status) params.set('status', opts.status)
+  const qs = params.toString()
+  return get<FinInvoice[]>(`/api/finance/invoices${qs ? '?' + qs : ''}`)
+}
+
+export async function createFinInvoice(body: {
+  cartao_id: string
+  mes_referencia: string
+  data_fechamento?: string | null
+  data_vencimento?: string | null
+}): Promise<FinInvoice> {
+  return jsonOrThrow<FinInvoice>(await fetch(`${BASE}/api/finance/invoices`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  }))
+}
+
+export async function updateFinInvoice(id: string, patch: Partial<FinInvoice>): Promise<FinInvoice> {
+  return jsonOrThrow<FinInvoice>(await fetch(`${BASE}/api/finance/invoices/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch),
+  }))
+}
+
+export async function deleteFinInvoice(id: string): Promise<void> {
+  const res = await fetch(`${BASE}/api/finance/invoices/${id}`, { method: 'DELETE' })
+  if (!res.ok) throw new Error(`API error ${res.status}`)
+}
+
+/** Fecha a fatura — não aceita mais novas compras. Próxima compra cria
+ *  nova fatura aberta automaticamente. */
+export async function closeFinInvoice(id: string): Promise<FinInvoice> {
+  return jsonOrThrow<FinInvoice>(await fetch(`${BASE}/api/finance/invoices/${id}/close`, {
+    method: 'POST',
+  }))
+}
+
+/** Paga a fatura: cria 2 transações de Transferência Interna (saída da
+ *  conta corrente, entrada no cartão) e marca a fatura como 'paga'. */
+export async function payFinInvoice(id: string, body: {
+  conta_pagamento_id: string
+  data_pagamento: string
+}): Promise<FinInvoice> {
+  return jsonOrThrow<FinInvoice>(await fetch(`${BASE}/api/finance/invoices/${id}/pay`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  }))
+}
+
+export async function createFinParcela(projectId: string, body: {
+  valor: number
+  data_prevista?: string | null
+  observacao?: string | null
+}): Promise<FinParcela> {
+  return jsonOrThrow<FinParcela>(await fetch(`${BASE}/api/finance/projects/${projectId}/parcelas`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  }))
+}
+
+/** Aplica template de parcelas: apaga as pendentes existentes e cria N novas
+ *  baseadas no `valor_acordado` do projeto. Preserva parcelas já recebidas. */
+export async function applyFinParcelaTemplate(projectId: string, body: {
+  template: FinPaymentTemplate
+  data_inicio?: string | null
+}): Promise<FinParcela[]> {
+  return jsonOrThrow<FinParcela[]>(await fetch(`${BASE}/api/finance/projects/${projectId}/parcelas/apply-template`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  }))
+}
+
+export async function updateFinParcela(id: string, patch: Partial<FinParcela>): Promise<FinParcela> {
+  return jsonOrThrow<FinParcela>(await fetch(`${BASE}/api/finance/parcelas/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch),
+  }))
+}
+
+export async function deleteFinParcela(id: string): Promise<void> {
+  const res = await fetch(`${BASE}/api/finance/parcelas/${id}`, { method: 'DELETE' })
+  if (!res.ok) throw new Error(`API error ${res.status}`)
+}
+
+// Import CSV (Nubank Conta Corrente).
+// Substituiu o plano de pynubank — Nubank descontinuou em set/2024 a API que
+// pynubank usava (issue andreroggeri/pynubank#462). Doc: docs/hub-finance/PLAN.md
+export async function importNubankCsv(file: File, contaId: string): Promise<FinImportSummary> {
+  const formData = new FormData()
+  formData.append('file', file)
+  formData.append('conta_id', contaId)
+  const res = await fetch(`${BASE}/api/finance/import/nubank-csv`, {
+    method: 'POST',
+    body: formData,
+  })
+  if (!res.ok) {
+    let detail = `API error ${res.status}`
+    try { detail = (await res.json())?.detail ?? detail } catch {}
+    throw new Error(detail)
+  }
   return res.json()
 }

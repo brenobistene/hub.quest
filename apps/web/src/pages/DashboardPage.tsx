@@ -492,7 +492,7 @@ export function DashboardView({ projects, quests, areas, profile, onProfileUpdat
   }
 
   return (
-    <div style={{ padding: '32px 24px', maxWidth: 1000, margin: '0 auto', color: 'var(--color-text-primary)' }}>
+    <div style={{ padding: '32px 24px', maxWidth: 1000, margin: '0 auto', color: 'var(--color-text-primary)' }} className="hq-grain">
 
       {/* ─── Header ─── */}
       <header style={{
@@ -567,7 +567,7 @@ export function DashboardView({ projects, quests, areas, profile, onProfileUpdat
         <div style={{
           fontSize: 32, fontWeight: 700, lineHeight: 1.1,
           color: vereditoColor,
-          fontFamily: "'IBM Plex Mono', monospace",
+          fontFamily: 'var(--font-mono)',
           letterSpacing: '-0.02em',
         }}>
           {vereditoHeadline}
@@ -576,7 +576,7 @@ export function DashboardView({ projects, quests, areas, profile, onProfileUpdat
         <div style={{
           marginTop: 14, display: 'flex', flexDirection: 'column', gap: 4,
           fontSize: 13, color: 'var(--color-text-secondary)',
-          fontFamily: "'IBM Plex Mono', monospace",
+          fontFamily: 'var(--font-mono)',
         }}>
           {todayQuotaMin > 0 ? (
             <div>
@@ -819,7 +819,7 @@ export function DashboardView({ projects, quests, areas, profile, onProfileUpdat
                 }}>
                   <div style={{
                     width: 56, flexShrink: 0, textAlign: 'left',
-                    fontFamily: "'IBM Plex Mono', monospace",
+                    fontFamily: 'var(--font-mono)',
                     color: item.isOverdue ? 'var(--color-accent-vivid)' : 'var(--color-text-tertiary)',
                   }}>
                     <div style={{ fontSize: 11, fontWeight: 600 }}>
@@ -919,7 +919,7 @@ function ProjectRiskRow({ pp, areaColor, areaName, onOpen }: { pp: ProjectPressu
       </div>
       <div style={{
         display: 'flex', gap: 16, alignItems: 'baseline', flexShrink: 0,
-        fontSize: 11, fontFamily: "'IBM Plex Mono', monospace",
+        fontSize: 11, fontFamily: 'var(--font-mono)',
         color: 'var(--color-text-tertiary)',
       }}>
         <span style={{ color: metricColor, fontWeight: 600 }}>{deadlineText}</span>
@@ -1007,15 +1007,16 @@ function WindowRangeSelector({ value, onChange }: {
       </button>
 
       {open && (
-        <div style={{
-          position: 'absolute', top: 'calc(100% + 6px)', right: 0,
-          background: 'var(--color-bg-secondary)',
-          border: '1px solid var(--color-border)',
-          borderRadius: 4, padding: 10, zIndex: 100,
-          minWidth: 240,
-          boxShadow: '0 8px 24px rgba(0, 0, 0, 0.5)',
-          display: 'flex', flexDirection: 'column', gap: 10,
-        }}>
+        <div
+          className="hq-glass hq-grain hq-animate-fade-up"
+          style={{
+            position: 'absolute', top: 'calc(100% + 6px)', right: 0,
+            padding: 'var(--space-3)', zIndex: 100,
+            minWidth: 240,
+            boxShadow: 'var(--shadow-lg)',
+            display: 'flex', flexDirection: 'column', gap: 'var(--space-3)',
+          }}
+        >
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
             {presets.map(p => {
               const active = matchingPreset?.label === p.label
@@ -1059,7 +1060,7 @@ function WindowRangeSelector({ value, onChange }: {
                 style={{
                   flex: 1, background: 'var(--color-bg-primary)', border: '1px solid var(--color-border)',
                   color: 'var(--color-text-primary)', fontSize: 11, padding: '4px 6px', borderRadius: 3,
-                  outline: 'none', colorScheme: 'dark', fontFamily: "'IBM Plex Mono', monospace",
+                  outline: 'none', colorScheme: 'dark', fontFamily: 'var(--font-mono)',
                 } as any}
               />
             </div>
@@ -1073,7 +1074,7 @@ function WindowRangeSelector({ value, onChange }: {
                 style={{
                   flex: 1, background: 'var(--color-bg-primary)', border: '1px solid var(--color-border)',
                   color: 'var(--color-text-primary)', fontSize: 11, padding: '4px 6px', borderRadius: 3,
-                  outline: 'none', colorScheme: 'dark', fontFamily: "'IBM Plex Mono', monospace",
+                  outline: 'none', colorScheme: 'dark', fontFamily: 'var(--font-mono)',
                 } as any}
               />
             </div>

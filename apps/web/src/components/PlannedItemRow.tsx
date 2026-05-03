@@ -12,7 +12,7 @@ import { BlockEditor, isBlockDocEmpty } from './BlockEditor'
  * Row usado dentro dos períodos (manhã/tarde/noite) da tela Dia.
  * Play/pause/stop completos + cronômetro para qualquer tipo (quest/task/routine).
  */
-export function PlannedItemRow({ item, areas, activeSession, onSessionUpdate, onRemoveFromPlan, target, parentTitle, deliverableTitle, onOpen }: {
+export function PlannedItemRow({ item, areas, activeSession, onSessionUpdate, onRemoveFromPlan, target, parentTitle, deliverableTitle, onOpen, migratedFromLabel }: {
   item: any
   areas: Area[]
   activeSession: ActiveSession | null
@@ -25,6 +25,9 @@ export function PlannedItemRow({ item, areas, activeSession, onSessionUpdate, on
   /** Se fornecido, o título vira clicável (usado pra navegar pro projeto
    *  quando o item é uma quest). `undefined` = título não-clicável. */
   onOpen?: () => void
+  /** Rótulo do turno de origem se o item foi migrado automaticamente
+   *  (ex: "manhã"). Renderiza um indicador discreto "↑ veio da manhã". */
+  migratedFromLabel?: string
 }) {
   const [showDescription, setShowDescription] = useState(false)
   const [descDraft, setDescDraft] = useState<string | null>(null)
@@ -58,7 +61,9 @@ export function PlannedItemRow({ item, areas, activeSession, onSessionUpdate, on
       ? 'var(--color-routine-block)'
       : (areas.find(a => a.slug === (item as Quest).area_slug)?.color || 'var(--color-text-tertiary)')
 
-  const [sessions, setSessions] = useState<{ started_at: string; ended_at: string | null }[]>([])
+  // `id` preservado pra permitir edição/exclusão da sessão pelo
+  // SessionHistoryModal (PATCH/DELETE /api/{kind}-sessions/{id}).
+  const [sessions, setSessions] = useState<{ id?: number; started_at: string; ended_at: string | null }[]>([])
   useEffect(() => {
     if (!item?.id) { setSessions([]); return }
     let cancelled = false
@@ -72,6 +77,7 @@ export function PlannedItemRow({ item, areas, activeSession, onSessionUpdate, on
         if (cancelled) return
         const safe = Array.isArray(list) ? list : []
         setSessions(safe.map((s: any) => ({
+          id: s?.id,
           started_at: s?.started_at ?? '',
           ended_at: s?.ended_at ?? null,
         })))
@@ -173,6 +179,18 @@ export function PlannedItemRow({ item, areas, activeSession, onSessionUpdate, on
             {item.duration_minutes && <span>~{item.duration_minutes}m</span>}
             {(item.start_time && item.end_time) && (
               <span style={{ fontFamily: 'monospace' }}>{item.start_time}–{item.end_time}</span>
+            )}
+            {migratedFromLabel && (
+              <span
+                title={`Migrado automaticamente da ${migratedFromLabel} porque o turno encerrou`}
+                style={{
+                  color: 'var(--color-text-muted)',
+                  fontStyle: 'italic',
+                  letterSpacing: '0.02em',
+                }}
+              >
+                ↑ veio da {migratedFromLabel}
+              </span>
             )}
           </div>
         </div>

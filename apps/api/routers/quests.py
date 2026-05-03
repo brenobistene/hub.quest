@@ -2,12 +2,21 @@ import uuid
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
 
 from db import get_conn
 from models.quest import QuestCreate, QuestOut, QuestUpdate
 from models.session import SessionOut
 from services.active_session import find_active_session
 from services.utils import calculate_quest_duration, parse_iso, utcnow_iso_z
+
+
+class SessionEdit(BaseModel):
+    """Body pra edição manual de uma sessão (PATCH).
+    `started_at` e `ended_at` são ISO strings; `ended_at=None` pra sessão
+    em andamento. Validação `end > start` acontece no router."""
+    started_at: Optional[str] = None
+    ended_at: Optional[str] = None
 
 router = APIRouter()
 
@@ -160,6 +169,14 @@ def update_quest(quest_id: str, body: QuestUpdate):
             prev_status = current["status"] if current else None
             new_status = fields["status"]
             if new_status in TERMINAL and prev_status not in TERMINAL:
+                # Fecha qualquer sessão aberta da quest — caso o user marque
+                # done direto via checkbox/dropdown sem pausar antes. Senão
+                # a sessão fica pendurada e o banner de "ativa" pisca, além
+                # de bloquear novas sessões com 409 (conflito de ativa).
+                conn.execute(
+                    "UPDATE quest_sessions SET ended_at = ? WHERE quest_id = ? AND ended_at IS NULL",
+                    (utcnow_iso_z(), quest_id),
+                )
                 fields["completed_at"] = utcnow_iso_z()
                 if new_status == "done":
                     actual_minutes = calculate_quest_duration(conn, quest_id)
@@ -339,3 +356,75 @@ def resume_session(quest_id: str):
             (quest_id, session_num),
         ).fetchone()
     return dict(row)
+
+
+# ─── Edição manual de sessão (correção retroativa) ─────────────────────────
+
+@router.patch("/api/quest-sessions/{session_id}")
+def edit_quest_session(session_id: int, body: SessionEdit):
+    """Edita started_at/ended_at de uma sessão. Devolve a sessão atualizada
+    + flag `overlap_warning` (true se sobrepõe outra sessão da mesma quest).
+    Validação: ended_at, se passado, deve ser > started_at."""
+    fields = {k: v for k, v in body.model_dump(exclude_unset=True).items()}
+    if not fields:
+        raise HTTPException(400, detail="Nada pra atualizar")
+
+    with get_conn() as conn:
+        existing = conn.execute(
+            "SELECT * FROM quest_sessions WHERE id = ?", (session_id,)
+        ).fetchone()
+        if not existing:
+            raise HTTPException(404, detail="Sessão não encontrada")
+
+        # Sessão ativa (ended_at=NULL): só edita started_at — pra mexer no
+        # fim, frontend precisa pausar antes (regra de UX).
+        if existing["ended_at"] is None and "ended_at" in fields and fields["ended_at"] is not None:
+            raise HTTPException(
+                422,
+                detail="Sessão em andamento — pause antes de editar o horário de fim.",
+            )
+
+        new_start = fields.get("started_at", existing["started_at"])
+        new_end = fields.get("ended_at", existing["ended_at"])
+        if new_end is not None:
+            try:
+                if parse_iso(new_end) <= parse_iso(new_start):
+                    raise HTTPException(422, detail="Horário de fim deve ser depois do início.")
+            except HTTPException:
+                raise
+            except Exception:
+                raise HTTPException(422, detail="Datas inválidas.")
+
+        set_clause = ", ".join(f"{k} = ?" for k in fields)
+        conn.execute(
+            f"UPDATE quest_sessions SET {set_clause} WHERE id = ?",
+            [*fields.values(), session_id],
+        )
+        conn.commit()
+
+        row = conn.execute(
+            "SELECT * FROM quest_sessions WHERE id = ?", (session_id,)
+        ).fetchone()
+
+        overlaps = []
+        if row["ended_at"]:
+            overlaps = conn.execute(
+                """SELECT id FROM quest_sessions
+                   WHERE quest_id = ? AND id != ?
+                     AND ended_at IS NOT NULL
+                     AND started_at < ?
+                     AND ended_at > ?""",
+                (existing["quest_id"], session_id, row["ended_at"], row["started_at"]),
+            ).fetchall()
+
+    return {**dict(row), "overlap_warning": len(overlaps) > 0}
+
+
+@router.delete("/api/quest-sessions/{session_id}", status_code=204)
+def delete_quest_session(session_id: int):
+    with get_conn() as conn:
+        res = conn.execute("DELETE FROM quest_sessions WHERE id = ?", (session_id,))
+        if res.rowcount == 0:
+            raise HTTPException(404, detail="Sessão não encontrada")
+        conn.commit()
+    return None
