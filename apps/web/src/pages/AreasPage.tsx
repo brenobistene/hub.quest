@@ -11,6 +11,7 @@ import { AreaRow } from '../components/AreaRow'
 import { DateRangeFilter } from '../components/DateRangeFilter'
 import { QuestDetailPanel } from '../components/QuestDetailPanel'
 import { PRIORITIES } from '../components/PrioritySelect'
+import { Card } from '../components/ui/Primitives'
 
 /**
  * `/areas` — lista editável de áreas. Um clique numa linha navega pra
@@ -48,9 +49,26 @@ export function AreasView({ areas, projects, onAreaCreate, onAreaUpdate, onAreaD
 
   return (
     <div style={{ padding: '32px 24px', maxWidth: 1000, margin: '0 auto', color: 'var(--color-text-primary)' }}>
+    <Card padding="none" style={{
+      animation: 'hq-fade-up var(--motion-base) var(--ease-emphasis) both',
+    }}>
+      {/* Hairline accent — linha sutil oxblood no topo */}
+      <div style={{
+        height: 1,
+        background: 'linear-gradient(90deg, transparent, var(--color-accent-primary), transparent)',
+        opacity: 0.5,
+      }} />
+      {/* Header com gradient sutil */}
+      <div style={{
+        padding: 'var(--space-5) var(--space-6) var(--space-4)',
+        background: `
+          radial-gradient(ellipse 100% 80% at 0% 0%, rgba(159, 18, 57, 0.06), transparent 60%),
+          linear-gradient(180deg, rgba(236, 232, 227, 0.02), transparent)
+        `,
+        borderBottom: '1px solid var(--color-divider)',
+      }}>
       <header style={{
         display: 'flex', alignItems: 'flex-end', gap: 14,
-        paddingBottom: 20, borderBottom: '1px solid var(--color-divider)',
       }}>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{
@@ -84,6 +102,8 @@ export function AreasView({ areas, projects, onAreaCreate, onAreaUpdate, onAreaD
           </button>
         )}
       </header>
+      </div>
+      <div style={{ padding: 'var(--space-5) var(--space-6)' }}>
 
       {creating && (
         <section style={{
@@ -183,6 +203,8 @@ export function AreasView({ areas, projects, onAreaCreate, onAreaUpdate, onAreaD
       </section>
 
       <div style={{ display: 'none' }}><Label>áreas</Label></div>
+      </div>
+    </Card>
     </div>
   )
 }
@@ -421,8 +443,24 @@ function AreaDetailView({
   }
 
   return (
-    <div>
-      <div style={{ marginBottom: 24 }}>
+    <Card padding="none" style={{
+      animation: 'hq-fade-up var(--motion-base) var(--ease-emphasis) both',
+    }}>
+      {/* Hairline accent — linha sutil oxblood no topo */}
+      <div style={{
+        height: 1,
+        background: 'linear-gradient(90deg, transparent, var(--color-accent-primary), transparent)',
+        opacity: 0.5,
+      }} />
+      {/* Header com gradient sutil — area name + progresso */}
+      <div style={{
+        padding: 'var(--space-5) var(--space-6) var(--space-4)',
+        background: `
+          radial-gradient(ellipse 100% 80% at 0% 0%, rgba(159, 18, 57, 0.06), transparent 60%),
+          linear-gradient(180deg, rgba(236, 232, 227, 0.02), transparent)
+        `,
+        borderBottom: '1px solid var(--color-divider)',
+      }}>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginBottom: 12 }}>
           <h2 style={{ color: 'var(--color-text-primary)', fontSize: 16, fontWeight: 600, margin: 0 }}>{area.name}</h2>
           <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>
@@ -448,6 +486,7 @@ function AreaDetailView({
           </div>
         )}
       </div>
+      <div style={{ padding: 'var(--space-5) var(--space-6)' }}>
 
       {!creatingProject ? (
         <div style={{ marginTop: 24 }}>
@@ -651,7 +690,8 @@ function AreaDetailView({
           )}
         </div>
       )}
-    </div>
+      </div>
+    </Card>
   )
 }
 

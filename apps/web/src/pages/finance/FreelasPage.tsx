@@ -14,35 +14,110 @@ import { useNavigate } from 'react-router-dom'
 import { Briefcase, Clock, ExternalLink, TrendingDown, TrendingUp, Users } from 'lucide-react'
 import { useHubFinance } from './HubFinanceContext'
 import { ClientsManagerModal } from './components/ClientsManagerModal'
-import { formatBRL } from './components/styleHelpers'
+import { formatBRL, cardLabel } from './components/styleHelpers'
+import { MonthPicker } from './components/MonthPicker'
+import { Card } from '../../components/ui/Primitives'
+
+// Helpers visuais reutilizados nos 4 cards da página — extraídos pra evitar
+// repetir markup do header com gradient + hairline em cada um.
+const cardWrap: React.CSSProperties = {
+  animation: 'hq-fade-up var(--motion-base) var(--ease-emphasis) both',
+}
+
+function CardHairline() {
+  return (
+    <div style={{
+      height: 1,
+      background: 'linear-gradient(90deg, transparent, var(--color-accent-primary), transparent)',
+      opacity: 0.5,
+    }} />
+  )
+}
+
+const headerWithGradient: React.CSSProperties = {
+  padding: 'var(--space-5) var(--space-6) var(--space-4)',
+  background: `
+    radial-gradient(ellipse 100% 80% at 0% 0%, rgba(159, 18, 57, 0.06), transparent 60%),
+    linear-gradient(180deg, rgba(236, 232, 227, 0.02), transparent)
+  `,
+  borderBottom: '1px solid var(--color-divider)',
+}
+
+const cardBody: React.CSSProperties = {
+  padding: 'var(--space-5) var(--space-6)',
+}
 import type { FinFreelaProject, FinHourlyRateStats, FinClient } from '../../types'
 
 export function FreelasPage() {
   const {
-    freelaProjects, hourlyStats, clients, refreshGlobal, loading,
+    freelaProjects, hourlyStats, clients, selectedMonth, setSelectedMonth,
+    refreshGlobal, loading,
   } = useHubFinance()
   const [showClientsManager, setShowClientsManager] = useState(false)
+
+  // IMPORTANTE: useMemo ANTES do early return de loading. Se você mover
+  // o `if (loading) return` pra cima, React quebra com "Rules of Hooks
+  // violation" — quando loading vai de true→false, ordem dos hooks muda
+  // e a árvore inteira crasha (tela preta).
+  //
+  // Pipeline reage ao MÊS SELECIONADO: parcelas previstas dentro do mês.
+  // Sem parcelas com data → mostra todas pendentes (fallback).
+  const pipelineDoMes = useMemo(() => {
+    const monthStart = `${selectedMonth.year}-${String(selectedMonth.month).padStart(2, '0')}-01`
+    const lastDay = new Date(selectedMonth.year, selectedMonth.month, 0).getDate()
+    const monthEnd = `${selectedMonth.year}-${String(selectedMonth.month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`
+    return freelaProjects
+      .filter(p => p.proxima_parcela)
+      .map(p => ({ projeto: p, parcela: p.proxima_parcela! }))
+      .filter(({ parcela }) =>
+        !parcela.data_prevista
+        || (parcela.data_prevista >= monthStart && parcela.data_prevista <= monthEnd)
+      )
+      .sort((a, b) => (a.parcela.data_prevista ?? 'z').localeCompare(b.parcela.data_prevista ?? 'z'))
+  }, [freelaProjects, selectedMonth.year, selectedMonth.month])
 
   if (loading) return <p style={{ color: 'var(--color-text-muted)' }}>Carregando…</p>
 
   const ativos = freelaProjects.filter(p => p.status === 'doing' || p.status === 'pending')
-  const pipelinePendentes = useMemo(() => {
-    const next30 = new Date()
-    next30.setDate(next30.getDate() + 30)
-    const cutoff = next30.toISOString().slice(0, 10)
-    return freelaProjects
-      .filter(p => p.proxima_parcela)
-      .map(p => ({ projeto: p, parcela: p.proxima_parcela! }))
-      // Próximos 30 dias (sem data ou dentro do range)
-      .filter(({ parcela }) => !parcela.data_prevista || parcela.data_prevista <= cutoff)
-      .sort((a, b) => (a.parcela.data_prevista ?? 'z').localeCompare(b.parcela.data_prevista ?? 'z'))
-  }, [freelaProjects])
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+    <div style={{
+      display: 'flex', flexDirection: 'column', gap: 24,
+      animation: 'hq-fade-up var(--motion-base) var(--ease-emphasis) both',
+    }}>
+      {/* Header com MonthPicker — sincroniza com Visão Geral e Lançamentos.
+          O hourlyStats e a lista de projetos ativos NÃO filtram por mês
+          (são agregados globais e estado vivo). Só o pipeline reage. */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: 'var(--space-3)',
+      }}>
+        <div>
+          <div style={{
+            fontSize: 'var(--text-xs)',
+            color: 'var(--color-text-tertiary)',
+            letterSpacing: '0.12em',
+            textTransform: 'uppercase',
+            fontWeight: 600,
+          }}>
+            Freelas
+          </div>
+          <div style={{
+            fontSize: 'var(--text-xs)',
+            color: 'var(--color-text-muted)',
+            marginTop: 2,
+          }}>
+            pipeline filtra pelo mês · estatísticas e projetos ativos são globais
+          </div>
+        </div>
+        <MonthPicker selectedMonth={selectedMonth} onChange={setSelectedMonth} />
+      </div>
+
       <Hero stats={hourlyStats} projetos={freelaProjects} />
 
-      <PipelineRecebimentos itens={pipelinePendentes} />
+      <PipelineRecebimentos itens={pipelineDoMes} mes={selectedMonth} />
 
       <div style={twoColumns}>
         <ProjetosAtivos projetos={ativos} hourlyStats={hourlyStats} />
@@ -85,16 +160,18 @@ function Hero({ stats, projetos }: {
   const totalHoras = projetos.reduce((s, p) => s + p.horas_trabalhadas, 0)
 
   return (
-    <div style={cardBase}>
-      <div style={{
-        display: 'flex', alignItems: 'baseline', gap: 12, marginBottom: 16,
-      }}>
-        <Clock size={12} strokeWidth={1.8} style={{ color: 'var(--color-text-tertiary)' }} />
-        <div style={cardLabel}>Sua média de R$/hora</div>
-        <div style={{ fontSize: 11, color: 'var(--color-text-muted)', fontStyle: 'italic' }}>
-          baseline pra precificar próximos projetos
+    <Card padding="none" style={cardWrap}>
+      <CardHairline />
+      <div style={headerWithGradient}>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 'var(--space-3)' }}>
+          <Clock size={12} strokeWidth={1.8} style={{ color: 'var(--color-text-tertiary)' }} />
+          <div style={cardLabel}>Sua média de R$/hora</div>
+          <div style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', fontStyle: 'italic' }}>
+            baseline pra precificar próximos projetos
+          </div>
         </div>
       </div>
+      <div style={cardBody}>
 
       {!hasData ? (
         <div style={{
@@ -155,7 +232,8 @@ function Hero({ stats, projetos }: {
           )}
         </>
       )}
-    </div>
+      </div>
+    </Card>
   )
 }
 
@@ -213,46 +291,67 @@ function SubStat({ label, value, color }: { label: string; value: string; color:
 
 // ─── Pipeline próximos recebimentos ─────────────────────────────────────
 
-function PipelineRecebimentos({ itens }: {
+function PipelineRecebimentos({ itens, mes }: {
   itens: { projeto: FinFreelaProject; parcela: NonNullable<FinFreelaProject['proxima_parcela']> }[]
+  mes: { year: number; month: number }
 }) {
   const total = itens.reduce((s, i) => s + i.parcela.valor, 0)
+  const monthsPt = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez']
+  const mesLabel = `${monthsPt[mes.month - 1]}/${String(mes.year).slice(2)}`
 
   return (
-    <div style={cardBase}>
-      <div style={{
-        display: 'flex', alignItems: 'baseline', gap: 12, marginBottom: 12,
-      }}>
-        <div style={cardLabel}>Próximos recebimentos (30 dias)</div>
-        {itens.length > 0 && (
-          <div style={{
-            fontSize: 12, fontWeight: 700, color: 'var(--color-success)',
-            fontFamily: 'var(--font-mono)',
-          }}>
-            {formatBRL(total)}
-          </div>
-        )}
+    <Card padding="none" style={cardWrap}>
+      <CardHairline />
+      <div style={headerWithGradient}>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 'var(--space-3)' }}>
+          <div style={cardLabel}>Recebimentos previstos · {mesLabel}</div>
+          {itens.length > 0 && (
+            <div style={{
+              fontSize: 'var(--text-sm)', fontWeight: 700, color: 'var(--color-success)',
+              fontFamily: 'var(--font-mono)',
+              fontVariantNumeric: 'tabular-nums',
+            }}>
+              {formatBRL(total)}
+            </div>
+          )}
+        </div>
       </div>
+      <div style={cardBody}>
 
       {itens.length === 0 ? (
         <div style={{
           fontSize: 11, color: 'var(--color-text-muted)', fontStyle: 'italic',
           padding: '12px 0',
         }}>
-          nenhum recebimento previsto nos próximos 30 dias. cadastre parcelas
-          esperadas nos seus projetos freela pra ver o pipeline.
+          nenhum recebimento previsto pra {mesLabel}. cadastre parcelas
+          esperadas nos seus projetos freela pra ver o pipeline, ou troque
+          o mês no seletor acima.
         </div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          {itens.map(({ projeto, parcela }) => (
-            <div key={parcela.id} style={{
-              display: 'grid', gridTemplateColumns: '1fr 110px 100px',
-              gap: 12, alignItems: 'center', padding: '8px 12px',
-              background: 'var(--color-bg-primary)',
-              border: '1px solid var(--color-border)',
-              borderLeft: '3px solid var(--color-success)',
-              borderRadius: 3,
-            }}>
+        <div className="hq-stagger" style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          {itens.map(({ projeto, parcela }, i) => (
+            <div
+              key={parcela.id}
+              className="hq-animate-fade-up"
+              style={{
+                display: 'grid', gridTemplateColumns: '1fr 110px 100px',
+                gap: 12, alignItems: 'center', padding: '8px 12px',
+                background: 'var(--color-bg-primary)',
+                border: '1px solid var(--color-border)',
+                borderLeft: '3px solid var(--color-success)',
+                borderRadius: 'var(--radius-sm)',
+                transition: 'border-color var(--motion-fast) var(--ease-smooth), background var(--motion-fast) var(--ease-smooth)',
+                ['--stagger-i' as any]: i,
+              }}
+              onMouseEnter={e => {
+                e.currentTarget.style.borderColor = 'var(--color-border-strong)'
+                e.currentTarget.style.background = 'var(--glass-bg-hover)'
+              }}
+              onMouseLeave={e => {
+                e.currentTarget.style.borderColor = 'var(--color-border)'
+                e.currentTarget.style.background = 'var(--color-bg-primary)'
+              }}
+            >
               <div style={{ minWidth: 0 }}>
                 <div style={{
                   fontSize: 13, color: 'var(--color-text-primary)',
@@ -283,7 +382,8 @@ function PipelineRecebimentos({ itens }: {
           ))}
         </div>
       )}
-    </div>
+      </div>
+    </Card>
   )
 }
 
@@ -294,18 +394,22 @@ function ProjetosAtivos({ projetos, hourlyStats }: {
   hourlyStats: FinHourlyRateStats | null
 }) {
   return (
-    <div style={cardBase}>
-      <div style={{
-        display: 'flex', alignItems: 'baseline', gap: 12, marginBottom: 14,
-      }}>
-        <Briefcase size={12} strokeWidth={1.8} style={{ color: 'var(--color-text-tertiary)' }} />
-        <div style={cardLabel}>Projetos ativos</div>
-        {projetos.length > 0 && (
-          <div style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>
-            {projetos.length}
-          </div>
-        )}
+    <Card padding="none" style={cardWrap}>
+      <CardHairline />
+      <div style={headerWithGradient}>
+        <div style={{
+          display: 'flex', alignItems: 'baseline', gap: 'var(--space-3)',
+        }}>
+          <Briefcase size={12} strokeWidth={1.8} style={{ color: 'var(--color-text-tertiary)' }} />
+          <div style={cardLabel}>Projetos ativos</div>
+          {projetos.length > 0 && (
+            <div style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' }}>
+              {projetos.length}
+            </div>
+          )}
+        </div>
       </div>
+      <div style={cardBody}>
 
       {projetos.length === 0 ? (
         <div style={{
@@ -318,11 +422,20 @@ function ProjetosAtivos({ projetos, hourlyStats }: {
           do Hub Quest e adicione valor acordado pra ver aqui.
         </div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {projetos.map(p => <ProjectCard key={p.id} projeto={p} hourlyStats={hourlyStats} />)}
+        <div className="hq-stagger" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {projetos.map((p, i) => (
+            <div
+              key={p.id}
+              className="hq-animate-fade-up"
+              style={{ ['--stagger-i' as any]: i }}
+            >
+              <ProjectCard projeto={p} hourlyStats={hourlyStats} />
+            </div>
+          ))}
         </div>
       )}
-    </div>
+      </div>
+    </Card>
   )
 }
 
@@ -514,18 +627,20 @@ function ClientesSidebar({ clients, projetos, onManage }: {
   }, [projetos])
 
   return (
-    <div style={cardBase}>
-      <div style={{
-        display: 'flex', alignItems: 'baseline', gap: 12, marginBottom: 14,
-      }}>
-        <Users size={12} strokeWidth={1.8} style={{ color: 'var(--color-text-tertiary)' }} />
-        <div style={cardLabel}>Clientes</div>
-        {clients.length > 0 && (
-          <div style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>
-            {clients.length}
-          </div>
-        )}
+    <Card padding="none" style={cardWrap}>
+      <CardHairline />
+      <div style={headerWithGradient}>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 'var(--space-3)' }}>
+          <Users size={12} strokeWidth={1.8} style={{ color: 'var(--color-text-tertiary)' }} />
+          <div style={cardLabel}>Clientes</div>
+          {clients.length > 0 && (
+            <div style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' }}>
+              {clients.length}
+            </div>
+          )}
+        </div>
       </div>
+      <div style={cardBody}>
 
       {clients.length === 0 ? (
         <div style={{
@@ -536,14 +651,20 @@ function ClientesSidebar({ clients, projetos, onManage }: {
           ativar o auto-vínculo de receita.
         </div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {clients.slice(0, 8).map(c => {
+        <div className="hq-stagger" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {clients.slice(0, 8).map((c, i) => {
             const count = projetosPorCliente.get(c.id) ?? 0
             return (
-              <div key={c.id} style={{
-                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                padding: '6px 0',
-              }}>
+              <div
+                key={c.id}
+                className="hq-row-hoverable hq-animate-fade-up"
+                style={{
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                  padding: 'var(--space-2) var(--space-3)',
+                  borderRadius: 'var(--radius-sm)',
+                  ['--stagger-i' as any]: i,
+                }}
+              >
                 <div style={{ minWidth: 0 }}>
                   <div style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>
                     {c.nome}
@@ -574,34 +695,41 @@ function ClientesSidebar({ clients, projetos, onManage }: {
         </div>
       )}
 
-      <button onClick={onManage} style={{
-        display: 'block', width: '100%',
-        marginTop: 12, paddingTop: 10,
-        borderTop: '1px solid var(--color-border)',
-        border: 'none', borderTopStyle: 'solid',
-        background: 'none', cursor: 'pointer',
-        fontSize: 10, color: 'var(--color-text-tertiary)',
-        textTransform: 'uppercase', letterSpacing: '0.1em',
-        textAlign: 'center', fontFamily: 'inherit',
-      }}>
-        gerenciar clientes →
+      </div>
+      {/* Footer-action button — mesmo padrão do Carteira: full-width
+          borderless com hover suave de cor + bg. */}
+      <button
+        onClick={onManage}
+        style={{
+          width: '100%',
+          background: 'transparent',
+          border: 'none',
+          borderTop: '1px solid var(--color-divider)',
+          padding: 'var(--space-3) var(--space-6)',
+          color: 'var(--color-text-tertiary)',
+          fontSize: 'var(--text-xs)',
+          fontWeight: 600,
+          letterSpacing: '0.05em',
+          cursor: 'pointer',
+          textAlign: 'left',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 'var(--space-2)',
+        }}
+        onMouseEnter={e => {
+          e.currentTarget.style.background = 'var(--glass-bg-hover)'
+          e.currentTarget.style.color = 'var(--color-accent-light)'
+        }}
+        onMouseLeave={e => {
+          e.currentTarget.style.background = 'transparent'
+          e.currentTarget.style.color = 'var(--color-text-tertiary)'
+        }}
+      >
+        gerenciar clientes
+        <span style={{ marginLeft: 'auto' }}>→</span>
       </button>
-    </div>
+    </Card>
   )
-}
-
-// ─── Estilos compartilhados ──────────────────────────────────────────────
-
-const cardBase: React.CSSProperties = {
-  background: 'var(--color-bg-secondary)',
-  border: '1px solid var(--color-border)',
-  borderRadius: 4,
-  padding: '16px 18px',
-}
-
-const cardLabel: React.CSSProperties = {
-  fontSize: 10, color: 'var(--color-text-tertiary)',
-  letterSpacing: '0.2em', textTransform: 'uppercase', fontWeight: 600,
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────

@@ -7,6 +7,7 @@ import {
 import type { FinClient } from '../../../types'
 import {
   sectionLabel, fieldLabel, inputStyle, primaryButton, ghostButton, modalOverlay,
+  modalShell, modalHairline, modalHeader, modalBody,
 } from './styleHelpers'
 
 /**
@@ -34,13 +35,13 @@ export function ClientsManagerModal({ onClose, onChanged }: {
     <>
       <div onClick={onClose} style={modalOverlay()}>
         <div onClick={e => e.stopPropagation()} style={{
-          background: 'var(--color-bg-primary)',
-          border: '1px solid var(--color-border)',
-          borderRadius: 4, padding: 24,
+          ...modalShell(),
           minWidth: 560, maxWidth: 720, maxHeight: '85vh',
           display: 'flex', flexDirection: 'column',
         }}>
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginBottom: 16 }}>
+          <div style={modalHairline} />
+          <div style={modalHeader()}>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 12 }}>
             <Users size={14} strokeWidth={1.8} style={{ color: 'var(--color-text-tertiary)' }} />
             <div style={sectionLabel()}>Gerenciar clientes</div>
             <div style={{ flex: 1 }} />
@@ -58,6 +59,8 @@ export function ClientsManagerModal({ onClose, onChanged }: {
               <X size={14} strokeWidth={2} />
             </button>
           </div>
+          </div>
+          <div style={{ ...modalBody(), overflowY: 'auto', flex: 1 }}>
 
           <div style={{
             fontSize: 11, color: 'var(--color-text-muted)',
@@ -68,7 +71,7 @@ export function ClientsManagerModal({ onClose, onChanged }: {
             o sistema marca automaticamente a parcela esperada como recebida.
           </div>
 
-          <div style={{ overflowY: 'auto', flex: 1 }}>
+          <div>
             {loading ? (
               <div style={{ fontSize: 12, color: 'var(--color-text-muted)', fontStyle: 'italic' }}>
                 carregando…
@@ -134,6 +137,7 @@ export function ClientsManagerModal({ onClose, onChanged }: {
                 ))}
               </div>
             )}
+          </div>
           </div>
         </div>
       </div>
@@ -203,12 +207,12 @@ function ClientFormModal({ client, onClose, onSaved, onDeleted }: {
 
   return (
     <div onClick={onClose} style={{ ...modalOverlay(), zIndex: 110 }}>
-      <div onClick={e => e.stopPropagation()} style={{
-        background: 'var(--color-bg-primary)',
-        border: '1px solid var(--color-border)',
-        borderRadius: 4, padding: 24, minWidth: 420, maxWidth: 520,
-      }}>
-        <div style={sectionLabel()}>{isNew ? 'Novo cliente' : 'Editar cliente'}</div>
+      <div onClick={e => e.stopPropagation()} style={{ ...modalShell(), minWidth: 420, maxWidth: 520 }}>
+        <div style={modalHairline} />
+        <div style={modalHeader()}>
+          <div style={sectionLabel()}>{isNew ? 'Novo cliente' : 'Editar cliente'}</div>
+        </div>
+        <div style={modalBody()}>
         <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <div>
             <label style={fieldLabel()}>Nome</label>
@@ -261,6 +265,7 @@ function ClientFormModal({ client, onClose, onSaved, onDeleted }: {
             </div>
           </div>
         </form>
+        </div>
       </div>
     </div>
   )

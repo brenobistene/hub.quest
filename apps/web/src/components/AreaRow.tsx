@@ -37,12 +37,14 @@ export function AreaRow({ area, questCount, onOpen, onUpdate, onDelete }: {
   return (
     <div
       style={{
-        padding: '16px 0', borderBottom: '1px solid var(--color-border)',
+        padding: '16px var(--space-3)',
+        borderBottom: '1px solid var(--color-divider)',
+        borderRadius: 'var(--radius-sm)',
         display: 'flex', alignItems: 'flex-start', gap: 14,
-        transition: 'opacity 0.15s',
+        transition: 'background var(--motion-fast) var(--ease-smooth)',
       }}
-      onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => setHover(false)}
+      onMouseEnter={(e) => { setHover(true); e.currentTarget.style.background = 'var(--glass-bg-hover)' }}
+      onMouseLeave={(e) => { setHover(false); e.currentTarget.style.background = 'transparent' }}
     >
       <div style={{ position: 'relative', flexShrink: 0, marginTop: 2 }}>
         <button

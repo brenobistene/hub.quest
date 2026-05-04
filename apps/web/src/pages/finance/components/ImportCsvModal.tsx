@@ -1,7 +1,10 @@
 import { useRef, useState } from 'react'
 import { importNubankCsv, reportApiError } from '../../../api'
 import type { FinAccount, FinImportSummary } from '../../../types'
-import { sectionLabel, fieldLabel, inputStyle, primaryButton, ghostButton } from './styleHelpers'
+import {
+  sectionLabel, fieldLabel, inputStyle, primaryButton, ghostButton,
+  modalOverlay, modalShell, modalHairline, modalHeader, modalBody,
+} from './styleHelpers'
 
 export function ImportCsvModal({ accounts, onClose, onImported }: {
   accounts: FinAccount[]
@@ -39,17 +42,13 @@ export function ImportCsvModal({ accounts, onClose, onImported }: {
   }
 
   return (
-    <div onClick={handleClose} style={{
-      position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)',
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      zIndex: 100,
-    }}>
-      <div onClick={e => e.stopPropagation()} style={{
-        background: 'var(--color-bg-primary)',
-        border: '1px solid var(--color-border)',
-        borderRadius: 4, padding: 24, minWidth: 460, maxWidth: 560,
-      }}>
-        <div style={sectionLabel()}>Importar CSV do Nubank</div>
+    <div onClick={handleClose} style={modalOverlay()}>
+      <div onClick={e => e.stopPropagation()} style={{ ...modalShell(), minWidth: 460, maxWidth: 560 }}>
+        <div style={modalHairline} />
+        <div style={modalHeader()}>
+          <div style={sectionLabel()}>Importar CSV do Nubank</div>
+        </div>
+        <div style={modalBody()}>
 
         <div style={{
           fontSize: 11, color: 'var(--color-text-muted)',
@@ -137,6 +136,7 @@ export function ImportCsvModal({ accounts, onClose, onImported }: {
             </div>
           </div>
         )}
+        </div>
       </div>
     </div>
   )

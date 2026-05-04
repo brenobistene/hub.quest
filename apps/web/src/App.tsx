@@ -26,7 +26,10 @@ import { MicroDumpView } from './pages/MicroDumpPage'
 import { ArquivadosView } from './pages/ArquivadosPage'
 import { HubFinanceLayout } from './pages/finance/HubFinanceLayout'
 import { VisaoGeralPage } from './pages/finance/VisaoGeralPage'
+import { CarteiraPage } from './pages/finance/CarteiraPage'
 import { LancamentosPage } from './pages/finance/LancamentosPage'
+import { FixasPage } from './pages/finance/FixasPage'
+import { DividasPage } from './pages/finance/DividasPage'
 import { FreelasPage } from './pages/finance/FreelasPage'
 import { CategoriasPage } from './pages/finance/CategoriasPage'
 
@@ -726,9 +729,11 @@ export default function App() {
         background: 'transparent',
       }}>
         {/* Wrapper com key={pathname} re-anima conteúdo a cada navegação.
-            Cuidado: isso desmonta/monta a página. State efêmero da página
-            é perdido na navegação — é o trade-off pra ter entrance animation. */}
-        <div key={location.pathname} className="hq-animate-fade-up">
+            Usa fade-in (só opacity, SEM transform) pra não quebrar
+            `position: fixed` de modais filhos — transform num ancestral
+            redefine o containing block. Cards individuais continuam com
+            fade-up porque estão isolados na árvore. */}
+        <div key={location.pathname} className="hq-animate-fade-in">
         <Routes>
           <Route path="/" element={<Navigate to="/dia" replace />} />
           <Route path="/dashboard" element={<DashboardView projects={projects} quests={quests} areas={areas} profile={profile} onProfileUpdate={setProfile} onSelectProject={setSelectedProjectId} />} />
@@ -751,6 +756,9 @@ export default function App() {
           <Route path="/hub-finance" element={<HubFinanceLayout />}>
             <Route index element={<Navigate to="visao-geral" replace />} />
             <Route path="visao-geral" element={<VisaoGeralPage />} />
+            <Route path="carteira" element={<CarteiraPage />} />
+            <Route path="fixas" element={<FixasPage />} />
+            <Route path="dividas" element={<DividasPage />} />
             <Route path="lancamentos" element={<LancamentosPage />} />
             <Route path="freelas" element={<FreelasPage />} />
             <Route path="categorias" element={<CategoriasPage />} />

@@ -1,14 +1,16 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Landmark, X } from 'lucide-react'
+import { CalendarRange, Landmark, X } from 'lucide-react'
 import {
   fetchFinDebts, createFinDebt, updateFinDebt, deleteFinDebt,
   reportApiError,
 } from '../../../api'
-import type { FinDebt, FinCategory } from '../../../types'
+import type { FinAccount, FinDebt, FinCategory } from '../../../types'
 import {
   sectionLabel, fieldLabel, inputStyle, primaryButton, ghostButton,
   modalOverlay, formatBRL,
+  modalShell, modalHairline, modalHeader, modalBody,
 } from './styleHelpers'
+import { DebtParcelasModal } from './DebtParcelasModal'
 
 /**
  * Modal de gerenciamento de dívidas — abre via botão "gerenciar dívidas"
@@ -19,8 +21,9 @@ import {
  * Carrega lista própria (não usa context) pra refletir mudanças após
  * editar/criar/deletar sem depender de refreshAll global pesado.
  */
-export function DebtsManagerModal({ categories, onClose, onChanged }: {
+export function DebtsManagerModal({ categories, accounts, onClose, onChanged }: {
   categories: FinCategory[]
+  accounts: FinAccount[]
   onClose: () => void
   /** Notificado após mudança que afeta outros blocos (ex: deletar dívida). */
   onChanged: () => void
@@ -28,6 +31,7 @@ export function DebtsManagerModal({ categories, onClose, onChanged }: {
   const [debts, setDebts] = useState<FinDebt[]>([])
   const [loading, setLoading] = useState(true)
   const [editingDebt, setEditingDebt] = useState<FinDebt | 'new' | null>(null)
+  const [managingParcelas, setManagingParcelas] = useState<FinDebt | null>(null)
 
   function refresh() {
     setLoading(true)
@@ -47,14 +51,14 @@ export function DebtsManagerModal({ categories, onClose, onChanged }: {
     <>
       <div onClick={onClose} style={modalOverlay()}>
         <div onClick={e => e.stopPropagation()} style={{
-          background: 'var(--color-bg-primary)',
-          border: '1px solid var(--color-border)',
-          borderRadius: 4, padding: 24,
+          ...modalShell(),
           minWidth: 600, maxWidth: 800, maxHeight: '85vh',
           display: 'flex', flexDirection: 'column',
         }}>
+          <div style={modalHairline} />
+          <div style={modalHeader()}>
           {/* Header */}
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginBottom: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 12 }}>
             <Landmark size={14} strokeWidth={1.8} style={{ color: 'var(--color-text-tertiary)' }} />
             <div style={sectionLabel()}>Gerenciar dívidas</div>
             {activeCount > 0 && (
@@ -80,8 +84,8 @@ export function DebtsManagerModal({ categories, onClose, onChanged }: {
               <X size={14} strokeWidth={2} />
             </button>
           </div>
-
-          <div style={{ overflowY: 'auto', flex: 1 }}>
+          </div>
+          <div style={{ ...modalBody(), overflowY: 'auto', flex: 1 }}>
             {loading ? (
               <div style={{ fontSize: 12, color: 'var(--color-text-muted)', fontStyle: 'italic' }}>
                 carregando…
@@ -106,6 +110,7 @@ export function DebtsManagerModal({ categories, onClose, onChanged }: {
                     debt={d}
                     categories={categories}
                     onEdit={() => setEditingDebt(d)}
+                    onManageParcelas={() => setManagingParcelas(d)}
                   />
                 ))}
               </div>
@@ -123,16 +128,27 @@ export function DebtsManagerModal({ categories, onClose, onChanged }: {
           onDeleted={() => { setEditingDebt(null); refresh(); onChanged() }}
         />
       )}
+
+      {managingParcelas && (
+        <DebtParcelasModal
+          debt={managingParcelas}
+          accounts={accounts}
+          categories={categories}
+          onClose={() => setManagingParcelas(null)}
+          onChanged={() => { refresh(); onChanged() }}
+        />
+      )}
     </>
   )
 }
 
 // ─── Card individual de dívida ───────────────────────────────────────────
 
-function DebtCard({ debt: d, categories, onEdit }: {
+function DebtCard({ debt: d, categories, onEdit, onManageParcelas }: {
   debt: FinDebt
   categories: FinCategory[]
   onEdit: () => void
+  onManageParcelas: () => void
 }) {
   const cat = useMemo(
     () => d.categoria_id ? categories.find(c => c.id === d.categoria_id) : null,
@@ -149,19 +165,21 @@ function DebtCard({ debt: d, categories, onEdit }: {
 
   return (
     <div
-      onClick={onEdit}
       style={{
         background: 'var(--color-bg-secondary)',
         border: '1px solid var(--color-border)',
         borderLeft: `3px solid ${accentColor}`,
         borderRadius: 4, padding: '14px 16px',
-        cursor: 'pointer', transition: 'border-color 0.15s',
+        transition: 'border-color 0.15s',
         opacity: d.status === 'cancelled' ? 0.5 : 1,
       }}
-      onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--color-accent-light)' }}
-      onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--color-border)' }}
     >
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+      <div
+        onClick={onEdit}
+        style={{ cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}
+        onMouseEnter={e => { (e.currentTarget.parentElement as HTMLElement).style.borderColor = 'var(--color-accent-light)' }}
+        onMouseLeave={e => { (e.currentTarget.parentElement as HTMLElement).style.borderColor = 'var(--color-border)' }}
+      >
         <div style={{ minWidth: 0 }}>
           <div style={{
             fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)',
@@ -194,6 +212,7 @@ function DebtCard({ debt: d, categories, onEdit }: {
           fontSize: 18, fontWeight: 700,
           color: isPaidOff ? 'var(--color-success)' : 'var(--color-text-primary)',
           fontFamily: 'var(--font-mono)',
+          fontVariantNumeric: 'tabular-nums',
         }}>
           {formatBRL(d.saldo_devedor)}
         </div>
@@ -219,8 +238,27 @@ function DebtCard({ debt: d, categories, onEdit }: {
         <div style={{
           marginTop: 8, fontSize: 10, color: 'var(--color-text-tertiary)',
         }}>
-          faltam <strong>{d.parcelas_restantes}</strong> parcela{d.parcelas_restantes === 1 ? '' : 's'} de {formatBRL(d.parcela_mensal)}
+          faltam <strong>{d.parcelas_restantes}</strong> parcela{d.parcelas_restantes === 1 ? '' : 's'} de {formatBRL(d.parcela_mensal)} (estimativa)
         </div>
+      )}
+
+      {/* Botão pra gerenciar cronograma de parcelas */}
+      {!isPaidOff && (
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onManageParcelas() }}
+          className="hq-btn hq-btn--ghost"
+          style={{
+            marginTop: 10,
+            padding: '5px 10px',
+            fontSize: 'var(--text-xs)',
+            width: '100%',
+            justifyContent: 'center',
+          }}
+        >
+          <CalendarRange size={11} strokeWidth={1.8} />
+          gerenciar parcelas
+        </button>
       )}
     </div>
   )

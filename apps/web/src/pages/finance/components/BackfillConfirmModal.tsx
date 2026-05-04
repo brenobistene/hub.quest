@@ -9,7 +9,10 @@ import { useState } from 'react'
 import { X } from 'lucide-react'
 import { applyBackfillRule, reportApiError } from '../../../api'
 import type { FinRuleBackfillPreview } from '../../../api'
-import { sectionLabel, primaryButton, ghostButton, modalOverlay } from './styleHelpers'
+import {
+  sectionLabel, primaryButton, ghostButton, modalOverlay,
+  modalShell, modalHairline, modalHeader, modalBody,
+} from './styleHelpers'
 
 export function BackfillConfirmModal({
   ruleId, pattern, categoryName, preview, onClose, onApplied,
@@ -40,12 +43,12 @@ export function BackfillConfirmModal({
   return (
     <div onClick={onClose} style={{ ...modalOverlay(), zIndex: 110 }}>
       <div onClick={e => e.stopPropagation()} style={{
-        background: 'var(--color-bg-primary)',
-        border: '1px solid var(--color-border)',
-        borderRadius: 4, padding: 24,
+        ...modalShell(),
         minWidth: 460, maxWidth: 560,
       }}>
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginBottom: 12 }}>
+        <div style={modalHairline} />
+        <div style={modalHeader()}>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 12 }}>
           <div style={sectionLabel()}>Aplicar regra a transações antigas?</div>
           <div style={{ flex: 1 }} />
           <button onClick={onClose} style={{
@@ -56,6 +59,8 @@ export function BackfillConfirmModal({
             <X size={14} strokeWidth={2} />
           </button>
         </div>
+        </div>
+        <div style={modalBody()}>
 
         <div style={{
           padding: 12, marginBottom: 14,
@@ -129,6 +134,7 @@ export function BackfillConfirmModal({
               todas já têm categoria — nada a fazer.
             </div>
           )}
+        </div>
         </div>
       </div>
     </div>

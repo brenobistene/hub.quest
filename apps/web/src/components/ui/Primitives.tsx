@@ -172,7 +172,8 @@ export function EmptyState({ text, sub, icon, dense = false }: {
 // ─── Modal frame ─────────────────────────────────────────────────────────
 
 /** Frame padrão de modal: overlay com blur + content com entrance animation.
- *  Use no lugar de inline `modalOverlay()` quando criar novo modal. */
+ *  Use no lugar de inline `modalOverlay()` quando criar novo modal.
+ *  Inclui hairline oxblood no topo (mesma estética dos cards Carteira). */
 export function ModalFrame({
   children, onClose, minWidth = 460, maxWidth = 560, padding = 'md',
 }: {
@@ -203,7 +204,6 @@ export function ModalFrame({
         onClick={e => e.stopPropagation()}
         className="hq-glass-elevated hq-animate-modal-in"
         style={{
-          padding: padValue,
           minWidth,
           maxWidth,
           maxHeight: '90vh',
@@ -212,7 +212,16 @@ export function ModalFrame({
           overflow: 'hidden',
         }}
       >
-        {children}
+        {/* Hairline accent — linha sutil oxblood no topo */}
+        <div style={{
+          height: 1,
+          background: 'linear-gradient(90deg, transparent, var(--color-accent-primary), transparent)',
+          opacity: 0.5,
+          flexShrink: 0,
+        }} />
+        <div style={{ padding: padValue, flex: 1, overflowY: 'auto' }}>
+          {children}
+        </div>
       </div>
     </div>
   )

@@ -191,8 +191,23 @@
         letter-spacing: -0.02em;
       }
 
+      /* Avisa o browser que nossa UI é dark — afeta widgets nativos do OS:
+         dropdown <option>, date picker, scrollbar default, autofill yellow.
+         Sem isso, Windows/Chrome renderiza <option> em branco mesmo com
+         CSS aplicado no <select>. */
+      html {
+        color-scheme: dark;
+      }
+
       html, body, #root {
         background-color: var(--color-bg-primary);
+        color: var(--color-text-primary);
+      }
+
+      /* Reforço extra pra <option> — alguns browsers ignoram color-scheme
+         pra dropdowns abertos. Funciona como backup. */
+      option {
+        background: var(--color-bg-secondary);
         color: var(--color-text-primary);
       }
 
@@ -285,6 +300,13 @@
       }
 
       /* ─── Animation utility classes ─── */
+      /* fade-in puro (só opacity) — usar em wrappers que contêm modais
+         ou outros elementos com `position: fixed`. Transform num pai
+         transforma o containing block do `position: fixed` filho, fazendo
+         o modal renderizar relativo ao pai (e não ao viewport). */
+      .hq-animate-fade-in {
+        animation: hq-fade-in var(--motion-base) var(--ease-emphasis) both;
+      }
       .hq-animate-fade-up {
         animation: hq-fade-up var(--motion-base) var(--ease-emphasis) both;
       }

@@ -5,12 +5,16 @@ import {
   deleteFinCategorizationRule, previewBackfillRule, reportApiError,
 } from '../../../api'
 import type { FinRuleBackfillPreview } from '../../../api'
-import type { FinCategory, FinCategorizationRule } from '../../../types'
-import { sectionLabel, inputStyle, primaryButton, modalOverlay } from './styleHelpers'
+import type { FinCategory, FinCategorizationRule, FinAccount } from '../../../types'
+import {
+  sectionLabel, inputStyle, primaryButton, modalOverlay,
+  modalShell, modalHairline, modalHeader, modalBody,
+} from './styleHelpers'
 import { BackfillConfirmModal } from './BackfillConfirmModal'
 
-export function RulesModal({ categories, onClose }: {
+export function RulesModal({ categories, accounts, onClose }: {
   categories: FinCategory[]
+  accounts: FinAccount[]
   onClose: () => void
 }) {
   const [rules, setRules] = useState<FinCategorizationRule[]>([])
@@ -50,6 +54,7 @@ export function RulesModal({ categories, onClose }: {
   }
 
   const catById = useMemo(() => new Map(categories.map(c => [c.id, c])), [categories])
+  const accById = useMemo(() => new Map(accounts.map(a => [a.id, a])), [accounts])
 
   function refresh() {
     setLoading(true)
@@ -111,13 +116,13 @@ export function RulesModal({ categories, onClose }: {
   return (
     <div onClick={onClose} style={modalOverlay()}>
       <div onClick={e => e.stopPropagation()} style={{
-        background: 'var(--color-bg-primary)',
-        border: '1px solid var(--color-border)',
-        borderRadius: 4, padding: 24,
+        ...modalShell(),
         minWidth: 560, maxWidth: 720, maxHeight: '80vh',
         display: 'flex', flexDirection: 'column',
       }}>
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginBottom: 12 }}>
+        <div style={modalHairline} />
+        <div style={modalHeader()}>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 12 }}>
           <div style={sectionLabel()}>Regras de auto-categorização</div>
           <div style={{ flex: 1 }} />
           <button onClick={onClose} style={{
@@ -128,6 +133,8 @@ export function RulesModal({ categories, onClose }: {
             <X size={14} strokeWidth={2} />
           </button>
         </div>
+        </div>
+        <div style={{ ...modalBody(), overflowY: 'auto', flex: 1 }}>
 
         <div style={{
           fontSize: 11, color: 'var(--color-text-muted)',
@@ -222,10 +229,22 @@ export function RulesModal({ categories, onClose }: {
                         {r.pattern}
                       </span>
                       <span style={{
+                        display: 'flex', flexDirection: 'column', gap: 2,
                         fontSize: 11, color: 'var(--color-text-secondary)',
                         textTransform: 'uppercase', letterSpacing: '0.05em',
                       }}>
-                        → {cat?.nome ?? '(categoria removida)'}
+                        <span>→ {cat?.nome ?? '(categoria removida)'}</span>
+                        {r.link_cartao_id && (
+                          <span
+                            title="quando bater, marca fatura desse cartão como paga (se valor exato)"
+                            style={{
+                              fontSize: 9, color: 'var(--color-accent-light)',
+                              letterSpacing: '0.08em', fontWeight: 600,
+                            }}
+                          >
+                            ⚡ paga fatura {accById.get(r.link_cartao_id)?.nome ?? '?'}
+                          </span>
+                        )}
                       </span>
                       <span
                         title={`bateu ${r.times_matched} vez${r.times_matched === 1 ? '' : 'es'}`}
@@ -275,6 +294,7 @@ export function RulesModal({ categories, onClose }: {
         }}>
           ×N = quantas vezes essa regra já casou e categorizou automaticamente.
           O ícone de varinha aplica a regra retroativamente em transações já lançadas.
+        </div>
         </div>
       </div>
 

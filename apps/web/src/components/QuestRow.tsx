@@ -89,13 +89,15 @@ export function QuestRow({ q, onUpdate, onClick, isSelected, projects = [], area
     <div
       onClick={onClick}
       style={{
-        padding: '14px 0', borderBottom: '1px solid var(--color-border)',
+        padding: '14px var(--space-3)',
+        borderBottom: '1px solid var(--color-divider)',
         display: 'flex', alignItems: 'flex-start', gap: 12,
         cursor: onClick ? 'pointer' : 'auto',
-        background: isSelected ? 'var(--color-bg-secondary)' : 'transparent',
-        transition: 'background 0.15s',
+        background: isSelected ? 'var(--glass-bg-hover)' : 'transparent',
+        borderRadius: 'var(--radius-sm)',
+        transition: 'background var(--motion-fast) var(--ease-smooth)',
       }}
-      onMouseEnter={e => { if (onClick && !isSelected) (e.currentTarget as HTMLElement).style.background = 'var(--color-bg-primary)' }}
+      onMouseEnter={e => { if (onClick && !isSelected) (e.currentTarget as HTMLElement).style.background = 'var(--glass-bg-hover)' }}
       onMouseLeave={e => { if (onClick && !isSelected) (e.currentTarget as HTMLElement).style.background = 'transparent' }}
     >
       <div style={{

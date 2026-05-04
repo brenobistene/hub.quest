@@ -1,7 +1,7 @@
 /**
- * Modal de gerenciamento de contas — listar/renomear/deletar/reordenar/conciliar.
+ * Modal de gerenciamento de carteiras — listar/renomear/deletar/reordenar/conciliar.
  *
- * Aberto via botão "gerenciar contas" no header do Hub Finance.
+ * Aberto via botão "gerenciar carteiras" no footer da página /carteira.
  * Cada linha tem: setas up/down + nome + saldo + ações (editar / conciliar /
  * cotação / deletar). Reorder usa setas (mais simples que drag-and-drop em
  * modal scrollable).
@@ -23,6 +23,7 @@ import type { FinAccount } from '../../../types'
 import {
   sectionLabel, fieldLabel, hintText, inputStyle, primaryButton, ghostButton,
   modalOverlay, formatMoney, ICON_SIZE, ICON_STROKE, ICON_STROKE_HEAVY,
+  modalShell, modalHairline, modalHeader, modalBody,
 } from './styleHelpers'
 import { EmptyState, IconButton } from '../../../components/ui/Primitives'
 import { ExchangeRateModal } from './ExchangeRateModal'
@@ -72,7 +73,7 @@ export function AccountManagerModal({ accounts, onClose, onChanged }: {
     setBusy(true)
     try {
       const usage = await fetchFinAccountUsage(acc.id)
-      const lines = [`Deletar conta "${acc.nome}"?`]
+      const lines = [`Deletar carteira "${acc.nome}"?`]
       if (usage.transactions > 0) {
         lines.push(`\n⚠ ${usage.transactions} transação(ões) vinculada(s) serão DELETADAS junto.`)
       }
@@ -101,28 +102,23 @@ export function AccountManagerModal({ accounts, onClose, onChanged }: {
     <>
       <div onClick={onClose} style={modalOverlay()}>
         <div onClick={e => e.stopPropagation()} style={{
-          background: 'var(--color-bg-primary)',
-          border: '1px solid var(--color-border)',
-          borderRadius: 'var(--radius-md)',
-          padding: 'var(--space-6)',
-          minWidth: 600,
-          maxWidth: 760,
-          maxHeight: '85vh',
-          display: 'flex',
-          flexDirection: 'column',
+          ...modalShell(),
+          minWidth: 600, maxWidth: 760, maxHeight: '85vh',
+          display: 'flex', flexDirection: 'column',
         }}>
+          <div style={modalHairline} />
+          <div style={modalHeader()}>
           <div style={{
             display: 'flex',
             alignItems: 'center',
             gap: 'var(--space-3)',
-            marginBottom: 'var(--space-4)',
           }}>
             <Wallet
               size={ICON_SIZE.md}
               strokeWidth={ICON_STROKE}
               style={{ color: 'var(--color-text-tertiary)' }}
             />
-            <div style={sectionLabel()}>Gerenciar contas</div>
+            <div style={sectionLabel()}>Gerenciar carteiras</div>
             <div style={{ flex: 1 }} />
             <IconButton label="fechar" onClick={onClose} variant="bare">
               <X size={ICON_SIZE.md} strokeWidth={ICON_STROKE_HEAVY} />
@@ -131,15 +127,16 @@ export function AccountManagerModal({ accounts, onClose, onChanged }: {
 
           <div style={{
             ...hintText(),
-            marginBottom: 'var(--space-4)',
-            marginTop: 0,
+            marginTop: 'var(--space-3)',
           }}>
-            Renomear, deletar, reordenar ou conciliar saldo. <strong>Deletar conta apaga
+            Renomear, deletar, reordenar ou conciliar saldo. <strong>Deletar carteira apaga
             todas as transações e faturas vinculadas</strong> — ação irreversível.
           </div>
+          </div>
+          <div style={{ ...modalBody(), overflowY: 'auto', flex: 1 }}>
 
           {sorted.length === 0 ? (
-            <EmptyState text="Nenhuma conta cadastrada" dense />
+            <EmptyState text="Nenhuma carteira cadastrada" dense />
           ) : (
             <div style={{
               overflowY: 'auto',
@@ -237,7 +234,7 @@ export function AccountManagerModal({ accounts, onClose, onChanged }: {
                         </IconButton>
                       )}
                       <IconButton
-                        label="deletar conta"
+                        label="deletar carteira"
                         onClick={() => handleDelete(acc)}
                         disabled={busy}
                         variant="danger"
@@ -250,6 +247,7 @@ export function AccountManagerModal({ accounts, onClose, onChanged }: {
               })}
             </div>
           )}
+          </div>
         </div>
       </div>
 
@@ -305,14 +303,14 @@ function AccountEditModal({ account, onClose, onSaved }: {
   return (
     <div onClick={onClose} style={{ ...modalOverlay(), zIndex: 110 }}>
       <div onClick={e => e.stopPropagation()} style={{
-        background: 'var(--color-bg-primary)',
-        border: '1px solid var(--color-border)',
-        borderRadius: 'var(--radius-md)',
-        padding: 'var(--space-6)',
-        minWidth: 380,
-        maxWidth: 460,
+        ...modalShell(),
+        minWidth: 380, maxWidth: 460,
       }}>
-        <div style={sectionLabel()}>Renomear conta</div>
+        <div style={modalHairline} />
+        <div style={modalHeader()}>
+          <div style={sectionLabel()}>Renomear carteira</div>
+        </div>
+        <div style={modalBody()}>
         <form onSubmit={submit} style={{
           display: 'flex',
           flexDirection: 'column',
@@ -344,6 +342,7 @@ function AccountEditModal({ account, onClose, onSaved }: {
             </button>
           </div>
         </form>
+        </div>
       </div>
     </div>
   )

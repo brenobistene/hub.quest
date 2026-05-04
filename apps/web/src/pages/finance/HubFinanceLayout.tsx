@@ -10,16 +10,18 @@
  */
 import { useState } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
-import { Settings, Upload, Wallet } from 'lucide-react'
+import { Settings, Upload } from 'lucide-react'
 import { HubFinanceProvider, useHubFinance } from './HubFinanceContext'
-import { AccountModal } from './components/AccountModal'
 import { ImportCsvModal } from './components/ImportCsvModal'
 import { RulesModal } from './components/RulesModal'
-import { primaryButton, ghostButton } from './components/styleHelpers'
+import { ghostButton } from './components/styleHelpers'
 
 const TABS: { path: string; label: string }[] = [
   { path: '/hub-finance/visao-geral',  label: 'visão geral' },
+  { path: '/hub-finance/carteira',     label: 'carteira' },
   { path: '/hub-finance/lancamentos',  label: 'lançamentos' },
+  { path: '/hub-finance/fixas',        label: 'contas/receitas fixas' },
+  { path: '/hub-finance/dividas',      label: 'dívidas' },
   { path: '/hub-finance/freelas',      label: 'freelas' },
   { path: '/hub-finance/categorias',   label: 'categorias' },
 ]
@@ -33,8 +35,7 @@ export function HubFinanceLayout() {
 }
 
 function LayoutInner() {
-  const { accounts, categories, refreshAll, refreshGlobal } = useHubFinance()
-  const [showAccountModal, setShowAccountModal] = useState(false)
+  const { accounts, categories, refreshAll } = useHubFinance()
   const [showImportModal, setShowImportModal] = useState(false)
   const [showRulesModal, setShowRulesModal] = useState(false)
 
@@ -100,13 +101,6 @@ function LayoutInner() {
                 <Upload size={11} strokeWidth={2} style={{ marginRight: 4 }} />
                 importar
               </button>
-              <button
-                onClick={() => setShowAccountModal(true)}
-                style={primaryButton()}
-              >
-                <Wallet size={11} strokeWidth={2} style={{ marginRight: 4 }} />
-                + nova conta
-              </button>
             </div>
           )}
         </div>
@@ -121,13 +115,8 @@ function LayoutInner() {
         <Outlet />
       </div>
 
-      {/* Modais globais — disponíveis em qualquer sub-página */}
-      {showAccountModal && (
-        <AccountModal
-          onClose={() => setShowAccountModal(false)}
-          onCreated={() => { setShowAccountModal(false); refreshGlobal() }}
-        />
-      )}
+      {/* Modais globais — disponíveis em qualquer sub-página.
+          Nova carteira saiu daqui — virou ação dentro de /carteira. */}
       {showImportModal && (
         <ImportCsvModal
           accounts={accounts}
@@ -138,6 +127,7 @@ function LayoutInner() {
       {showRulesModal && (
         <RulesModal
           categories={categories}
+          accounts={accounts}
           onClose={() => setShowRulesModal(false)}
         />
       )}

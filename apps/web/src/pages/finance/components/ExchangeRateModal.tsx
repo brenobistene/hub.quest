@@ -10,6 +10,7 @@ import {
 import type { FinAccount } from '../../../types'
 import {
   sectionLabel, fieldLabel, inputStyle, primaryButton, ghostButton, modalOverlay,
+  modalShell, modalHairline, modalHeader, modalBody,
   formatMoney,
 } from './styleHelpers'
 
@@ -68,11 +69,12 @@ export function ExchangeRateModal({ account, onClose, onSaved }: {
   return (
     <div onClick={onClose} style={modalOverlay()}>
       <div onClick={e => e.stopPropagation()} style={{
-        background: 'var(--color-bg-primary)',
-        border: '1px solid var(--color-border)',
-        borderRadius: 4, padding: 24, minWidth: 420, maxWidth: 480,
+        ...modalShell(),
+        minWidth: 420, maxWidth: 480,
       }}>
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginBottom: 14 }}>
+        <div style={modalHairline} />
+        <div style={modalHeader()}>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 12 }}>
           <div style={sectionLabel()}>
             Cotação · {account.nome}
           </div>
@@ -85,6 +87,8 @@ export function ExchangeRateModal({ account, onClose, onSaved }: {
             <X size={14} strokeWidth={2} />
           </button>
         </div>
+        </div>
+        <div style={modalBody()}>
 
         <div style={{
           padding: 12, marginBottom: 14,
@@ -151,6 +155,7 @@ export function ExchangeRateModal({ account, onClose, onSaved }: {
             </button>
           </div>
         </form>
+        </div>
       </div>
     </div>
   )

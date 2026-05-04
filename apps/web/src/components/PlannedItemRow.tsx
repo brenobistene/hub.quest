@@ -90,19 +90,31 @@ export function PlannedItemRow({ item, areas, activeSession, onSessionUpdate, on
   const typeLabel = isTask ? 'Tarefa' : isRoutine ? 'Rotina' : (item as Quest).area_slug
 
   return (
-    <div style={{
-      background: 'var(--color-bg-tertiary)',
-      border: `1px solid ${itemColor}40`,
-      borderLeft: `3px solid ${itemColor}`,
-      borderRadius: 4,
-      padding: 12,
-      // Layout em coluna: header em linha (título + breadcrumb + meta + controles)
-      // e a descrição expandida ocupa a largura total embaixo, sem espremer os
-      // controles ao lado dela.
-      display: 'flex', flexDirection: 'column', gap: 10,
-      width: '100%', boxSizing: 'border-box', minWidth: 0, maxWidth: '100%',
-      opacity: done ? 0.5 : 1,
-    }}>
+    <div
+      style={{
+        background: 'var(--color-bg-tertiary)',
+        border: `1px solid ${itemColor}40`,
+        borderLeft: `3px solid ${itemColor}`,
+        borderRadius: 'var(--radius-sm)',
+        padding: 12,
+        // Layout em coluna: header em linha (título + breadcrumb + meta + controles)
+        // e a descrição expandida ocupa a largura total embaixo, sem espremer os
+        // controles ao lado dela.
+        display: 'flex', flexDirection: 'column', gap: 10,
+        width: '100%', boxSizing: 'border-box', minWidth: 0, maxWidth: '100%',
+        opacity: done ? 0.5 : 1,
+        transition: 'border-color var(--motion-fast) var(--ease-smooth), background var(--motion-fast) var(--ease-smooth)',
+      }}
+      onMouseEnter={e => {
+        if (done) return
+        e.currentTarget.style.borderColor = `${itemColor}80`
+        e.currentTarget.style.background = 'var(--glass-bg-hover)'
+      }}
+      onMouseLeave={e => {
+        e.currentTarget.style.borderColor = `${itemColor}40`
+        e.currentTarget.style.background = 'var(--color-bg-tertiary)'
+      }}
+    >
       {/* Header em linha — título/breadcrumb à esquerda, controles à direita */}
       <div style={{
         display: 'flex', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap',

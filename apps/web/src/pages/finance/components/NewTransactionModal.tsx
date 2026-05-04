@@ -3,6 +3,7 @@ import { createFinTransaction, reportApiError } from '../../../api'
 import type { FinAccount, FinCategory } from '../../../types'
 import {
   sectionLabel, fieldLabel, inputStyle, primaryButton, ghostButton, modalOverlay,
+  modalShell, modalHairline, modalHeader, modalBody,
 } from './styleHelpers'
 
 /**
@@ -63,12 +64,12 @@ export function NewTransactionModal({
 
   return (
     <div onClick={onClose} style={modalOverlay()}>
-      <div onClick={e => e.stopPropagation()} style={{
-        background: 'var(--color-bg-primary)',
-        border: '1px solid var(--color-border)',
-        borderRadius: 4, padding: 24, minWidth: 460, maxWidth: 540,
-      }}>
-        <div style={sectionLabel()}>Novo lançamento</div>
+      <div onClick={e => e.stopPropagation()} style={{ ...modalShell(), minWidth: 460, maxWidth: 540 }}>
+        <div style={modalHairline} />
+        <div style={modalHeader()}>
+          <div style={sectionLabel()}>Novo lançamento</div>
+        </div>
+        <div style={modalBody()}>
 
         <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           <div style={{ display: 'grid', gridTemplateColumns: '110px 110px 1fr', gap: 8 }}>
@@ -119,6 +120,7 @@ export function NewTransactionModal({
             </button>
           </div>
         </form>
+        </div>
       </div>
     </div>
   )

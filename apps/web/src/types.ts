@@ -273,30 +273,6 @@ export interface FinCategory {
   cor: string | null
   categoria_pai_id: string | null
   sort_order: number
-  /** Limite mensal em BRL (apenas tipo despesa/receita).
-   *  Quando setado, alimenta o card de Orçamento na Visão Geral. */
-  limite_mensal: number | null
-}
-
-/** Item do card de orçamento — uma linha por categoria com limite definido. */
-export interface FinBudgetItem {
-  categoria_id: string
-  nome: string
-  tipo: FinCategoryType
-  cor: string | null
-  limite_mensal: number
-  consumido: number
-  restante: number
-  percent: number
-  transacoes_count: number
-}
-
-export interface FinBudget {
-  year: number
-  month: number
-  data_de?: string
-  data_ate?: string
-  items: FinBudgetItem[]
 }
 
 export interface FinTransaction {
@@ -323,6 +299,11 @@ export interface FinTransaction {
    *  são auto-vinculadas pela fatura aberta. Não conta no resumo mensal
    *  até a fatura ser paga. */
   fatura_id: string | null
+  /** "Esta transação É O PAGAMENTO desta fatura" — distinto de fatura_id
+   *  ("é uma compra dentro da fatura"). Setar marca a fatura como `paga`
+   *  + `data_pagamento = data desta tx`. Usado pra reconciliar txs
+   *  importadas do Nubank tipo "Pagamento de fatura" com a fatura. */
+  pagamento_fatura_id: string | null
   created_at?: string
   updated_at?: string
 }
@@ -347,6 +328,9 @@ export interface FinCategorizationRule {
   categoria_id: string
   times_matched: number
   created_at?: string
+  /** Quando setado: ao aplicar a regra numa tx de saída, tenta linkar como
+   *  pagamento da fatura aberta/fechada desse cartão (auto-link por valor). */
+  link_cartao_id?: string | null
 }
 
 export type FinDebtStatus = 'active' | 'paid_off' | 'cancelled'
@@ -373,6 +357,27 @@ export interface FinDebt {
   parcelas_restantes: number | null
   /** 0..100. */
   progresso_pct: number
+}
+
+export type FinDebtParcelaStatus = 'pendente' | 'paga' | 'atrasada'
+
+/** Parcela individual de uma dívida — cronograma flexível.
+ *  `valor_planejado` null = "auto" (rateia o saldo restante).
+ *  `valor_efetivo` é computado pelo backend (rateio quando auto). */
+export interface FinDebtParcela {
+  id: string
+  divida_id: string
+  numero: number
+  data_prevista: string | null
+  valor_planejado: number | null  // null = auto
+  transacao_pagamento_id: string | null
+  notas: string | null
+  // Computados pelo backend
+  valor_efetivo: number
+  is_auto: boolean
+  status: FinDebtParcelaStatus
+  valor_pago: number | null
+  data_pagamento: string | null
 }
 
 export interface FinMonthlySummary {
@@ -420,4 +425,105 @@ export interface FinExchangeRate {
   rate: number
   fetched_at: string
   source: string
+}
+
+// ─── Recurring Bills (contas fixas: luz, água, internet, etc) ────────────
+
+export type FinRecurringBillTipo = 'despesa' | 'receita'
+
+/** Conta fixa cadastrada — luz, água, internet, aluguel, streaming, salário, etc.
+ *  `tipo='despesa'` = saída fixa; `tipo='receita'` = entrada fixa (salário, etc). */
+export interface FinRecurringBill {
+  id: string
+  descricao: string
+  /** Valor médio mensal em BRL (estimativa). */
+  valor_estimado: number
+  /** Dia do mês em que vence/cai (1-31). Opcional. */
+  dia_vencimento: number | null
+  categoria_id: string | null
+  conta_pagamento_id: string | null
+  ativa: boolean
+  recorrencia: 'mensal'
+  tipo: FinRecurringBillTipo
+  notas: string | null
+  sort_order: number
+}
+
+export type FinRecurringBillStatus = 'paga' | 'recebida' | 'pendente' | 'atrasada'
+
+/** Status de uma conta fixa num mês — inferido pelo backend. */
+export interface FinRecurringBillStatusItem {
+  bill_id: string
+  descricao: string
+  valor_estimado: number
+  dia_vencimento: number | null
+  categoria_id: string | null
+  tipo: FinRecurringBillTipo
+  status: FinRecurringBillStatus
+  /** Quando paga/recebida, valor real da transação encontrada. */
+  valor_pago: number | null
+  transacao_id: string | null
+  data_pagamento: string | null
+}
+
+// ─── Compromissos do Mês (visão consolidada) ────────────────────────────
+
+export type FinMonthCommitmentKind = 'bill' | 'debt_parcela' | 'freela_parcela' | 'invoice'
+export type FinMonthCommitmentTipo = 'despesa' | 'receita'
+export type FinMonthCommitmentStatus = 'pendente' | 'paga' | 'recebida' | 'atrasada'
+
+/** Compromisso unificado — pode ser bill recorrente, parcela de dívida,
+ *  parcela de freela (recebimento) ou fatura de cartão. UI lista todos
+ *  juntos ordenados por dia. */
+export interface FinMonthCommitment {
+  kind: FinMonthCommitmentKind
+  id: string
+  descricao: string
+  sub_descricao: string | null
+  tipo: FinMonthCommitmentTipo
+  dia: number | null
+  data_prevista: string | null
+  valor: number
+  valor_pago: number | null
+  status: FinMonthCommitmentStatus
+  transacao_id: string | null
+  data_pagamento: string | null
+  bill_id?: string
+  debt_id?: string
+  debt_descricao?: string
+  parcela_numero?: number
+  parcela_total?: number
+  /** Quando kind='freela_parcela': id do projeto pra navegar até /freelas. */
+  freela_projeto_id?: string
+  /** Quando kind='invoice': id da fatura + cartão pra abrir o modal. */
+  invoice_id?: string
+  cartao_id?: string
+  cartao_nome?: string
+}
+
+export interface FinMonthCommitments {
+  year: number
+  month: number
+  items: FinMonthCommitment[]
+  total_a_pagar: number
+  total_a_receber: number
+  total_pago: number
+  total_recebido: number
+  sobra_projetada: number
+}
+
+export interface FinRecurringBillStatusMonth {
+  year: number
+  month: number
+  items: FinRecurringBillStatusItem[]
+  total_estimado: number
+  total_pago: number
+  total_pendente: number
+  // Totais separados por tipo (pra UI de previsão na Visão Geral)
+  despesa_total_estimado: number
+  despesa_total_pago: number
+  despesa_total_pendente: number
+  receita_total_estimado: number
+  receita_total_recebido: number
+  receita_total_pendente: number
 }

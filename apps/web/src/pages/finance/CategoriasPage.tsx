@@ -15,10 +15,10 @@ import {
 import type { FinCategory, FinCategoryType } from '../../types'
 import { useHubFinance } from './HubFinanceContext'
 import {
-  sectionLabel, fieldLabel, hintText, inputStyle, primaryButton, ghostButton,
-  modalOverlay, formatBRL, ICON_SIZE, ICON_STROKE, ICON_STROKE_HEAVY,
+  sectionLabel, fieldLabel, inputStyle, primaryButton, ghostButton,
+  modalOverlay, ICON_SIZE, ICON_STROKE, ICON_STROKE_HEAVY,
 } from './components/styleHelpers'
-import { EmptyState, IconButton } from '../../components/ui/Primitives'
+import { Card, EmptyState, IconButton } from '../../components/ui/Primitives'
 
 const TIPO_TABS: { tipo: FinCategoryType; label: string }[] = [
   { tipo: 'despesa',       label: 'Despesas' },
@@ -84,36 +84,52 @@ export function CategoriasPage() {
   const tipoLabel = TIPO_TABS.find(t => t.tipo === activeTipo)?.label.toLowerCase() ?? ''
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-5)' }}>
-      {/* Header */}
+    <Card padding="none" style={{
+      animation: 'hq-fade-up var(--motion-base) var(--ease-emphasis) both',
+    }}>
+      {/* Hairline accent — linha sutil oxblood no topo */}
       <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 'var(--space-3)',
+        height: 1,
+        background: 'linear-gradient(90deg, transparent, var(--color-accent-primary), transparent)',
+        opacity: 0.5,
+      }} />
+      {/* Header com gradient sutil + tabs juntos pra dar peso visual */}
+      <div style={{
+        padding: 'var(--space-5) var(--space-6) 0',
+        background: `
+          radial-gradient(ellipse 100% 80% at 0% 0%, rgba(159, 18, 57, 0.06), transparent 60%),
+          linear-gradient(180deg, rgba(236, 232, 227, 0.02), transparent)
+        `,
       }}>
-        <Tag
-          size={ICON_SIZE.md}
-          strokeWidth={ICON_STROKE}
-          style={{ color: 'var(--color-text-tertiary)' }}
-        />
-        <div style={sectionLabel()}>Categorias</div>
-        <div style={{ flex: 1 }} />
-        <button
-          type="button"
-          onClick={() => setCreatingFor({ tipo: activeTipo })}
-          style={primaryButton()}
-        >
-          <Plus size={ICON_SIZE.xs} strokeWidth={ICON_STROKE_HEAVY} />
-          nova categoria de {tipoLabel.replace(/s$/, '')}
-        </button>
-      </div>
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 'var(--space-3)',
+          marginBottom: 'var(--space-4)',
+        }}>
+          <Tag
+            size={ICON_SIZE.md}
+            strokeWidth={ICON_STROKE}
+            style={{ color: 'var(--color-text-tertiary)' }}
+          />
+          <div style={sectionLabel()}>Categorias</div>
+          <div style={{ flex: 1 }} />
+          <button
+            type="button"
+            onClick={() => setCreatingFor({ tipo: activeTipo })}
+            style={primaryButton()}
+          >
+            <Plus size={ICON_SIZE.xs} strokeWidth={ICON_STROKE_HEAVY} />
+            nova categoria de {tipoLabel.replace(/s$/, '')}
+          </button>
+        </div>
 
-      {/* Tabs por tipo */}
-      <div style={{
-        display: 'flex',
-        gap: 'var(--space-1)',
-        borderBottom: '1px solid var(--color-divider)',
-      }}>
+        {/* Tabs por tipo */}
+        <div style={{
+          display: 'flex',
+          gap: 'var(--space-1)',
+          borderBottom: '1px solid var(--color-divider)',
+        }}>
         {TIPO_TABS.map(t => {
           const count = categories.filter(c => c.tipo === t.tipo).length
           const isActive = t.tipo === activeTipo
@@ -152,20 +168,26 @@ export function CategoriasPage() {
             </button>
           )
         })}
+        </div>
       </div>
 
       {/* Lista */}
+      <div style={{ padding: 'var(--space-4) var(--space-6) var(--space-5)' }}>
       {grouped.parents.length === 0 ? (
         <EmptyState
           text={`Nenhuma categoria de ${tipoLabel} ainda`}
           sub="Crie a primeira pelo botão no topo direito."
         />
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
-          {grouped.parents.map(p => {
+        <div className="hq-stagger" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
+          {grouped.parents.map((p, i) => {
             const children = grouped.childrenByParent.get(p.id) ?? []
             return (
-              <div key={p.id}>
+              <div
+                key={p.id}
+                className="hq-animate-fade-up"
+                style={{ ['--stagger-i' as any]: i }}
+              >
                 <CategoryRow
                   category={p}
                   isParent
@@ -194,6 +216,7 @@ export function CategoriasPage() {
           })}
         </div>
       )}
+      </div>
 
       {/* Modais */}
       {creatingFor && (
@@ -217,7 +240,7 @@ export function CategoriasPage() {
           onSaved={() => { setEditing(null); refreshGlobal() }}
         />
       )}
-    </div>
+    </Card>
   )
 }
 
@@ -264,23 +287,6 @@ function CategoryRow({ category, isParent, onEdit, onDelete, onAddSub }: {
       }}>
         {category.nome}
       </div>
-      {category.limite_mensal != null && category.limite_mensal > 0 && (
-        <span
-          title={`Limite mensal: ${formatBRL(category.limite_mensal)}`}
-          style={{
-            fontSize: 'var(--text-xs)',
-            color: 'var(--color-text-tertiary)',
-            fontFamily: 'var(--font-mono)',
-            fontVariantNumeric: 'tabular-nums',
-            padding: '2px var(--space-2)',
-            background: 'var(--color-bg-secondary)',
-            border: '1px solid var(--color-border)',
-            borderRadius: 'var(--radius-sm)',
-          }}
-        >
-          {formatBRL(category.limite_mensal)}/mês
-        </span>
-      )}
       <div style={{ flex: 1 }} />
       <div style={{ display: 'flex', gap: 'var(--space-1)' }}>
         {isParent && onAddSub && (
@@ -403,30 +409,15 @@ function CategoryFormModal(props: FormMode & {
   const [paiId, setPaiId] = useState<string | null>(initialPaiId)
   const [nome, setNome] = useState(initialNome)
   const [cor, setCor] = useState(initialCor)
-  const [limiteMensal, setLimiteMensal] = useState<string>(
-    isEdit && props.existing.limite_mensal != null
-      ? String(props.existing.limite_mensal).replace('.', ',')
-      : ''
-  )
   const [busy, setBusy] = useState(false)
 
   const tipo = initialTipo
   const tipoLabel = TIPO_TABS.find(t => t.tipo === tipo)?.label.toLowerCase().replace(/s$/, '') ?? tipo
-  const supportsLimit = tipo === 'despesa' || tipo === 'receita'
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
     if (!nome.trim()) { alert('Nome é obrigatório.'); return }
     if (isSub && !paiId) { alert('Escolha a categoria pai.'); return }
-    let limiteValue: number | null = null
-    if (supportsLimit && limiteMensal.trim()) {
-      const parsed = parseFloat(limiteMensal.replace(',', '.'))
-      if (isNaN(parsed) || parsed < 0) {
-        alert('Limite mensal inválido — deixe em branco se não quiser orçamento.')
-        return
-      }
-      limiteValue = parsed
-    }
     setBusy(true)
     try {
       if (isEdit) {
@@ -434,7 +425,6 @@ function CategoryFormModal(props: FormMode & {
           nome: nome.trim(),
           cor,
           categoria_pai_id: isSub ? paiId : null,
-          limite_mensal: supportsLimit ? limiteValue : null,
         })
       } else {
         await createFinCategory({
@@ -442,7 +432,6 @@ function CategoryFormModal(props: FormMode & {
           tipo,
           cor,
           categoria_pai_id: isSub ? paiId : null,
-          limite_mensal: supportsLimit ? limiteValue : null,
         })
       }
       props.onSaved()
@@ -564,33 +553,6 @@ function CategoryFormModal(props: FormMode & {
             </div>
           </div>
 
-          {supportsLimit && (
-            <div>
-              <label style={fieldLabel()}>
-                Limite mensal — R$ {tipo === 'receita' ? '(meta)' : '(orçamento)'}
-              </label>
-              <input
-                type="text"
-                inputMode="decimal"
-                placeholder="ex: 800,00 — em branco se não quiser"
-                value={limiteMensal}
-                onChange={e => setLimiteMensal(e.target.value)}
-                style={{
-                  ...inputStyle(),
-                  width: '100%',
-                  boxSizing: 'border-box',
-                  fontFamily: 'var(--font-mono)',
-                  fontVariantNumeric: 'tabular-nums',
-                }}
-              />
-              <div style={hintText()}>
-                {tipo === 'despesa'
-                  ? 'aparece no card de Orçamento da Visão Geral, com barra de consumo do mês.'
-                  : 'aparece no card de Orçamento como meta de receita do mês.'}
-                {!isSub && ' Categorias-filhas somam pro limite do pai.'}
-              </div>
-            </div>
-          )}
 
           <div style={{
             display: 'flex',

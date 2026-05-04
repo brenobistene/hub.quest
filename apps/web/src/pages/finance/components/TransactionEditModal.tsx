@@ -4,18 +4,20 @@ import {
   updateFinTransaction, fetchAllFinParcelas, reportApiError,
 } from '../../../api'
 import type {
-  FinTransaction, FinAccount, FinCategory, FinDebt, FinParcela,
+  FinTransaction, FinAccount, FinCategory, FinDebt, FinParcela, FinInvoice,
 } from '../../../types'
 import {
   sectionLabel, fieldLabel, inputStyle, primaryButton, ghostButton, modalOverlay,
   formatBRL, formatDate,
+  modalShell, modalHairline, modalHeader, modalBody,
 } from './styleHelpers'
 
-export function TransactionEditModal({ tx, accounts, categories, debts, onClose, onSaved }: {
+export function TransactionEditModal({ tx, accounts, categories, debts, invoices, onClose, onSaved }: {
   tx: FinTransaction
   accounts: FinAccount[]
   categories: FinCategory[]
   debts: FinDebt[]
+  invoices: FinInvoice[]
   onClose: () => void
   onSaved: () => void
 }) {
@@ -28,6 +30,7 @@ export function TransactionEditModal({ tx, accounts, categories, debts, onClose,
   const [notas, setNotas] = useState(tx.notas ?? '')
   const [parcelaId, setParcelaId] = useState<string>(tx.parcela_id ?? '')
   const [dividaId, setDividaId] = useState<string>(tx.divida_id ?? '')
+  const [pagamentoFaturaId, setPagamentoFaturaId] = useState<string>(tx.pagamento_fatura_id ?? '')
   const [parcelas, setParcelas] = useState<FinParcela[]>([])
   const [busy, setBusy] = useState(false)
 
@@ -56,8 +59,18 @@ export function TransactionEditModal({ tx, accounts, categories, debts, onClose,
     return debts.filter(d => d.status === 'active' || d.id === dividaId)
   }, [debts, dividaId])
 
+  // Opções de fatura pra "esta tx é o pagamento de tal fatura":
+  // - Faturas não-pagas (aberta/fechada/atrasada) com total > 0
+  // - Mais a já vinculada (mesmo se status='paga') pra permitir ver/desvincular
+  const invoiceOptions = useMemo(() => {
+    return invoices.filter(i =>
+      (i.status !== 'paga' && i.total > 0) || i.id === pagamentoFaturaId
+    )
+  }, [invoices, pagamentoFaturaId])
+
   const linkedParcela = parcelas.find(p => p.id === tx.parcela_id) ?? null
   const linkedDivida = debts.find(d => d.id === tx.divida_id) ?? null
+  const linkedInvoice = invoices.find(i => i.id === tx.pagamento_fatura_id) ?? null
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
@@ -74,9 +87,10 @@ export function TransactionEditModal({ tx, accounts, categories, debts, onClose,
         categoria_id: categoriaId || null,
         notas: notas.trim() || null,
         // Vínculos: só envia o que faz sentido pro tipo (evita salvar parcela
-        // numa saída ou dívida numa entrada).
+        // numa saída ou dívida/pagamento-fatura numa entrada).
         parcela_id: isEntry ? (parcelaId || null) : null,
         divida_id: !isEntry ? (dividaId || null) : null,
+        pagamento_fatura_id: !isEntry ? (pagamentoFaturaId || null) : null,
       })
       onSaved()
     } catch (err) {
@@ -89,12 +103,16 @@ export function TransactionEditModal({ tx, accounts, categories, debts, onClose,
   return (
     <div onClick={onClose} style={modalOverlay()}>
       <div onClick={e => e.stopPropagation()} style={{
-        background: 'var(--color-bg-primary)',
-        border: '1px solid var(--color-border)',
-        borderRadius: 4, padding: 24, minWidth: 460, maxWidth: 540,
-        maxHeight: '90vh', overflowY: 'auto',
+        ...modalShell(),
+        minWidth: 460, maxWidth: 540,
+        maxHeight: '90vh',
+        display: 'flex', flexDirection: 'column',
       }}>
-        <div style={sectionLabel()}>Editar transação</div>
+        <div style={modalHairline} />
+        <div style={modalHeader()}>
+          <div style={sectionLabel()}>Editar transação</div>
+        </div>
+        <div style={{ ...modalBody(), overflowY: 'auto' }}>
 
         {tx.origem === 'nubank_csv' && (
           <div style={{
@@ -146,13 +164,17 @@ export function TransactionEditModal({ tx, accounts, categories, debts, onClose,
             style={inputStyle()}
           />
 
-          {/* Vínculos — parcela pra entradas, dívida pra saídas */}
-          {(isEntry ? parcelaOptions.length > 0 || linkedParcela : dividaOptions.length > 0 || linkedDivida) && (
+          {/* Vínculos — parcela pra entradas; dívida + pagamento-de-fatura
+              pra saídas. Bloco só aparece quando há opção relevante. */}
+          {(isEntry
+            ? (parcelaOptions.length > 0 || linkedParcela)
+            : (dividaOptions.length > 0 || linkedDivida || invoiceOptions.length > 0 || linkedInvoice)
+          ) && (
             <div style={{
               marginTop: 6, padding: 12,
               background: 'var(--color-bg-secondary)',
               border: '1px solid var(--color-border)', borderRadius: 3,
-              display: 'flex', flexDirection: 'column', gap: 8,
+              display: 'flex', flexDirection: 'column', gap: 12,
             }}>
               <div style={{
                 display: 'flex', alignItems: 'center', gap: 6,
@@ -172,12 +194,25 @@ export function TransactionEditModal({ tx, accounts, categories, debts, onClose,
                   linkedParcela={linkedParcela}
                 />
               ) : (
-                <DividaPicker
-                  dividaId={dividaId}
-                  setDividaId={setDividaId}
-                  options={dividaOptions}
-                  linkedDivida={linkedDivida}
-                />
+                <>
+                  {(dividaOptions.length > 0 || linkedDivida) && (
+                    <DividaPicker
+                      dividaId={dividaId}
+                      setDividaId={setDividaId}
+                      options={dividaOptions}
+                      linkedDivida={linkedDivida}
+                    />
+                  )}
+                  {(invoiceOptions.length > 0 || linkedInvoice) && (
+                    <InvoicePagamentoPicker
+                      invoiceId={pagamentoFaturaId}
+                      setInvoiceId={setPagamentoFaturaId}
+                      options={invoiceOptions}
+                      linkedInvoice={linkedInvoice}
+                      accounts={accounts}
+                    />
+                  )}
+                </>
               )}
             </div>
           )}
@@ -189,6 +224,7 @@ export function TransactionEditModal({ tx, accounts, categories, debts, onClose,
             </button>
           </div>
         </form>
+        </div>
       </div>
     </div>
   )
@@ -242,6 +278,67 @@ function ParcelaPicker({ parcelaId, setParcelaId, options, linkedParcela }: {
           {parcelaId === linkedParcela?.id
             ? 'vinculada automaticamente por CPF/CNPJ — desvincule se foi outro evento.'
             : 'vínculo automático será substituído ao salvar.'}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function InvoicePagamentoPicker({
+  invoiceId, setInvoiceId, options, linkedInvoice, accounts,
+}: {
+  invoiceId: string
+  setInvoiceId: (v: string) => void
+  options: FinInvoice[]
+  linkedInvoice: FinInvoice | null
+  accounts: FinAccount[]
+}) {
+  const cartaoNome = (cartaoId: string) =>
+    accounts.find(a => a.id === cartaoId)?.nome ?? '?'
+  return (
+    <div>
+      <label style={fieldLabel()}>Pagamento de fatura</label>
+      <div style={{ display: 'flex', gap: 6 }}>
+        <select
+          value={invoiceId}
+          onChange={e => setInvoiceId(e.target.value)}
+          style={{ ...inputStyle(), flex: 1 }}
+        >
+          <option value="">— sem vínculo —</option>
+          {options.map(i => (
+            <option key={i.id} value={i.id}>
+              {cartaoNome(i.cartao_id)} · ref. {i.mes_referencia} · {formatBRL(i.total)}
+              {i.status !== 'aberta' && i.status !== 'fechada' ? ` [${i.status}]` : ''}
+            </option>
+          ))}
+        </select>
+        {invoiceId && (
+          <button
+            type="button"
+            onClick={() => setInvoiceId('')}
+            title="desvincular (volta fatura pra fechada)"
+            style={{
+              ...ghostButton(),
+              padding: '6px 10px',
+              color: 'var(--color-accent-primary)',
+              borderColor: 'var(--color-accent-primary)',
+            }}
+          >
+            <Unlink size={11} strokeWidth={1.8} />
+          </button>
+        )}
+      </div>
+      <div style={{
+        fontSize: 9, color: 'var(--color-text-muted)', marginTop: 4, fontStyle: 'italic',
+      }}>
+        vincular marca a fatura como <strong>paga</strong> + data desta tx.
+        Use pra reconciliar "Pagamento de fatura" importado do Nubank.
+      </div>
+      {linkedInvoice && invoiceId !== linkedInvoice.id && (
+        <div style={{
+          fontSize: 9, color: 'var(--color-text-muted)', marginTop: 4, fontStyle: 'italic',
+        }}>
+          vínculo anterior será revertido (fatura volta pra fechada) ao salvar.
         </div>
       )}
     </div>

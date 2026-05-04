@@ -345,6 +345,55 @@ def init_db() -> None:
         CREATE INDEX IF NOT EXISTS idx_fin_debt_status ON fin_debt(status);
         -- divida_id em fin_transaction é adicionado via migration ALTER abaixo
         -- (depois do CREATE TABLE garantir que fin_transaction existe).
+
+        -- Contas fixas recorrentes (luz, água, internet, aluguel, streaming,
+        -- E TAMBÉM receitas fixas como salário, mesada, etc). Diferente de
+        -- fin_debt: dívida tem fim (paga até zerar); conta fixa é perpétua.
+        -- Status do mês é INFERIDO buscando transação com mesma categoria +
+        -- descrição parecida (sem persistir vínculo).
+        --
+        -- `tipo`: 'despesa' = saída (luz, água); 'receita' = entrada (salário).
+        -- Inferência ajusta sinal do valor procurado conforme tipo.
+        -- Parcelas de dívida (cronograma de pagamento). Cada parcela tem
+        -- valor_planejado opcional: NULL = "auto" (rateia o saldo restante
+        -- entre todas auto). Permite cenários flexíveis tipo "primeira
+        -- parcela R$50, segunda R$30, resto auto-distribuído entre N".
+        --
+        -- Status é COMPUTADO no GET (paga se tem transacao linked, atrasada
+        -- se data_prevista no passado e não paga, senão pendente).
+        --
+        -- `transacao_pagamento_id` é nullable. Quando setado, parcela vira
+        -- "paga". Pode haver múltiplas dívidas mesmo cronograma (parcelas
+        -- vivem por dívida — não compartilhadas).
+        CREATE TABLE IF NOT EXISTS fin_debt_parcela (
+            id                      TEXT PRIMARY KEY,
+            divida_id               TEXT NOT NULL REFERENCES fin_debt(id) ON DELETE CASCADE,
+            numero                  INTEGER NOT NULL,
+            data_prevista           TEXT,             -- YYYY-MM-DD opcional
+            valor_planejado         REAL,             -- NULL = auto
+            transacao_pagamento_id  TEXT,             -- FK manual (ALTER abaixo se necessário)
+            notas                   TEXT,
+            created_at              TEXT DEFAULT (datetime('now')),
+            updated_at              TEXT DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_fin_debt_parcela_divida ON fin_debt_parcela(divida_id);
+
+        CREATE TABLE IF NOT EXISTS fin_recurring_bill (
+            id                      TEXT PRIMARY KEY,
+            descricao               TEXT NOT NULL,
+            valor_estimado          REAL NOT NULL,    -- valor médio mensal em BRL
+            dia_vencimento          INTEGER,          -- 1-31, opcional
+            categoria_id            TEXT REFERENCES fin_category(id) ON DELETE SET NULL,
+            conta_pagamento_id      TEXT REFERENCES fin_account(id) ON DELETE SET NULL,
+            ativa                   INTEGER NOT NULL DEFAULT 1,  -- 0 = pausada
+            recorrencia             TEXT NOT NULL DEFAULT 'mensal',  -- só 'mensal' v1
+            tipo                    TEXT NOT NULL DEFAULT 'despesa',  -- 'despesa' | 'receita'
+            notas                   TEXT,
+            sort_order              INTEGER DEFAULT 0,
+            created_at              TEXT DEFAULT (datetime('now')),
+            updated_at              TEXT DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_fin_recurring_ativa ON fin_recurring_bill(ativa);
         """)
 
         # Garante que existe 1 linha de profile. Nome default é piada — o usuário
@@ -482,17 +531,39 @@ def init_db() -> None:
         except sqlite3.OperationalError:
             pass
 
-        # Orçamento mensal por categoria — limite em BRL. Nullable: categorias
-        # sem limite simplesmente não aparecem no card de orçamento. Aplica
-        # mesmo critério de competência da monthly-summary (fatura paga conta
-        # no mês do pagamento, não da compra).
-        _try_add_column(conn, "ALTER TABLE fin_category ADD COLUMN limite_mensal REAL")
+        # Vínculo "esta transação É O PAGAMENTO de tal fatura" — distinto de
+        # `fatura_id` (que indica "esta transação É UMA COMPRA dentro da
+        # fatura"). Usado pra reconciliar txs importadas do Nubank do tipo
+        # "Pagamento de fatura" com a fatura correspondente: ao setar, marca
+        # a fatura como `paga` + `data_pagamento = tx.data`. Editável via
+        # TransactionEditModal pra dar flexibilidade ao usuário.
+        _try_add_column(conn, "ALTER TABLE fin_transaction ADD COLUMN pagamento_fatura_id TEXT")
+        try:
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_fin_tx_pagto_fatura ON fin_transaction(pagamento_fatura_id)"
+            )
+            conn.commit()
+        except sqlite3.OperationalError:
+            pass
+
+        # Auto-link de pagamento de fatura via regra de categorização.
+        # Quando regra com `link_cartao_id` bate numa tx, o sistema procura
+        # fatura aberta/fechada do cartão com total ≈ valor da tx; se exatamente
+        # 1 match, marca como pagamento. Pra Pix/transferências recorrentes
+        # tipo "Pagamento de fatura" do Nubank — depois do 1º link manual +
+        # criação da regra, próximas viram automático.
+        _try_add_column(conn, "ALTER TABLE fin_categorization_rule ADD COLUMN link_cartao_id TEXT")
 
         # Cotação manual da conta pra BRL — só usada quando moeda != BRL.
         # Ex: Wise USD com cotacao_brl=5.20 → saldo em USD * 5.20 = saldo BRL.
         # Null = não converte (não soma no total geral). Update manual via
         # AccountModal; opcionalmente sync via /api/finance/exchange-rate.
         _try_add_column(conn, "ALTER TABLE fin_account ADD COLUMN cotacao_brl REAL")
+
+        # Tipo de recorrência: 'despesa' (default, retrocompat) | 'receita'
+        # (salário, mesada, etc). Permite cadastrar entradas fixas no mesmo
+        # módulo de "Contas fixas".
+        _try_add_column(conn, "ALTER TABLE fin_recurring_bill ADD COLUMN tipo TEXT NOT NULL DEFAULT 'despesa'")
 
         # `completed_at`: adiciona + backfill inicial (só roda uma vez, quando a
         # coluna não existia ainda — o backfill é inócuo em reboots).

@@ -7,6 +7,9 @@ import {
   deleteQuestSession, deleteTaskSession, deleteRoutineSessionById,
   reportApiError,
 } from '../api'
+import {
+  modalOverlay, modalShell, modalHairline, modalHeader, modalBody,
+} from '../pages/finance/components/styleHelpers'
 
 /**
  * Modal listando todas as sessões (fechadas + em andamento) de uma entity.
@@ -67,21 +70,18 @@ export function SessionHistoryModal({ sessions, onClose, kind, onChanged }: {
   const total = sessions.reduce((sum, s) => sum + durSec(s), 0)
 
   return createPortal(
-    <div
-      onClick={onClose}
-      style={{
-        position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000,
-      }}
-    >
+    <div onClick={onClose} style={{ ...modalOverlay(), zIndex: 1000 }}>
       <div
         onClick={e => e.stopPropagation()}
         style={{
-          background: 'var(--color-bg-secondary)', border: '1px solid var(--color-border)',
-          borderRadius: 4, padding: 20, maxWidth: 480, minWidth: 360, maxHeight: '80vh', overflowY: 'auto',
+          ...modalShell(),
+          maxWidth: 480, minWidth: 360, maxHeight: '80vh',
+          display: 'flex', flexDirection: 'column',
         }}
       >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+        <div style={modalHairline} />
+        <div style={modalHeader()}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <h3 style={{ color: 'var(--color-text-primary)', fontSize: 14, margin: 0 }}>Sessões</h3>
           <button
             onClick={onClose}
@@ -90,6 +90,8 @@ export function SessionHistoryModal({ sessions, onClose, kind, onChanged }: {
             ×
           </button>
         </div>
+        </div>
+        <div style={{ ...modalBody(), overflowY: 'auto', flex: 1 }}>
 
         {warning && (
           <div style={{
@@ -186,6 +188,7 @@ export function SessionHistoryModal({ sessions, onClose, kind, onChanged }: {
             </div>
           </div>
         )}
+        </div>
       </div>
     </div>,
     document.body

@@ -41,13 +41,12 @@ export function ColorPickerPopover({ value, onChange, onClose }: {
   return (
     <div
       ref={ref}
+      className="hq-glass-elevated hq-animate-fade-up"
       style={{
-        position: 'absolute', top: 'calc(100% + 4px)', left: 0,
-        background: 'var(--color-bg-secondary)',
-        border: '1px solid var(--color-border)',
-        borderRadius: 4, padding: 8,
+        position: 'absolute', top: 'calc(100% + 6px)', left: 0,
+        padding: 'var(--space-2)',
         zIndex: 200, minWidth: 180,
-        boxShadow: '0 8px 24px rgba(0, 0, 0, 0.5)',
+        boxShadow: 'var(--shadow-lg)',
       }}
     >
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 20px)', gap: 4 }}>

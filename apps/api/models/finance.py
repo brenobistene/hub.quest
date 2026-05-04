@@ -70,7 +70,6 @@ class CategoryOut(BaseModel):
     cor: Optional[str] = None
     categoria_pai_id: Optional[str] = None
     sort_order: int = 0
-    limite_mensal: Optional[float] = None
 
 
 class CategoryCreate(BaseModel):
@@ -78,7 +77,6 @@ class CategoryCreate(BaseModel):
     tipo: str
     cor: Optional[str] = None
     categoria_pai_id: Optional[str] = None
-    limite_mensal: Optional[float] = None
 
     @field_validator("tipo")
     @classmethod
@@ -94,7 +92,6 @@ class CategoryUpdate(BaseModel):
     cor: Optional[str] = None
     categoria_pai_id: Optional[str] = None
     sort_order: Optional[int] = None
-    limite_mensal: Optional[float] = None
 
 
 # ─── Transaction ───────────────────────────────────────────────────────────
@@ -115,6 +112,9 @@ class TransactionOut(BaseModel):
     divida_id: Optional[str] = None
     parcela_id: Optional[str] = None
     fatura_id: Optional[str] = None
+    # Quando setado: esta tx é o pagamento da fatura X (não uma compra dela).
+    # Setar via PATCH marca a fatura como `paga` automaticamente.
+    pagamento_fatura_id: Optional[str] = None
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
 
@@ -153,16 +153,21 @@ class CategorizationRuleOut(BaseModel):
     categoria_id: str
     times_matched: int = 0
     created_at: Optional[str] = None
+    # Quando setado: ao aplicar a regra, tenta linkar a tx como pagamento de
+    # fatura desse cartão (auto-link via match de valor exato).
+    link_cartao_id: Optional[str] = None
 
 
 class CategorizationRuleCreate(BaseModel):
     pattern: str
     categoria_id: str
+    link_cartao_id: Optional[str] = None
 
 
 class CategorizationRuleUpdate(BaseModel):
     pattern: Optional[str] = None
     categoria_id: Optional[str] = None
+    link_cartao_id: Optional[str] = None
 
 
 # ─── Debt ──────────────────────────────────────────────────────────────────
@@ -210,6 +215,208 @@ class DebtUpdate(BaseModel):
         if v is not None and v not in DEBT_STATUS:
             raise ValueError(f"status deve ser um de {sorted(DEBT_STATUS)}")
         return v
+
+
+# ─── Parcela de Dívida (cronograma flexível) ──────────────────────────────
+
+DEBT_PARCELA_STATUS = {"pendente", "paga", "atrasada"}
+
+
+class DebtParcelaOut(BaseModel):
+    id: str
+    divida_id: str
+    numero: int
+    data_prevista: Optional[str] = None
+    valor_planejado: Optional[float] = None  # null = auto
+    transacao_pagamento_id: Optional[str] = None
+    notas: Optional[str] = None
+    # Computados pelo backend a cada GET:
+    valor_efetivo: float = 0.0  # planejado se fixo, ou rateio se auto
+    is_auto: bool = False       # True quando valor_planejado é null
+    status: str = "pendente"    # 'pendente' | 'paga' | 'atrasada'
+    valor_pago: Optional[float] = None  # quando paga, valor real da transação
+    data_pagamento: Optional[str] = None  # quando paga, data da transação
+
+
+class DebtParcelaCreate(BaseModel):
+    data_prevista: Optional[str] = None
+    valor_planejado: Optional[float] = None
+    notas: Optional[str] = None
+
+
+class DebtParcelaUpdate(BaseModel):
+    data_prevista: Optional[str] = None
+    valor_planejado: Optional[float] = None  # null aqui = quer setar como auto
+    transacao_pagamento_id: Optional[str] = None
+    notas: Optional[str] = None
+
+
+class DebtParcelaGenerate(BaseModel):
+    """Body pra POST /debts/{id}/parcelas/generate — gera N parcelas iniciais."""
+    n_parcelas: int  # quantas criar
+    data_inicio: str  # YYYY-MM-DD da primeira parcela
+    modo: str = "uniforme"  # 'uniforme' (valor=total/n) | 'open' (valor=null)
+
+
+class DebtParcelaComplete(BaseModel):
+    """Body pra POST /debts/{id}/parcelas/complete — gera N parcelas fixas
+    pelo saldo restante (total - soma das parcelas com valor_planejado fixo).
+    `data_inicio` opcional: se não dado, usa última.data_prevista + 1 mês."""
+    n_parcelas: int
+    data_inicio: Optional[str] = None  # YYYY-MM-DD
+
+
+# ─── Conta Fixa Recorrente (recurring bill) ────────────────────────────────
+
+RECURRING_BILL_STATUS_INFERRED = {"paga", "pendente", "atrasada"}
+RECURRING_BILL_TIPOS = {"despesa", "receita"}
+
+
+class RecurringBillOut(BaseModel):
+    id: str
+    descricao: str
+    valor_estimado: float
+    dia_vencimento: Optional[int] = None  # 1-31
+    categoria_id: Optional[str] = None
+    conta_pagamento_id: Optional[str] = None
+    ativa: bool = True
+    recorrencia: str = "mensal"
+    tipo: str = "despesa"  # 'despesa' | 'receita'
+    notas: Optional[str] = None
+    sort_order: int = 0
+
+
+class RecurringBillCreate(BaseModel):
+    descricao: str
+    valor_estimado: float
+    dia_vencimento: Optional[int] = None
+    categoria_id: Optional[str] = None
+    conta_pagamento_id: Optional[str] = None
+    ativa: bool = True
+    tipo: str = "despesa"
+    notas: Optional[str] = None
+
+    @field_validator("dia_vencimento")
+    @classmethod
+    def _check_dia(cls, v):
+        if v is not None and not (1 <= v <= 31):
+            raise ValueError("dia_vencimento deve estar entre 1 e 31")
+        return v
+
+    @field_validator("valor_estimado")
+    @classmethod
+    def _check_valor(cls, v):
+        if v <= 0:
+            raise ValueError("valor_estimado deve ser positivo")
+        return v
+
+    @field_validator("tipo")
+    @classmethod
+    def _check_tipo(cls, v):
+        if v not in RECURRING_BILL_TIPOS:
+            raise ValueError(f"tipo deve ser um de {sorted(RECURRING_BILL_TIPOS)}")
+        return v
+
+
+class RecurringBillUpdate(BaseModel):
+    descricao: Optional[str] = None
+    valor_estimado: Optional[float] = None
+    dia_vencimento: Optional[int] = None
+    categoria_id: Optional[str] = None
+    conta_pagamento_id: Optional[str] = None
+    ativa: Optional[bool] = None
+    tipo: Optional[str] = None
+    notas: Optional[str] = None
+    sort_order: Optional[int] = None
+
+    @field_validator("dia_vencimento")
+    @classmethod
+    def _check_dia(cls, v):
+        if v is not None and not (1 <= v <= 31):
+            raise ValueError("dia_vencimento deve estar entre 1 e 31")
+        return v
+
+    @field_validator("tipo")
+    @classmethod
+    def _check_tipo(cls, v):
+        if v is not None and v not in RECURRING_BILL_TIPOS:
+            raise ValueError(f"tipo deve ser um de {sorted(RECURRING_BILL_TIPOS)}")
+        return v
+
+
+class RecurringBillStatusItem(BaseModel):
+    """Status de uma conta fixa num mês específico — inferido por categoria
+    + match de descrição (sem persistir vínculo na transação)."""
+    bill_id: str
+    descricao: str
+    valor_estimado: float
+    dia_vencimento: Optional[int] = None
+    categoria_id: Optional[str] = None
+    tipo: str = "despesa"
+    status: str  # 'paga' | 'pendente' | 'atrasada' (despesa) ou 'recebida' | 'pendente' | 'atrasada' (receita)
+    valor_pago: Optional[float] = None  # quando paga/recebida, valor real
+    transacao_id: Optional[str] = None
+    data_pagamento: Optional[str] = None  # YYYY-MM-DD
+
+
+class MonthCommitment(BaseModel):
+    """Item unificado de compromisso do mês — junta recurring bills, debt
+    parcelas, freela parcelas e faturas de cartão em uma view única
+    ordenada por dia. Status é inferido conforme a fonte (bill: tx-match;
+    debt/freela: parcela.status; invoice: status do fin_invoice + check
+    de vencimento vs hoje)."""
+    kind: str  # 'bill' | 'debt_parcela' | 'freela_parcela' | 'invoice'
+    id: str  # bill_id, parcela_id ou invoice_id (pra UI dedup)
+    descricao: str
+    sub_descricao: Optional[str] = None  # ex: "parcela 3/12" ou "salário/recorrente"
+    tipo: str  # 'despesa' | 'receita'
+    dia: Optional[int] = None  # dia do mês (1-31), pra ordenação
+    data_prevista: Optional[str] = None  # YYYY-MM-DD
+    valor: float  # estimado/planejado
+    valor_pago: Optional[float] = None  # quando paga, valor real
+    status: str  # 'pendente' | 'paga' | 'recebida' | 'atrasada'
+    transacao_id: Optional[str] = None
+    data_pagamento: Optional[str] = None
+    # Refs pra abrir modal/página correspondente conforme `kind`
+    bill_id: Optional[str] = None
+    debt_id: Optional[str] = None
+    debt_descricao: Optional[str] = None
+    parcela_numero: Optional[int] = None
+    parcela_total: Optional[int] = None  # total de parcelas da dívida
+    # Freela parcela: id do projeto pra navegar até /freelas
+    freela_projeto_id: Optional[str] = None
+    # Invoice (fatura de cartão): id da fatura + cartão pra abrir o modal
+    invoice_id: Optional[str] = None
+    cartao_id: Optional[str] = None
+    cartao_nome: Optional[str] = None
+
+
+class MonthCommitmentsResponse(BaseModel):
+    year: int
+    month: int
+    items: list[MonthCommitment]
+    total_a_pagar: float
+    total_a_receber: float
+    total_pago: float
+    total_recebido: float
+    sobra_projetada: float
+
+
+class RecurringBillStatusMonth(BaseModel):
+    year: int
+    month: int
+    items: list[RecurringBillStatusItem]
+    # Totais agregados (todos tipos somados)
+    total_estimado: float
+    total_pago: float
+    total_pendente: float
+    # Totais separados por tipo (pra UI de previsão na Visão Geral)
+    despesa_total_estimado: float = 0.0
+    despesa_total_pago: float = 0.0
+    despesa_total_pendente: float = 0.0
+    receita_total_estimado: float = 0.0
+    receita_total_recebido: float = 0.0
+    receita_total_pendente: float = 0.0
 
 
 # ─── Parcela esperada (recebimento de projeto) ─────────────────────────────
@@ -347,3 +554,4 @@ class TransactionUpdate(BaseModel):
     divida_id: Optional[str] = None
     parcela_id: Optional[str] = None
     fatura_id: Optional[str] = None
+    pagamento_fatura_id: Optional[str] = None

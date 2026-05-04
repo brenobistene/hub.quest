@@ -46,12 +46,15 @@ export function PrioritySelect({ value, onChange }: { value: string; onChange: (
         {current.label}
       </span>
       {open && (
-        <div style={{
-          position: 'absolute', right: 0, top: '100%', marginTop: 6,
-          background: 'var(--color-bg-secondary)', border: '1px solid var(--color-border)',
-          zIndex: 100, minWidth: 130, boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
-          borderRadius: 3, overflow: 'hidden',
-        }}>
+        <div
+          className="hq-glass-elevated hq-animate-fade-up"
+          style={{
+            position: 'absolute', right: 0, top: '100%', marginTop: 6,
+            zIndex: 100, minWidth: 150,
+            boxShadow: 'var(--shadow-lg)',
+            padding: 'var(--space-1)',
+          }}
+        >
           {PRIORITIES.map(p => {
             const active = p.key === value
             return (
@@ -59,14 +62,21 @@ export function PrioritySelect({ value, onChange }: { value: string; onChange: (
                 key={p.key}
                 onClick={() => { onChange(p.key); setOpen(false) }}
                 style={{
-                  padding: '9px 14px', fontSize: 12, cursor: 'pointer',
+                  padding: 'var(--space-2) var(--space-3)', fontSize: 12, cursor: 'pointer',
                   display: 'flex', alignItems: 'center', gap: 8,
                   color: active ? 'var(--color-text-primary)' : 'var(--color-text-secondary)',
-                  background: active ? 'var(--color-border)' : 'transparent',
-                  transition: 'background 0.1s',
+                  background: active ? 'var(--glass-bg-hover)' : 'transparent',
+                  borderRadius: 'var(--radius-sm)',
+                  transition: 'background var(--motion-fast) var(--ease-smooth)',
                 }}
-                onMouseEnter={e => (e.currentTarget.style.background = active ? 'var(--color-border)' : 'var(--color-bg-tertiary)')}
-                onMouseLeave={e => (e.currentTarget.style.background = active ? 'var(--color-border)' : 'transparent')}
+                onMouseEnter={e => {
+                  e.currentTarget.style.background = 'var(--glass-bg-hover)'
+                  e.currentTarget.style.color = 'var(--color-text-primary)'
+                }}
+                onMouseLeave={e => {
+                  e.currentTarget.style.background = active ? 'var(--glass-bg-hover)' : 'transparent'
+                  e.currentTarget.style.color = active ? 'var(--color-text-primary)' : 'var(--color-text-secondary)'
+                }}
               >
                 <span style={{
                   width: 7, height: 7, borderRadius: '50%', background: p.color,

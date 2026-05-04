@@ -7,6 +7,7 @@ import { Label } from '../components/ui/Label'
 import { DateRangeFilter } from '../components/DateRangeFilter'
 import { QuestRow } from '../components/QuestRow'
 import { NewQuestRow } from '../components/NewQuestRow'
+import { Card } from '../components/ui/Primitives'
 
 type DeliverableLite = { id: string; title: string; done: boolean; estimated_minutes?: number; minutes_worked?: number; deadline?: string }
 
@@ -170,8 +171,25 @@ export function QuestsView({ projects, quests: initial, areas, onSessionUpdate, 
 
   return (
     <div style={{ color: 'var(--color-text-primary)' }}>
+    <Card padding="none" style={{
+      animation: 'hq-fade-up var(--motion-base) var(--ease-emphasis) both',
+    }}>
+      {/* Hairline accent — linha sutil oxblood no topo */}
+      <div style={{
+        height: 1,
+        background: 'linear-gradient(90deg, transparent, var(--color-accent-primary), transparent)',
+        opacity: 0.5,
+      }} />
+      {/* Header com gradient sutil — Label + tabs por área */}
+      <div style={{
+        padding: 'var(--space-5) var(--space-6) 0',
+        background: `
+          radial-gradient(ellipse 100% 80% at 0% 0%, rgba(159, 18, 57, 0.06), transparent 60%),
+          linear-gradient(180deg, rgba(236, 232, 227, 0.02), transparent)
+        `,
+      }}>
       <Label>quests</Label>
-      <div style={{ display: 'flex', marginTop: 16, borderBottom: '1px solid var(--color-border)' }}>
+      <div style={{ display: 'flex', marginTop: 16, borderBottom: '1px solid var(--color-divider)' }}>
         {[{ slug: 'all', name: 'Todas', color: 'var(--color-accent-primary)' as string }, ...areas.map(a => ({ slug: a.slug, name: a.name, color: a.color }))].map(a => {
           const isActive = filter === a.slug
           return (
@@ -193,6 +211,8 @@ export function QuestsView({ projects, quests: initial, areas, onSessionUpdate, 
           )
         })}
       </div>
+      </div>
+      <div style={{ padding: 'var(--space-5) var(--space-6)' }}>
 
       <NewQuestRow areaSlug={filter} areas={areas} projects={projects} onCreated={add} />
 
@@ -275,6 +295,8 @@ export function QuestsView({ projects, quests: initial, areas, onSessionUpdate, 
           )}
         </div>
       )}
+      </div>
+    </Card>
     </div>
   )
 }

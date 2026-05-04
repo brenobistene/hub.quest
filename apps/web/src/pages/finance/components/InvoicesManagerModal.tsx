@@ -5,6 +5,7 @@ import type { FinAccount, FinInvoice } from '../../../types'
 import {
   sectionLabel, fieldLabel, inputStyle, primaryButton, ghostButton,
   modalOverlay, formatBRL, formatDate,
+  modalShell, modalHairline, modalHeader, modalBody,
 } from './styleHelpers'
 
 /**
@@ -13,7 +14,7 @@ import {
  * + ações fechar/pagar. Substitui a aba "Cartões" que era redundante (só
  * 1 cartão, ações pouco frequentes).
  *
- * Cadastro de cartão novo continua via "+ nova conta" → tipo crédito.
+ * Cadastro de cartão novo é via /carteira → "+ nova carteira" → tipo crédito.
  */
 export function InvoicesManagerModal({ invoices, accounts, onClose, onChanged }: {
   invoices: FinInvoice[]
@@ -46,14 +47,14 @@ export function InvoicesManagerModal({ invoices, accounts, onClose, onChanged }:
     <>
       <div onClick={onClose} style={modalOverlay()}>
         <div onClick={e => e.stopPropagation()} style={{
-          background: 'var(--color-bg-primary)',
-          border: '1px solid var(--color-border)',
-          borderRadius: 4, padding: 24,
+          ...modalShell(),
           minWidth: 600, maxWidth: 760, maxHeight: '85vh',
           display: 'flex', flexDirection: 'column',
         }}>
+          <div style={modalHairline} />
+          <div style={modalHeader()}>
           {/* Header */}
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginBottom: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 12 }}>
             <CreditCard size={14} strokeWidth={1.8} style={{ color: 'var(--color-text-tertiary)' }} />
             <div style={sectionLabel()}>Gerenciar faturas</div>
             <div style={{ flex: 1 }} />
@@ -65,6 +66,8 @@ export function InvoicesManagerModal({ invoices, accounts, onClose, onChanged }:
               <X size={14} strokeWidth={2} />
             </button>
           </div>
+          </div>
+          <div style={{ ...modalBody(), overflowY: 'auto', flex: 1 }}>
 
           <div style={{ overflowY: 'auto', flex: 1 }}>
             {/* Faturas pendentes */}
@@ -214,8 +217,9 @@ export function InvoicesManagerModal({ invoices, accounts, onClose, onChanged }:
             borderTop: '1px solid var(--color-border)',
             fontSize: 10, color: 'var(--color-text-muted)', fontStyle: 'italic',
           }}>
-            pra adicionar um novo cartão, use "+ nova conta" no header e selecione tipo "cartão de crédito".
+            pra adicionar um novo cartão, vai em "carteira" no menu e clica em "+ nova carteira" → tipo "cartão de crédito".
           </div>
+        </div>
         </div>
       </div>
 
@@ -265,18 +269,19 @@ function PayInvoiceModal({ invoice, accounts, onClose, onPaid }: {
   if (accounts.length === 0) {
     return (
       <div onClick={onClose} style={{ ...modalOverlay(), zIndex: 110 }}>
-        <div onClick={e => e.stopPropagation()} style={{
-          background: 'var(--color-bg-primary)',
-          border: '1px solid var(--color-border)',
-          borderRadius: 4, padding: 24, minWidth: 380,
-        }}>
-          <div style={sectionLabel()}>Sem conta pra pagar</div>
+        <div onClick={e => e.stopPropagation()} style={{ ...modalShell(), minWidth: 380 }}>
+          <div style={modalHairline} />
+          <div style={modalHeader()}>
+            <div style={sectionLabel()}>Sem carteira pra pagar</div>
+          </div>
+          <div style={modalBody()}>
           <div style={{ fontSize: 12, color: 'var(--color-text-secondary)', marginBottom: 16, lineHeight: 1.5 }}>
-            Pra pagar fatura você precisa de uma conta corrente em BRL (não-cartão).
-            Cria uma primeiro em "+ nova conta" no header.
+            Pra pagar fatura você precisa de uma carteira do tipo conta corrente em BRL.
+            Cria uma em /carteira → "+ nova carteira".
           </div>
           <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
             <button onClick={onClose} style={primaryButton()}>fechar</button>
+          </div>
           </div>
         </div>
       </div>
@@ -285,12 +290,12 @@ function PayInvoiceModal({ invoice, accounts, onClose, onPaid }: {
 
   return (
     <div onClick={onClose} style={{ ...modalOverlay(), zIndex: 110 }}>
-      <div onClick={e => e.stopPropagation()} style={{
-        background: 'var(--color-bg-primary)',
-        border: '1px solid var(--color-border)',
-        borderRadius: 4, padding: 24, minWidth: 420, maxWidth: 480,
-      }}>
-        <div style={sectionLabel()}>Pagar fatura {invoice.mes_referencia}</div>
+      <div onClick={e => e.stopPropagation()} style={{ ...modalShell(), minWidth: 420, maxWidth: 480 }}>
+        <div style={modalHairline} />
+        <div style={modalHeader()}>
+          <div style={sectionLabel()}>Pagar fatura {invoice.mes_referencia}</div>
+        </div>
+        <div style={modalBody()}>
 
         <div style={{
           padding: 12, marginBottom: 16,
@@ -339,6 +344,7 @@ function PayInvoiceModal({ invoice, accounts, onClose, onPaid }: {
             </button>
           </div>
         </form>
+        </div>
       </div>
     </div>
   )

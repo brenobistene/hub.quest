@@ -61,7 +61,7 @@ export function RoutineEditor({
   const selectedDays = formData.days_of_week ? formData.days_of_week.split(',').map(Number) : []
 
   return (
-    <div style={{ padding: '12px 0', borderBottom: '1px solid var(--color-border)', marginBottom: 12 }}>
+    <div className="hq-animate-fade-up" style={{ padding: '12px 0', borderBottom: '1px solid var(--color-border)', marginBottom: 12 }}>
       <input
         type="text"
         autoComplete="off"

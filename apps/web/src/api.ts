@@ -1,9 +1,11 @@
 import type {
   DayData, Project, Quest, Area, Routine, MicroTask, Profile, Task, Deliverable,
   FinAccount, FinCategory, FinTransaction, FinSummary, FinImportSummary,
-  FinMonthlySummary, FinCategorizationRule, FinDebt, FinDebtStatus,
+  FinMonthlySummary, FinCategorizationRule, FinDebt, FinDebtParcela, FinDebtStatus,
   FinParcela, FinPaymentTemplate, FinClient, FinHourlyRateStats, FinFreelaProject,
-  FinInvoice, FinInvoiceStatus, FinBudget, FinExchangeRate,
+  FinInvoice, FinInvoiceStatus, FinExchangeRate,
+  FinRecurringBill, FinRecurringBillStatusMonth,
+  FinMonthCommitments,
   FinAccountType, FinAccountOrigin, FinCategoryType,
 } from './types'
 
@@ -634,6 +636,63 @@ export const fetchFinAccountUsage = (id: string) =>
 export const fetchFinExchangeRate = (from: string, to: string = 'BRL') =>
   get<FinExchangeRate>(`/api/finance/exchange-rate?from=${from}&to=${to}`)
 
+// ─── Recurring Bills (contas fixas) ─────────────────────────────────────
+
+export const fetchFinRecurringBills = () =>
+  get<FinRecurringBill[]>('/api/finance/recurring-bills')
+
+export async function createFinRecurringBill(body: {
+  descricao: string
+  valor_estimado: number
+  dia_vencimento?: number | null
+  categoria_id?: string | null
+  conta_pagamento_id?: string | null
+  ativa?: boolean
+  tipo?: 'despesa' | 'receita'
+  notas?: string | null
+}): Promise<FinRecurringBill> {
+  return jsonOrThrow<FinRecurringBill>(await fetch(`${BASE}/api/finance/recurring-bills`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  }))
+}
+
+export async function updateFinRecurringBill(
+  id: string, patch: Partial<FinRecurringBill>,
+): Promise<FinRecurringBill> {
+  return jsonOrThrow<FinRecurringBill>(await fetch(
+    `${BASE}/api/finance/recurring-bills/${id}`,
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(patch),
+    },
+  ))
+}
+
+export async function deleteFinRecurringBill(id: string): Promise<void> {
+  const res = await fetch(`${BASE}/api/finance/recurring-bills/${id}`, { method: 'DELETE' })
+  if (!res.ok) throw new Error(`API error ${res.status}`)
+}
+
+export async function reorderFinRecurringBills(ids: string[]): Promise<void> {
+  const res = await fetch(`${BASE}/api/finance/recurring-bills/reorder`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ids }),
+  })
+  if (!res.ok) throw new Error(`API error ${res.status}`)
+}
+
+/** Status mensal das contas fixas (paga/pendente/atrasada inferido). */
+export const fetchFinRecurringBillsStatus = (year: number, month: number) =>
+  get<FinRecurringBillStatusMonth>(`/api/finance/recurring-bills/status?year=${year}&month=${month}`)
+
+/** Compromissos do mês — agrega bills + parcelas de dívida ordenadas por dia. */
+export const fetchFinMonthCommitments = (year: number, month: number) =>
+  get<FinMonthCommitments>(`/api/finance/month-commitments?year=${year}&month=${month}`)
+
 /** Monta a URL de export CSV pra abrir/baixar via window.location ou <a download>. */
 export function buildFinExportTransactionsUrl(filters: {
   data_de?: string
@@ -735,11 +794,6 @@ export const fetchFinSummary = () => get<FinSummary>('/api/finance/summary')
 export const fetchFinMonthlySummary = (year: number, month: number) =>
   get<FinMonthlySummary>(`/api/finance/monthly-summary?year=${year}&month=${month}`)
 
-/** Status de orçamento mensal por categoria — só retorna categorias com
- *  `limite_mensal` definido. Honra regra de competência (fatura). */
-export const fetchFinBudget = (year: number, month: number) =>
-  get<FinBudget>(`/api/finance/budget?year=${year}&month=${month}`)
-
 /** Média histórica de R$/hora — agregado cross-projeto da área freelas.
  *  Usado pra comparar projetos individuais contra a média geral. */
 export const fetchFinHourlyRateStats = () =>
@@ -759,6 +813,7 @@ export const fetchFinCategorizationRules = () =>
 export async function createFinCategorizationRule(body: {
   pattern: string
   categoria_id: string
+  link_cartao_id?: string | null
 }): Promise<FinCategorizationRule> {
   return jsonOrThrow<FinCategorizationRule>(await fetch(`${BASE}/api/finance/categorization-rules`, {
     method: 'POST',
@@ -794,9 +849,9 @@ export const previewBackfillRule = (id: string) =>
 
 export async function applyBackfillRule(
   id: string, opts: { overwrite?: boolean } = {},
-): Promise<{ updated: number }> {
+): Promise<{ updated: number; linked_invoices: number }> {
   const qs = opts.overwrite ? '?overwrite=true' : ''
-  return jsonOrThrow<{ updated: number }>(await fetch(
+  return jsonOrThrow<{ updated: number; linked_invoices: number }>(await fetch(
     `${BASE}/api/finance/categorization-rules/${id}/backfill${qs}`,
     { method: 'POST' },
   ))
@@ -832,6 +887,76 @@ export async function updateFinDebt(id: string, patch: Partial<FinDebt>): Promis
 
 export async function deleteFinDebt(id: string): Promise<void> {
   const res = await fetch(`${BASE}/api/finance/debts/${id}`, { method: 'DELETE' })
+  if (!res.ok) throw new Error(`API error ${res.status}`)
+}
+
+// Debt parcelas — cronograma flexível por dívida (auto-balanço)
+export const fetchFinDebtParcelas = (debtId: string) =>
+  get<FinDebtParcela[]>(`/api/finance/debts/${debtId}/parcelas`)
+
+export async function createFinDebtParcela(debtId: string, body: {
+  data_prevista?: string | null
+  valor_planejado?: number | null
+  notas?: string | null
+}): Promise<FinDebtParcela> {
+  return jsonOrThrow<FinDebtParcela>(await fetch(
+    `${BASE}/api/finance/debts/${debtId}/parcelas`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    },
+  ))
+}
+
+export async function generateFinDebtParcelas(debtId: string, body: {
+  n_parcelas: number
+  data_inicio: string
+  modo: 'uniforme' | 'open'
+}): Promise<void> {
+  const res = await fetch(`${BASE}/api/finance/debts/${debtId}/parcelas/generate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) throw new Error(`API error ${res.status}`)
+}
+
+/** Gera N parcelas FIXAS pelo saldo restante (total − soma fixas atuais).
+ *  Datas começam em `data_inicio` (ou last+1 mês se não dado). */
+export async function completeFinDebtParcelas(debtId: string, body: {
+  n_parcelas: number
+  data_inicio?: string
+}): Promise<void> {
+  const res = await fetch(`${BASE}/api/finance/debts/${debtId}/parcelas/complete`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) {
+    const err = await res.text().catch(() => '')
+    throw new Error(`API error ${res.status}: ${err}`)
+  }
+}
+
+export async function updateFinDebtParcela(parcelaId: string, patch: {
+  data_prevista?: string | null
+  valor_planejado?: number | null
+  transacao_pagamento_id?: string | null
+  notas?: string | null
+}): Promise<FinDebtParcela> {
+  return jsonOrThrow<FinDebtParcela>(await fetch(
+    `${BASE}/api/finance/debts/parcelas/${parcelaId}`,
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(patch),
+    },
+  ))
+}
+
+export async function deleteFinDebtParcela(parcelaId: string): Promise<void> {
+  const res = await fetch(`${BASE}/api/finance/debts/parcelas/${parcelaId}`, { method: 'DELETE' })
   if (!res.ok) throw new Error(`API error ${res.status}`)
 }
 

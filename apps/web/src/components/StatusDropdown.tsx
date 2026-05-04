@@ -32,22 +32,34 @@ export function StatusDropdown({ status, onChange }: { status: string; onChange:
         {STATUSES.find(s => s.key === status)?.label ?? status}
       </span>
       {open && (
-        <div style={{
-          position: 'absolute', right: 0, top: '100%', marginTop: 6,
-          background: 'var(--color-bg-secondary)', border: '1px solid var(--color-border)',
-          zIndex: 100, minWidth: 110, boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
-        }}>
+        <div
+          className="hq-glass-elevated hq-animate-fade-up"
+          style={{
+            position: 'absolute', right: 0, top: '100%', marginTop: 6,
+            zIndex: 100, minWidth: 130,
+            boxShadow: 'var(--shadow-lg)',
+            padding: 'var(--space-1)',
+          }}
+        >
           {STATUSES.map(s => (
             <div
               key={s.key}
               onClick={() => { onChange(s.key); setOpen(false) }}
               style={{
-                padding: '9px 14px', fontSize: 12, cursor: 'pointer',
+                padding: 'var(--space-2) var(--space-3)', fontSize: 12, cursor: 'pointer',
                 color: s.key === status ? 'var(--color-text-primary)' : 'var(--color-text-secondary)',
-                background: s.key === status ? 'var(--color-border)' : 'transparent',
+                background: s.key === status ? 'var(--glass-bg-hover)' : 'transparent',
+                borderRadius: 'var(--radius-sm)',
+                transition: 'background var(--motion-fast) var(--ease-smooth)',
               }}
-              onMouseEnter={e => (e.currentTarget.style.color = 'var(--color-text-primary)')}
-              onMouseLeave={e => (e.currentTarget.style.color = s.key === status ? 'var(--color-text-primary)' : 'var(--color-text-secondary)')}
+              onMouseEnter={e => {
+                e.currentTarget.style.color = 'var(--color-text-primary)'
+                e.currentTarget.style.background = 'var(--glass-bg-hover)'
+              }}
+              onMouseLeave={e => {
+                e.currentTarget.style.color = s.key === status ? 'var(--color-text-primary)' : 'var(--color-text-secondary)'
+                e.currentTarget.style.background = s.key === status ? 'var(--glass-bg-hover)' : 'transparent'
+              }}
             >
               {s.label}
             </div>

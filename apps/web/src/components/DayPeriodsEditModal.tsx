@@ -2,6 +2,9 @@ import { useState } from 'react'
 import type { DayPeriods } from '../utils/dayPeriods'
 import { DEFAULT_DAY_PERIODS, saveDayPeriods, minutesToHHMM, hhmmToMinutes } from '../utils/dayPeriods'
 import { Label } from './ui/Label'
+import {
+  modalOverlay, modalShell, modalHairline, modalHeader, modalBody,
+} from '../pages/finance/components/styleHelpers'
 
 /**
  * Modal reached from the Dia view to shift the manhã/tarde/noite cutoffs.
@@ -60,27 +63,19 @@ export function DayPeriodsEditModal({ value, onClose, onSave }: {
   )
 
   return (
-    <div
-      onClick={onClose}
-      style={{
-        position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000,
-      }}
-    >
+    <div onClick={onClose} style={{ ...modalOverlay(), zIndex: 1000 }}>
       <div
         onClick={e => e.stopPropagation()}
-        style={{
-          background: 'var(--color-bg-secondary)',
-          border: '1px solid var(--color-border)',
-          borderRadius: 6, padding: 24, minWidth: 380,
-          display: 'flex', flexDirection: 'column', gap: 14,
-          boxShadow: '0 16px 48px rgba(0,0,0,0.6)',
-        }}
+        style={{ ...modalShell(), minWidth: 380 }}
       >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <Label>períodos do dia</Label>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-tertiary)', fontSize: 14, padding: '2px 8px' }}>✕</button>
+        <div style={modalHairline} />
+        <div style={modalHeader()}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Label>períodos do dia</Label>
+            <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-tertiary)', fontSize: 14, padding: '2px 8px' }}>✕</button>
+          </div>
         </div>
+        <div style={{ ...modalBody(), display: 'flex', flexDirection: 'column', gap: 14 }}>
         <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>
           Define onde cada período começa. A noite sempre termina à meia-noite (24:00).
         </div>
@@ -127,6 +122,7 @@ export function DayPeriodsEditModal({ value, onClose, onSave }: {
               Salvar
             </button>
           </div>
+        </div>
         </div>
       </div>
     </div>

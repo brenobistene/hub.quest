@@ -1,3 +1,5 @@
+import { Card } from '../components/ui/Primitives'
+
 /**
  * `/arquivados` — lista simples das ideias arquivadas pelo usuário
  * (armazenadas em `localStorage` como `hq-archived-ideas`, gerenciadas
@@ -6,9 +8,25 @@
 export function ArquivadosView({ archivedIdeas, onDelete }: { archivedIdeas: Array<{ id: string; title: string; created_at: string }>; onDelete: (id: string) => void }) {
   return (
     <div style={{ padding: '32px 24px', maxWidth: 1000, margin: '0 auto', color: 'var(--color-text-primary)' }}>
-      <header style={{
-        paddingBottom: 20, borderBottom: '1px solid var(--color-divider)',
+    <Card padding="none" style={{
+      animation: 'hq-fade-up var(--motion-base) var(--ease-emphasis) both',
+    }}>
+      {/* Hairline accent — linha sutil oxblood no topo */}
+      <div style={{
+        height: 1,
+        background: 'linear-gradient(90deg, transparent, var(--color-accent-primary), transparent)',
+        opacity: 0.5,
+      }} />
+      {/* Header com gradient sutil */}
+      <div style={{
+        padding: 'var(--space-5) var(--space-6) var(--space-4)',
+        background: `
+          radial-gradient(ellipse 100% 80% at 0% 0%, rgba(159, 18, 57, 0.06), transparent 60%),
+          linear-gradient(180deg, rgba(236, 232, 227, 0.02), transparent)
+        `,
+        borderBottom: '1px solid var(--color-divider)',
       }}>
+      <header>
         <div style={{
           fontSize: 10, color: 'var(--color-text-tertiary)',
           letterSpacing: '0.2em', textTransform: 'uppercase', fontWeight: 600,
@@ -28,6 +46,8 @@ export function ArquivadosView({ archivedIdeas, onDelete }: { archivedIdeas: Arr
           Ideias capturadas pelo Dump e guardadas pra revisitar depois.
         </div>
       </header>
+      </div>
+      <div style={{ padding: 'var(--space-5) var(--space-6)' }}>
 
       <section style={{ marginTop: 40 }}>
         <div style={{
@@ -107,6 +127,8 @@ export function ArquivadosView({ archivedIdeas, onDelete }: { archivedIdeas: Arr
           </div>
         )}
       </section>
+      </div>
+    </Card>
     </div>
   )
 }

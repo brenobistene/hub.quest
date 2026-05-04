@@ -12,13 +12,16 @@ import {
   fetchFinAccounts, fetchFinCategories, fetchFinTransactions, fetchFinSummary,
   fetchFinMonthlySummary, fetchFinHourlyRateStats,
   fetchFinDebts, fetchFinClients, fetchFinInvoices,
-  fetchFinFreelaProjects, fetchFinBudget,
+  fetchFinFreelaProjects,
+  fetchFinRecurringBills, fetchFinRecurringBillsStatus,
+  fetchFinMonthCommitments,
   reportApiError,
 } from '../../api'
 import type {
   FinAccount, FinCategory, FinTransaction, FinSummary, FinMonthlySummary,
   FinDebt, FinClient, FinHourlyRateStats, FinInvoice, FinFreelaProject,
-  FinBudget,
+  FinRecurringBill, FinRecurringBillStatusMonth,
+  FinMonthCommitments,
 } from '../../types'
 
 interface HubFinanceContextValue {
@@ -31,11 +34,13 @@ interface HubFinanceContextValue {
   hourlyStats: FinHourlyRateStats | null
   invoices: FinInvoice[]
   freelaProjects: FinFreelaProject[]
+  recurringBills: FinRecurringBill[]
 
   // Dados do mês selecionado
   transactions: FinTransaction[]
   monthlySummary: FinMonthlySummary | null
-  budget: FinBudget | null
+  recurringBillsStatus: FinRecurringBillStatusMonth | null
+  monthCommitments: FinMonthCommitments | null
   selectedMonth: { year: number; month: number }
   setSelectedMonth: (m: { year: number; month: number }) => void
 
@@ -63,12 +68,14 @@ export function HubFinanceProvider({ children }: { children: React.ReactNode }) 
   const [transactions, setTransactions] = useState<FinTransaction[]>([])
   const [summary, setSummary] = useState<FinSummary | null>(null)
   const [monthlySummary, setMonthlySummary] = useState<FinMonthlySummary | null>(null)
-  const [budget, setBudget] = useState<FinBudget | null>(null)
   const [debts, setDebts] = useState<FinDebt[]>([])
   const [clients, setClients] = useState<FinClient[]>([])
   const [hourlyStats, setHourlyStats] = useState<FinHourlyRateStats | null>(null)
   const [invoices, setInvoices] = useState<FinInvoice[]>([])
   const [freelaProjects, setFreelaProjects] = useState<FinFreelaProject[]>([])
+  const [recurringBills, setRecurringBills] = useState<FinRecurringBill[]>([])
+  const [recurringBillsStatus, setRecurringBillsStatus] = useState<FinRecurringBillStatusMonth | null>(null)
+  const [monthCommitments, setMonthCommitments] = useState<FinMonthCommitments | null>(null)
   const [loading, setLoading] = useState(true)
   const [selectedMonth, setSelectedMonth] = useState<{ year: number; month: number }>(() => {
     const now = new Date()
@@ -85,10 +92,12 @@ export function HubFinanceProvider({ children }: { children: React.ReactNode }) 
       fetchFinHourlyRateStats(),
       fetchFinInvoices(),
       fetchFinFreelaProjects(),
+      fetchFinRecurringBills(),
     ])
-      .then(([a, c, s, d, cl, hs, inv, fp]) => {
+      .then(([a, c, s, d, cl, hs, inv, fp, rb]) => {
         setAccounts(a); setCategories(c); setSummary(s); setDebts(d)
         setClients(cl); setHourlyStats(hs); setInvoices(inv); setFreelaProjects(fp)
+        setRecurringBills(rb)
       })
       .catch(err => reportApiError('HubFinance.refreshGlobal', err))
       .finally(() => setLoading(false))
@@ -102,9 +111,14 @@ export function HubFinanceProvider({ children }: { children: React.ReactNode }) 
     Promise.all([
       fetchFinMonthlySummary(year, month),
       fetchFinTransactions({ data_de: dataDe, data_ate: dataAte, limit: 500 }),
-      fetchFinBudget(year, month),
+      fetchFinRecurringBillsStatus(year, month),
+      fetchFinMonthCommitments(year, month),
     ])
-      .then(([ms, txs, b]) => { setMonthlySummary(ms); setTransactions(txs); setBudget(b) })
+      .then(([ms, txs, rbs, mc]) => {
+        setMonthlySummary(ms); setTransactions(txs)
+        setRecurringBillsStatus(rbs)
+        setMonthCommitments(mc)
+      })
       .catch(err => reportApiError('HubFinance.refreshForMonth', err))
   }
 
@@ -116,8 +130,9 @@ export function HubFinanceProvider({ children }: { children: React.ReactNode }) 
     [selectedMonth.year, selectedMonth.month])
 
   const value: HubFinanceContextValue = {
-    accounts, categories, transactions, summary, monthlySummary, budget,
+    accounts, categories, transactions, summary, monthlySummary,
     debts, clients, hourlyStats, invoices, freelaProjects,
+    recurringBills, recurringBillsStatus, monthCommitments,
     selectedMonth, setSelectedMonth,
     loading,
     refreshAll, refreshGlobal, refreshForMonth,

@@ -13,6 +13,7 @@ import { createFinTransaction, reportApiError } from '../../../api'
 import type { FinAccount } from '../../../types'
 import {
   sectionLabel, fieldLabel, inputStyle, primaryButton, ghostButton, modalOverlay,
+  modalShell, modalHairline, modalHeader, modalBody,
   formatMoney,
 } from './styleHelpers'
 
@@ -64,11 +65,12 @@ export function ReconciliationModal({ account, onClose, onSaved }: {
   return (
     <div onClick={onClose} style={{ ...modalOverlay(), zIndex: 110 }}>
       <div onClick={e => e.stopPropagation()} style={{
-        background: 'var(--color-bg-primary)',
-        border: '1px solid var(--color-border)',
-        borderRadius: 4, padding: 24, minWidth: 460, maxWidth: 540,
+        ...modalShell(),
+        minWidth: 460, maxWidth: 540,
       }}>
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginBottom: 14 }}>
+        <div style={modalHairline} />
+        <div style={modalHeader()}>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 12 }}>
           <div style={sectionLabel()}>Conciliar · {account.nome}</div>
           <div style={{ flex: 1 }} />
           <button onClick={onClose} style={{
@@ -79,6 +81,8 @@ export function ReconciliationModal({ account, onClose, onSaved }: {
             <X size={14} strokeWidth={2} />
           </button>
         </div>
+        </div>
+        <div style={modalBody()}>
 
         <div style={{
           fontSize: 11, color: 'var(--color-text-muted)',
@@ -199,6 +203,7 @@ export function ReconciliationModal({ account, onClose, onSaved }: {
                 : `criar ajuste de ${diferenca > 0 ? '+' : ''}${formatMoney(diferenca, account.moeda)}`}
             </button>
           )}
+        </div>
         </div>
       </div>
     </div>

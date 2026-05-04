@@ -128,15 +128,45 @@ export function modalOverlay(): React.CSSProperties {
   }
 }
 
-/** Card base — pra blocos de informação na Visão Geral, modais, etc. */
-export function cardBase(): React.CSSProperties {
+/** Container interno padrão dos modais — alinha com a estética Carteira:
+ *  border-radius generoso, sombra forte, animation de entrada. Use junto
+ *  com modalHairline + modalHeader pra dar o tratamento completo. */
+export function modalShell(): React.CSSProperties {
   return {
-    background: 'var(--glass-bg)',
-    backdropFilter: 'var(--glass-blur)',
-    WebkitBackdropFilter: 'var(--glass-blur)',
+    background: 'var(--color-bg-primary)',
     border: '1px solid var(--color-border)',
-    borderRadius: 'var(--radius-md)',
-    padding: 'var(--space-5)',
+    borderRadius: 'var(--radius-lg)',
+    overflow: 'hidden',
+    animation: 'hq-fade-up var(--motion-base) var(--ease-emphasis) both',
+    boxShadow: 'var(--shadow-lg)',
+  }
+}
+
+/** Linha sutil oxblood no topo do modal — mesma assinatura visual usada
+ *  nos cards do Carteira/Visão Geral. */
+export const modalHairline: React.CSSProperties = {
+  height: 1,
+  background: 'linear-gradient(90deg, transparent, var(--color-accent-primary), transparent)',
+  opacity: 0.5,
+}
+
+/** Header section do modal com gradient sutil (mancha oxblood top-left).
+ *  Aplicar em volta do título + ações de cabeçalho. Inclui borderBottom. */
+export function modalHeader(): React.CSSProperties {
+  return {
+    padding: 'var(--space-5) var(--space-6) var(--space-4)',
+    background: `
+      radial-gradient(ellipse 100% 80% at 0% 0%, rgba(159, 18, 57, 0.06), transparent 60%),
+      linear-gradient(180deg, rgba(236, 232, 227, 0.02), transparent)
+    `,
+    borderBottom: '1px solid var(--color-divider)',
+  }
+}
+
+/** Body section padrão — padding consistente com cards Carteira. */
+export function modalBody(): React.CSSProperties {
+  return {
+    padding: 'var(--space-5) var(--space-6)',
   }
 }
 
@@ -161,4 +191,37 @@ export function formatMoney(value: number, moeda: string): string {
 export function formatDate(iso: string): string {
   const [, m, d] = iso.split('-')
   return `${d}/${m}`
+}
+
+// ─── Card styles compartilhados ─────────────────────────────────────────
+//
+// Originalmente locais ao VisaoGeralPage; subiram pra cá quando a página
+// "Fixas" passou a reutilizá-los. Mantém visual consistente entre Visão
+// Geral e páginas-irmãs.
+
+export const cardBase: React.CSSProperties = {
+  background: 'var(--color-bg-secondary)',
+  border: '1px solid var(--color-border)',
+  borderRadius: 4,
+  padding: '16px 18px',
+}
+
+export const cardLabel: React.CSSProperties = {
+  fontSize: 10, color: 'var(--color-text-tertiary)',
+  letterSpacing: '0.15em', textTransform: 'uppercase', fontWeight: 600,
+  display: 'block', marginBottom: 2,
+}
+
+export const listRow: React.CSSProperties = {
+  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+  gap: 12, padding: '6px 0',
+}
+
+export const listRowTitle: React.CSSProperties = {
+  fontSize: 12, color: 'var(--color-text-primary)',
+  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+}
+
+export const listRowSub: React.CSSProperties = {
+  fontSize: 10, color: 'var(--color-text-muted)', marginTop: 2,
 }

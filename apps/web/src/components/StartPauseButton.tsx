@@ -2,6 +2,9 @@ import { useEffect, useRef, useState } from 'react'
 import type { Quest } from '../types'
 import { fetchSessions, startSession, pauseSession, resumeSession, reportApiError } from '../api'
 import { parseIsoAsUtc } from '../utils/datetime'
+import {
+  modalOverlay, modalShell, modalHairline, modalHeader, modalBody,
+} from '../pages/finance/components/styleHelpers'
 
 /**
  * Legacy quest play/pause/resume/finalize cluster used inside QuestRow.
@@ -225,18 +228,17 @@ export function StartPauseButton({ questId, onSessionChange, onUpdate, status, o
 
               {showDeliverableDropdown && (
                 <div
+                  className="hq-glass-elevated hq-animate-fade-up"
                   style={{
                     position: 'absolute',
                     top: '100%',
                     left: 0,
-                    marginTop: 4,
-                    background: 'var(--color-bg-secondary)',
-                    border: '1px solid var(--color-border)',
-                    borderRadius: 4,
+                    marginTop: 6,
                     minWidth: 220,
                     maxHeight: 300,
                     overflowY: 'auto',
-                    boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
+                    boxShadow: 'var(--shadow-lg)',
+                    padding: 'var(--space-1)',
                     zIndex: 100,
                   }}
                 >
@@ -364,18 +366,17 @@ export function StartPauseButton({ questId, onSessionChange, onUpdate, status, o
 
                 {showDeliverableDropdown && (
                   <div
+                    className="hq-glass-elevated hq-animate-fade-up"
                     style={{
                       position: 'absolute',
                       top: '100%',
                       left: 0,
-                      marginTop: 4,
-                      background: 'var(--color-bg-secondary)',
-                      border: '1px solid var(--color-border)',
-                      borderRadius: 4,
+                      marginTop: 6,
                       minWidth: 220,
                       maxHeight: 300,
                       overflowY: 'auto',
-                      boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
+                      boxShadow: 'var(--shadow-lg)',
+                      padding: 'var(--space-1)',
                       zIndex: 100,
                     }}
                   >
@@ -418,22 +419,18 @@ export function StartPauseButton({ questId, onSessionChange, onUpdate, status, o
     </div>
 
     {showModal && (
-      <div
-        onClick={() => setShowModal(false)}
-        style={{
-          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-          background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center',
-          zIndex: 1000,
-        }}
-      >
+      <div onClick={() => setShowModal(false)} style={{ ...modalOverlay(), zIndex: 1000 }}>
         <div
           onClick={e => e.stopPropagation()}
           style={{
-            background: 'var(--color-bg-secondary)', border: '1px solid var(--color-border)', borderRadius: 4,
-            padding: 20, maxWidth: 400, maxHeight: '80vh', overflowY: 'auto',
+            ...modalShell(),
+            maxWidth: 400, minWidth: 320, maxHeight: '80vh',
+            display: 'flex', flexDirection: 'column',
           }}
         >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+          <div style={modalHairline} />
+          <div style={modalHeader()}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <h3 style={{ color: 'var(--color-text-primary)', fontSize: 14, margin: 0 }}>Sessões</h3>
             <button
               onClick={() => setShowModal(false)}
@@ -445,6 +442,8 @@ export function StartPauseButton({ questId, onSessionChange, onUpdate, status, o
               ×
             </button>
           </div>
+          </div>
+          <div style={{ ...modalBody(), overflowY: 'auto', flex: 1 }}>
 
           {sessions.length === 0 ? (
             <p style={{ color: 'var(--color-text-tertiary)', fontSize: 12 }}>Nenhuma sessão iniciada</p>
@@ -483,27 +482,22 @@ export function StartPauseButton({ questId, onSessionChange, onUpdate, status, o
               </div>
             </div>
           )}
+          </div>
         </div>
       </div>
     )}
 
     {showDeleteConfirm && (
-      <div
-        onClick={() => setShowDeleteConfirm(false)}
-        style={{
-          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-          background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center',
-          zIndex: 1001,
-        }}
-      >
+      <div onClick={() => setShowDeleteConfirm(false)} style={{ ...modalOverlay(), zIndex: 1001 }}>
         <div
           onClick={e => e.stopPropagation()}
-          style={{
-            background: 'var(--color-bg-secondary)', border: '1px solid var(--color-border)', borderRadius: 4,
-            padding: 24, maxWidth: 300,
-          }}
+          style={{ ...modalShell(), maxWidth: 320, minWidth: 280 }}
         >
-          <h3 style={{ color: 'var(--color-text-primary)', fontSize: 14, margin: '0 0 16px 0' }}>Excluir quest?</h3>
+          <div style={modalHairline} />
+          <div style={modalHeader()}>
+          <h3 style={{ color: 'var(--color-text-primary)', fontSize: 14, margin: 0 }}>Excluir quest?</h3>
+          </div>
+          <div style={modalBody()}>
           <p style={{ color: 'var(--color-text-tertiary)', fontSize: 12, margin: '0 0 20px 0' }}>
             Tem certeza que deseja excluir esta quest? Esta ação não pode ser desfeita.
           </p>
@@ -542,27 +536,22 @@ export function StartPauseButton({ questId, onSessionChange, onUpdate, status, o
               Sim
             </button>
           </div>
+          </div>
         </div>
       </div>
     )}
 
     {conflictTitle && (
-      <div
-        onClick={() => setConflictTitle(null)}
-        style={{
-          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-          background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center',
-          zIndex: 1002,
-        }}
-      >
+      <div onClick={() => setConflictTitle(null)} style={{ ...modalOverlay(), zIndex: 1002 }}>
         <div
           onClick={e => e.stopPropagation()}
-          style={{
-            background: 'var(--color-bg-secondary)', border: '1px solid var(--color-border)', borderRadius: 4,
-            padding: 24, maxWidth: 320,
-          }}
+          style={{ ...modalShell(), maxWidth: 340, minWidth: 280 }}
         >
-          <h3 style={{ color: 'var(--color-accent-vivid)', fontSize: 14, margin: '0 0 16px 0' }}>Quest em andamento</h3>
+          <div style={modalHairline} />
+          <div style={modalHeader()}>
+          <h3 style={{ color: 'var(--color-accent-vivid)', fontSize: 14, margin: 0 }}>Quest em andamento</h3>
+          </div>
+          <div style={modalBody()}>
           <p style={{ color: 'var(--color-text-primary)', fontSize: 12, margin: '0 0 20px 0', lineHeight: 1.6 }}>
             Finalize <strong>"{conflictTitle}"</strong> antes de iniciar uma nova quest.
           </p>
@@ -579,6 +568,7 @@ export function StartPauseButton({ questId, onSessionChange, onUpdate, status, o
             >
               OK
             </button>
+          </div>
           </div>
         </div>
       </div>

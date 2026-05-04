@@ -18,6 +18,11 @@ import { Label } from './ui/Label'
 import { PrioritySelect } from './PrioritySelect'
 import { StatusDropdown } from './StatusDropdown'
 import { BlockEditor, isBlockDocEmpty } from './BlockEditor'
+import { Card } from './ui/Primitives'
+import {
+  modalOverlay as sharedModalOverlay,
+  modalShell, modalHairline, modalHeader, modalBody,
+} from '../pages/finance/components/styleHelpers'
 
 type Deliverable = {
   id: string
@@ -410,10 +415,27 @@ export function QuestDetailPanel({
   const [editingField, setEditingField] = useState<string | null>(null)
 
   return (
-    <div>
+    <Card padding="none" style={{
+      animation: 'hq-fade-up var(--motion-base) var(--ease-emphasis) both',
+    }}>
+      {/* Hairline accent — linha sutil oxblood no topo */}
+      <div style={{
+        height: 1,
+        background: 'linear-gradient(90deg, transparent, var(--color-accent-primary), transparent)',
+        opacity: 0.5,
+      }} />
+      {/* Header com gradient sutil — fechar + título do projeto */}
+      <div style={{
+        padding: 'var(--space-5) var(--space-6) var(--space-4)',
+        background: `
+          radial-gradient(ellipse 100% 80% at 0% 0%, rgba(159, 18, 57, 0.06), transparent 60%),
+          linear-gradient(180deg, rgba(236, 232, 227, 0.02), transparent)
+        `,
+        borderBottom: '1px solid var(--color-divider)',
+      }}>
       <button onClick={onClose} style={{
         background: 'none', border: '1px solid transparent', cursor: 'pointer',
-        color: 'var(--color-text-tertiary)', fontSize: 10, marginBottom: 28,
+        color: 'var(--color-text-tertiary)', fontSize: 10, marginBottom: 20,
         textTransform: 'uppercase', letterSpacing: '0.1em',
         transition: 'all 0.2s', padding: '6px 8px', borderRadius: 4,
       }}
@@ -429,7 +451,7 @@ export function QuestDetailPanel({
         ✕ fechar
       </button>
 
-      <div style={{ marginBottom: 16 }}>
+      <div style={{ marginBottom: 0 }}>
         <InlineText
           value={project.title}
           onSave={v => onProjectUpdate(project.id, { title: v })}
@@ -504,6 +526,8 @@ export function QuestDetailPanel({
           </div>
         )}
       </div>
+      </div>
+      <div style={{ padding: 'var(--space-5) var(--space-6)' }}>
 
       {/* Hub Finance — bloco financeiro do projeto. Mostrado pra área
           'freelas' ou quando valor_acordado já foi definido (não atrapalha
@@ -1248,11 +1272,12 @@ export function QuestDetailPanel({
       </div>
 
       {areaQuestCount > 0 && (
-        <div style={{ marginTop: 20, paddingTop: 20, borderTop: '1px solid var(--color-border)', fontSize: 11, color: 'var(--color-text-tertiary)' }}>
+        <div style={{ marginTop: 20, paddingTop: 20, borderTop: '1px solid var(--color-divider)', fontSize: 11, color: 'var(--color-text-tertiary)' }}>
           {areaQuestCount} quest{areaQuestCount !== 1 ? 's' : ''} ativa{areaQuestCount !== 1 ? 's' : ''} neste projeto
         </div>
       )}
-    </div>
+      </div>
+    </Card>
   )
 }
 
@@ -1766,14 +1791,18 @@ function ParcelaModal({ parcela, projectId, onClose, onSaved, onDeleted }: {
   }
 
   return (
-    <div onClick={onClose} style={modalOverlay()}>
+    <div onClick={onClose} style={{ ...sharedModalOverlay(), zIndex: 100 }}>
       <div onClick={e => e.stopPropagation()} style={{
-        ...modalBox(),
+        ...modalShell(),
         minWidth: 380, maxWidth: 460,
       }}>
-        <div style={modalLabel()}>
-          {isNew ? 'Nova parcela' : `Editar parcela #${parcela!.numero}`}
+        <div style={modalHairline} />
+        <div style={modalHeader()}>
+          <div style={{ ...modalLabel(), marginBottom: 0 }}>
+            {isNew ? 'Nova parcela' : `Editar parcela #${parcela!.numero}`}
+          </div>
         </div>
+        <div style={modalBody()}>
         <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
             <div>
@@ -1842,6 +1871,7 @@ function ParcelaModal({ parcela, projectId, onClose, onSaved, onDeleted }: {
             </div>
           </div>
         </form>
+        </div>
       </div>
     </div>
   )
@@ -1869,11 +1899,15 @@ function TemplateModal({ currentTemplate, onClose, onApply }: {
   }
 
   return (
-    <div onClick={onClose} style={modalOverlay()}>
+    <div onClick={onClose} style={{ ...sharedModalOverlay(), zIndex: 100 }}>
       <div onClick={e => e.stopPropagation()} style={{
-        ...modalBox(), minWidth: 420, maxWidth: 520,
+        ...modalShell(), minWidth: 420, maxWidth: 520,
       }}>
-        <div style={modalLabel()}>Aplicar template de parcelas</div>
+        <div style={modalHairline} />
+        <div style={modalHeader()}>
+          <div style={{ ...modalLabel(), marginBottom: 0 }}>Aplicar template de parcelas</div>
+        </div>
+        <div style={modalBody()}>
         <div style={{
           fontSize: 11, color: 'var(--color-text-muted)', marginBottom: 14, lineHeight: 1.5,
         }}>
@@ -1939,6 +1973,7 @@ function TemplateModal({ currentTemplate, onClose, onApply }: {
             </button>
           )}
         </div>
+        </div>
       </div>
     </div>
   )
@@ -1962,22 +1997,6 @@ function ghostButtonMini(): React.CSSProperties {
     padding: '5px 10px', borderRadius: 3,
     fontSize: 9, fontWeight: 600,
     letterSpacing: '0.08em', textTransform: 'uppercase',
-  }
-}
-
-function modalOverlay(): React.CSSProperties {
-  return {
-    position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)',
-    display: 'flex', alignItems: 'center', justifyContent: 'center',
-    zIndex: 100,
-  }
-}
-
-function modalBox(): React.CSSProperties {
-  return {
-    background: 'var(--color-bg-primary)',
-    border: '1px solid var(--color-border)',
-    borderRadius: 4, padding: 24,
   }
 }
 

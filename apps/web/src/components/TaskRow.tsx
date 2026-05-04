@@ -76,11 +76,14 @@ export function TaskRow({ task, onToggle, onUpdate, onDelete, activeSession, onS
 
   return (
     <div
-      onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => setHover(false)}
+      onMouseEnter={(e) => { setHover(true); e.currentTarget.style.background = 'var(--glass-bg-hover)' }}
+      onMouseLeave={(e) => { setHover(false); e.currentTarget.style.background = 'transparent' }}
       style={{
-        padding: '10px 0', borderBottom: '1px solid var(--color-border)',
+        padding: '10px var(--space-3)',
+        borderBottom: '1px solid var(--color-divider)',
+        borderRadius: 'var(--radius-sm)',
         display: 'flex', alignItems: 'center', gap: 12,
+        transition: 'background var(--motion-fast) var(--ease-smooth)',
       }}
     >
       <button

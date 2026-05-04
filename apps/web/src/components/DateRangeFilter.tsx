@@ -64,14 +64,15 @@ export function DateRangeFilter({ value, onChange }: {
         <ChevronDown size={10} strokeWidth={2} />
       </button>
       {open && (
-        <div style={{
-          position: 'absolute', top: '100%', left: 0, marginTop: 4,
-          background: 'var(--color-bg-secondary)',
-          border: '1px solid var(--color-border)',
-          borderRadius: 3, padding: '4px 0',
-          zIndex: 100, minWidth: 200,
-          boxShadow: '0 8px 24px rgba(0, 0, 0, 0.5)',
-        }}>
+        <div
+          className="hq-glass-elevated hq-animate-fade-up"
+          style={{
+            position: 'absolute', top: '100%', left: 0, marginTop: 6,
+            padding: 'var(--space-1) 0',
+            zIndex: 100, minWidth: 200,
+            boxShadow: 'var(--shadow-lg)',
+          }}
+        >
           {presets.map(p => (
             <button
               key={p}
@@ -90,7 +91,7 @@ export function DateRangeFilter({ value, onChange }: {
                 display: 'flex', alignItems: 'center', gap: 8,
                 transition: 'background 0.1s',
               }}
-              onMouseEnter={e => (e.currentTarget.style.background = 'var(--color-bg-tertiary)')}
+              onMouseEnter={e => (e.currentTarget.style.background = 'var(--glass-bg-hover)')}
               onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
             >
               <span style={{ width: 12, display: 'inline-flex', justifyContent: 'center' }}>

@@ -42,6 +42,9 @@ token.json
 # Vite cache
 .vite/
 
+# Claude Code runtime lock files
+.claude/scheduled_tasks.lock
+
 # Personal avatar images served locally from public/ — não vão pro repo público
 apps/web/public/foto.jpg
 apps/web/public/breno-perfil.jpg

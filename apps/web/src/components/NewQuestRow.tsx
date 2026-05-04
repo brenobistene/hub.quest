@@ -110,7 +110,11 @@ export function NewQuestRow({ areaSlug, areas, projects, onCreated }: {
   )
 
   return (
-    <div style={{ padding: '14px 0', borderBottom: '1px solid var(--color-border)' }}>
+    <div style={{
+      padding: '14px var(--space-3)',
+      borderBottom: '1px solid var(--color-divider)',
+      borderRadius: 'var(--radius-sm)',
+    }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
         <div style={{ width: 7, height: 7, borderRadius: '50%', flexShrink: 0, background: 'var(--color-border)' }} />
         <input

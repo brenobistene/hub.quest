@@ -14,7 +14,7 @@
  */
 import { useMemo, useState } from 'react'
 import {
-  ChevronLeft, ChevronRight, Download, Filter, Link2, MoreVertical, Pencil, Plus,
+  Download, Filter, Link2, MoreVertical, Pencil, Plus,
   Search, Sparkles, Trash2, X,
 } from 'lucide-react'
 import { useHubFinance } from './HubFinanceContext'
@@ -28,15 +28,13 @@ import {
 import { CategorizeModal } from './components/CategorizeModal'
 import { TransactionEditModal } from './components/TransactionEditModal'
 import { NewTransactionModal } from './components/NewTransactionModal'
-
-const MONTH_NAMES_PT = [
-  'janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho',
-  'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro',
-]
+import { MonthPicker } from './components/MonthPicker'
+import { parseTxDescricao } from './components/parseTxDescricao'
+import { Card } from '../../components/ui/Primitives'
 
 export function LancamentosPage() {
   const {
-    transactions, accounts, categories, debts, monthlySummary,
+    transactions, accounts, categories, debts, invoices, monthlySummary,
     selectedMonth, setSelectedMonth, refreshAll,
   } = useHubFinance()
 
@@ -55,17 +53,28 @@ export function LancamentosPage() {
   const accountById = useMemo(() => new Map(accounts.map(a => [a.id, a])), [accounts])
   const catById = useMemo(() => new Map(categories.map(c => [c.id, c])), [categories])
 
+  // Parseia 1x cada descrição pra usar tanto na busca quanto no render — evita
+  // re-parse a cada render e garante que filtro bate no nome "limpo" também.
+  const parsed = useMemo(
+    () => new Map(transactions.map(tx => [tx.id, parseTxDescricao(tx.descricao)])),
+    [transactions],
+  )
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
     return transactions.filter(tx => {
-      if (q && !tx.descricao.toLowerCase().includes(q)) return false
+      if (q) {
+        const p = parsed.get(tx.id)
+        const haystack = `${tx.descricao} ${p?.nome ?? ''} ${p?.doc ?? ''}`.toLowerCase()
+        if (!haystack.includes(q)) return false
+      }
       if (filterCatId && tx.categoria_id !== filterCatId) return false
       if (filterContaId && tx.conta_id !== filterContaId) return false
       if (filterTipo === 'entrada' && tx.valor < 0) return false
       if (filterTipo === 'saida' && tx.valor >= 0) return false
       return true
     })
-  }, [transactions, search, filterCatId, filterContaId, filterTipo])
+  }, [transactions, search, filterCatId, filterContaId, filterTipo, parsed])
 
   const hasFilters = !!(search || filterCatId || filterContaId || filterTipo !== 'all')
 
@@ -85,25 +94,35 @@ export function LancamentosPage() {
     }
   }
 
-  const monthLabel = `${MONTH_NAMES_PT[selectedMonth.month - 1]} ${selectedMonth.year}`
-
   // Default da data nova transação = primeiro dia do mês selecionado.
   // Facilita lançar retroativamente quando o user navega meses passados.
   const defaultDate = `${selectedMonth.year}-${String(selectedMonth.month).padStart(2, '0')}-01`
 
   return (
-    <div style={{
-      background: 'var(--color-bg-secondary)',
-      border: '1px solid var(--color-border)',
-      borderRadius: 4,
+    <Card padding="none" style={{
+      animation: 'hq-fade-up var(--motion-base) var(--ease-emphasis) both',
       display: 'flex', flexDirection: 'column',
       minHeight: 'calc(100vh - 200px)',
+      // position+zIndex pra MonthPicker dropdown ficar acima do que tem
+      // depois dele na página (mesmo problema do Compromissos).
+      position: 'relative',
+      zIndex: 20,
     }}>
-      {/* Header */}
+      {/* Hairline accent — linha sutil oxblood no topo */}
+      <div style={{
+        height: 1,
+        background: 'linear-gradient(90deg, transparent, var(--color-accent-primary), transparent)',
+        opacity: 0.5,
+      }} />
+      {/* Header com gradient sutil */}
       <div style={{
         display: 'grid', gridTemplateColumns: '1fr auto 1fr', alignItems: 'center',
-        padding: '14px 18px',
-        borderBottom: '1px solid var(--color-border)',
+        padding: 'var(--space-4) var(--space-6)',
+        background: `
+          radial-gradient(ellipse 100% 80% at 0% 0%, rgba(159, 18, 57, 0.06), transparent 60%),
+          linear-gradient(180deg, rgba(236, 232, 227, 0.02), transparent)
+        `,
+        borderBottom: '1px solid var(--color-divider)',
       }}>
         <div style={{
           fontSize: 14, fontWeight: 700, color: 'var(--color-text-primary)',
@@ -111,32 +130,12 @@ export function LancamentosPage() {
           Lançamentos
         </div>
 
-        {/* Seletor de mês central */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <button
-            onClick={() => setSelectedMonth(shiftMonth(selectedMonth, -1))}
-            style={iconBtnStyle}
-            title="mês anterior"
-          >
-            <ChevronLeft size={14} strokeWidth={2} />
-          </button>
-          <span style={{
-            fontSize: 12, fontWeight: 600,
-            color: 'var(--color-text-primary)',
-            minWidth: 130, textAlign: 'center',
-            textTransform: 'capitalize',
-            fontFamily: 'var(--font-mono)',
-          }}>
-            {monthLabel}
-          </span>
-          <button
-            onClick={() => setSelectedMonth(shiftMonth(selectedMonth, 1))}
-            style={iconBtnStyle}
-            title="próximo mês"
-          >
-            <ChevronRight size={14} strokeWidth={2} />
-          </button>
-        </div>
+        {/* Seletor de mês — MonthPicker compartilhado (atalhos: Hoje, Mês
+            anterior, Mesmo mês ano passado, grid 12 meses navegando ano). */}
+        <MonthPicker
+          selectedMonth={selectedMonth}
+          onChange={setSelectedMonth}
+        />
 
         {/* Menu (placeholder por enquanto) */}
         <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
@@ -242,33 +241,93 @@ export function LancamentosPage() {
             sub="Ajuste a busca ou limpe os filtros."
           />
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            {filtered.map(tx => {
+          <div className="hq-stagger" style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {/* Header de colunas — guia visual da estrutura tabular.
+                Bordas transparentes pra reservar o mesmo espaço que cada linha
+                de transação tem (border 1px + borderLeft 3px do tipo), senão
+                o header fica 3-4px desalinhado das colunas. */}
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: TX_GRID,
+              gap: TX_GAP, alignItems: 'center',
+              padding: '4px 12px 6px',
+              fontSize: 9, color: 'var(--color-text-tertiary)',
+              textTransform: 'uppercase', letterSpacing: '0.1em',
+              border: '1px solid transparent',
+              borderLeft: '3px solid transparent',
+              borderBottom: '1px solid var(--color-divider)',
+              marginBottom: 4,
+            }}>
+              <span>data</span>
+              <span>tipo</span>
+              <span>nome</span>
+              <span>CPF/CNPJ</span>
+              <span>categoria</span>
+              <span>conta</span>
+              <span>valor</span>
+            </div>
+
+            {filtered.map((tx, i) => {
               const isEntry = tx.valor >= 0
               const cat = tx.categoria_id ? catById.get(tx.categoria_id) : null
               const acc = accountById.get(tx.conta_id)
+              const p = parsed.get(tx.id) ?? { tipo: null, nome: tx.descricao, doc: null }
               return (
-                <div key={tx.id} style={{
-                  display: 'grid',
-                  gridTemplateColumns: '70px 1fr 140px 130px auto',
-                  gap: 12, alignItems: 'center',
-                  padding: '10px 12px',
-                  background: 'var(--color-bg-primary)',
-                  border: '1px solid var(--color-border)',
-                  borderLeft: `3px solid ${isEntry ? 'var(--color-success)' : 'var(--color-accent-primary)'}`,
-                  borderRadius: 3,
-                }}>
+                <div
+                  key={tx.id}
+                  className="hq-animate-fade-up"
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: TX_GRID,
+                    gap: TX_GAP, alignItems: 'center',
+                    padding: '10px 12px',
+                    background: 'var(--color-bg-primary)',
+                    border: '1px solid var(--color-border)',
+                    borderLeft: `3px solid ${isEntry ? 'var(--color-success)' : 'var(--color-accent-primary)'}`,
+                    borderRadius: 'var(--radius-sm)',
+                    transition: 'border-color var(--motion-fast) var(--ease-smooth), background var(--motion-fast) var(--ease-smooth)',
+                    ['--stagger-i' as any]: Math.min(i, 20),  // cap stagger pra não criar delay enorme em listas grandes
+                  }}
+                  onMouseEnter={e => {
+                    e.currentTarget.style.borderColor = 'var(--color-border-strong)'
+                    e.currentTarget.style.background = 'var(--glass-bg-hover)'
+                  }}
+                  onMouseLeave={e => {
+                    e.currentTarget.style.borderColor = 'var(--color-border)'
+                    e.currentTarget.style.background = 'var(--color-bg-primary)'
+                  }}
+                >
                   <span style={{
                     fontSize: 10, color: 'var(--color-text-tertiary)',
                     fontFamily: 'var(--font-mono)',
                   }}>
                     {formatDate(tx.data)}
                   </span>
-                  <span style={{
-                    fontSize: 13, color: 'var(--color-text-primary)',
-                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                    display: 'flex', alignItems: 'center', gap: 6,
-                  }}>
+                  {/* Tipo como texto puro (sem badge) — alinha perfeito com
+                      o header da coluna, que também é só texto. */}
+                  {p.tipo ? (
+                    <span style={{
+                      fontSize: 9, fontWeight: 700,
+                      color: 'var(--color-accent-light)',
+                      letterSpacing: '0.1em',
+                      textTransform: 'uppercase',
+                      whiteSpace: 'nowrap',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                    }}>
+                      {p.tipo}
+                    </span>
+                  ) : (
+                    <span style={{ fontSize: 10, color: 'var(--color-text-muted)' }}>—</span>
+                  )}
+                  <span
+                    title={tx.descricao}
+                    style={{
+                      fontSize: 13, color: 'var(--color-text-primary)',
+                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                      display: 'flex', alignItems: 'center', gap: 6,
+                    }}
+                  >
                     {(tx.parcela_id || tx.divida_id || tx.fatura_id) && (
                       <span
                         title={
@@ -286,8 +345,15 @@ export function LancamentosPage() {
                       </span>
                     )}
                     <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {tx.descricao}
+                      {p.nome || tx.descricao}
                     </span>
+                  </span>
+                  <span style={{
+                    fontSize: 10, color: 'var(--color-text-muted)',
+                    fontFamily: 'var(--font-mono)',
+                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                  }}>
+                    {p.doc ?? '—'}
                   </span>
                   {cat ? (
                     <span
@@ -297,6 +363,7 @@ export function LancamentosPage() {
                         fontSize: 10, color: 'var(--color-text-tertiary)',
                         textTransform: 'uppercase', letterSpacing: '0.05em',
                         cursor: 'pointer', transition: 'color 0.15s',
+                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                       }}
                       onMouseEnter={e => { e.currentTarget.style.color = 'var(--color-accent-light)' }}
                       onMouseLeave={e => { e.currentTarget.style.color = 'var(--color-text-tertiary)' }}
@@ -308,27 +375,27 @@ export function LancamentosPage() {
                       onClick={() => setCategorizingTx(tx)}
                       title="categorizar"
                       style={{
-                        background: 'none', border: '1px dashed var(--color-border)',
-                        cursor: 'pointer', borderRadius: 3,
+                        background: 'none', border: 'none', padding: 0,
+                        cursor: 'pointer',
                         color: 'var(--color-text-muted)',
-                        padding: '3px 8px', fontSize: 9,
-                        letterSpacing: '0.1em', textTransform: 'uppercase',
+                        fontSize: 10,
+                        letterSpacing: '0.05em', textTransform: 'uppercase',
                         display: 'inline-flex', alignItems: 'center', gap: 4,
+                        justifySelf: 'start',
+                        fontFamily: 'inherit',
+                        transition: 'color 0.15s',
                       }}
-                      onMouseEnter={e => {
-                        e.currentTarget.style.color = 'var(--color-accent-light)'
-                        e.currentTarget.style.borderColor = 'var(--color-accent-light)'
-                      }}
-                      onMouseLeave={e => {
-                        e.currentTarget.style.color = 'var(--color-text-muted)'
-                        e.currentTarget.style.borderColor = 'var(--color-border)'
-                      }}
+                      onMouseEnter={e => { e.currentTarget.style.color = 'var(--color-accent-light)' }}
+                      onMouseLeave={e => { e.currentTarget.style.color = 'var(--color-text-muted)' }}
                     >
                       <Sparkles size={9} strokeWidth={2} />
                       categorizar
                     </button>
                   )}
-                  <span style={{ fontSize: 10, color: 'var(--color-text-muted)' }}>
+                  <span style={{
+                    fontSize: 10, color: 'var(--color-text-muted)',
+                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                  }}>
                     {acc?.nome ?? '—'}
                   </span>
                   <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -339,20 +406,24 @@ export function LancamentosPage() {
                     }}>
                       {isEntry ? '+' : ''}{formatBRL(tx.valor)}
                     </span>
-                    <button
-                      onClick={() => setEditingTx(tx)}
-                      title="editar"
-                      style={iconBtnStyle}
-                    >
-                      <Pencil size={11} strokeWidth={1.8} />
-                    </button>
-                    <button
-                      onClick={() => handleDelete(tx)}
-                      title="deletar"
-                      style={iconBtnStyle}
-                    >
-                      <Trash2 size={11} strokeWidth={1.8} />
-                    </button>
+                    {/* marginLeft: auto empurra o grupo de ações pra direita
+                        mantendo o valor colado à esquerda. */}
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginLeft: 'auto' }}>
+                      <button
+                        onClick={() => setEditingTx(tx)}
+                        title="editar"
+                        style={iconBtnStyle}
+                      >
+                        <Pencil size={11} strokeWidth={1.8} />
+                      </button>
+                      <button
+                        onClick={() => handleDelete(tx)}
+                        title="deletar"
+                        style={iconBtnStyle}
+                      >
+                        <Trash2 size={11} strokeWidth={1.8} />
+                      </button>
+                    </span>
                   </span>
                 </div>
               )
@@ -365,10 +436,11 @@ export function LancamentosPage() {
       <div style={{
         display: 'grid',
         gridTemplateColumns: 'auto 1fr auto auto',
-        gap: 16, alignItems: 'center',
-        padding: '14px 18px',
-        borderTop: '1px solid var(--color-border)',
-        background: 'var(--color-bg-primary)',
+        gap: 'var(--space-4)', alignItems: 'center',
+        padding: 'var(--space-4) var(--space-6)',
+        borderTop: '1px solid var(--color-divider)',
+        background: 'var(--glass-bg)',
+        backdropFilter: 'var(--glass-blur)',
       }}>
         <a
           href={buildFinExportTransactionsUrl({
@@ -438,6 +510,7 @@ export function LancamentosPage() {
           tx={categorizingTx}
           categories={categories}
           debts={debts}
+          accounts={accounts}
           onClose={() => setCategorizingTx(null)}
           onSaved={() => { setCategorizingTx(null); refreshAll() }}
         />
@@ -448,6 +521,7 @@ export function LancamentosPage() {
           accounts={accounts}
           categories={categories}
           debts={debts}
+          invoices={invoices}
           onClose={() => setEditingTx(null)}
           onSaved={() => { setEditingTx(null); refreshAll() }}
         />
@@ -461,7 +535,7 @@ export function LancamentosPage() {
           onCreated={() => { setShowNewModal(false); refreshAll() }}
         />
       )}
-    </div>
+    </Card>
   )
 }
 
@@ -504,10 +578,7 @@ function FooterStat({ label, value, color, bold }: {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────
 
-function shiftMonth(current: { year: number; month: number }, delta: number) {
-  const d = new Date(current.year, current.month - 1 + delta, 1)
-  return { year: d.getFullYear(), month: d.getMonth() + 1 }
-}
+// `shiftMonth` foi movido pro componente MonthPicker compartilhado.
 
 const iconBtnStyle: React.CSSProperties = {
   background: 'none', border: 'none', cursor: 'pointer',
@@ -515,3 +586,12 @@ const iconBtnStyle: React.CSSProperties = {
   display: 'inline-flex', alignItems: 'center',
   borderRadius: 3, transition: 'color 0.15s',
 }
+
+// Layout tabular dos lançamentos: data | tipo | nome | doc | categoria | conta | valor+ações.
+// Compartilhado entre o header e cada linha pra alinhar perfeitamente.
+// Larguras enxutas: data=DD/MM (5ch mono), tipo cabe "PIX RECEBIDO" (12ch),
+// doc cabe CNPJ "00.000.000/0000-00" (18ch mono). Última coluna PRECISA ser
+// fixa (não `auto`), senão valor+pencil+trash ocupa muito mais que o
+// header "valor" e isso encolhe o 1fr da linha — desalinha tudo depois do nome.
+const TX_GRID = '52px 88px minmax(0,1fr) 120px 100px 90px 170px'
+const TX_GAP = 8

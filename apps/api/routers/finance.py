@@ -33,7 +33,14 @@ from models.finance import (
     ClientUpdate,
     DebtCreate,
     DebtOut,
+    DebtParcelaComplete,
+    DebtParcelaCreate,
+    DebtParcelaGenerate,
+    DebtParcelaOut,
+    DebtParcelaUpdate,
     DebtUpdate,
+    MonthCommitment,
+    MonthCommitmentsResponse,
     ImportSummary,
     InvoiceCreate,
     InvoiceOut,
@@ -42,6 +49,10 @@ from models.finance import (
     ParcelaCreate,
     ParcelaOut,
     ParcelaUpdate,
+    RecurringBillCreate,
+    RecurringBillOut,
+    RecurringBillStatusMonth,
+    RecurringBillUpdate,
     TransactionCreate,
     TransactionOut,
     TransactionUpdate,
@@ -182,7 +193,7 @@ def account_usage(account_id: str):
 
 # ─── Categories ────────────────────────────────────────────────────────────
 
-CATEGORY_COLUMNS = "id, nome, tipo, cor, categoria_pai_id, sort_order, limite_mensal"
+CATEGORY_COLUMNS = "id, nome, tipo, cor, categoria_pai_id, sort_order"
 
 
 @router.get("/api/finance/categories", response_model=list[CategoryOut])
@@ -210,10 +221,9 @@ def create_category(body: CategoryCreate):
         ).fetchone()
         sort_order = (max_sort["m"] or 0) + 1
         conn.execute(
-            "INSERT INTO fin_category(id, nome, tipo, cor, categoria_pai_id, sort_order, limite_mensal) "
-            "VALUES(?,?,?,?,?,?,?)",
-            (cat_id, nome, body.tipo, body.cor, body.categoria_pai_id, sort_order,
-             body.limite_mensal),
+            "INSERT INTO fin_category(id, nome, tipo, cor, categoria_pai_id, sort_order) "
+            "VALUES(?,?,?,?,?,?)",
+            (cat_id, nome, body.tipo, body.cor, body.categoria_pai_id, sort_order),
         )
         conn.commit()
         row = conn.execute(
@@ -259,7 +269,8 @@ def delete_category(category_id: str):
 
 TRANSACTION_COLUMNS = (
     "id, data, valor, descricao, conta_id, categoria_id, origem, notas, "
-    "nubank_id, divida_id, parcela_id, fatura_id, created_at, updated_at"
+    "nubank_id, divida_id, parcela_id, fatura_id, pagamento_fatura_id, "
+    "created_at, updated_at"
 )
 
 
@@ -352,7 +363,8 @@ def update_transaction(tx_id: str, body: TransactionUpdate):
         raise HTTPException(400, detail="Nada a atualizar")
     with get_conn() as conn:
         prev = conn.execute(
-            "SELECT divida_id, parcela_id FROM fin_transaction WHERE id = ?", (tx_id,)
+            "SELECT divida_id, parcela_id, pagamento_fatura_id, data "
+            "FROM fin_transaction WHERE id = ?", (tx_id,)
         ).fetchone()
         if not prev:
             raise HTTPException(404, detail="Transação não encontrada")
@@ -376,6 +388,18 @@ def update_transaction(tx_id: str, body: TransactionUpdate):
             "SELECT 1 FROM fin_invoice WHERE id = ?", (fields["fatura_id"],)
         ).fetchone():
             raise HTTPException(422, detail="fatura_id não existe")
+        # Validar pagamento_fatura_id (link "esta tx é o pagamento da fatura X")
+        if "pagamento_fatura_id" in fields and fields["pagamento_fatura_id"]:
+            inv = conn.execute(
+                "SELECT id, status FROM fin_invoice WHERE id = ?",
+                (fields["pagamento_fatura_id"],)
+            ).fetchone()
+            if not inv:
+                raise HTTPException(422, detail="pagamento_fatura_id não existe")
+            # Permite re-link se a fatura já tava paga POR ESTA tx (idempotente);
+            # rejeita se outra tx já pagou.
+            if inv["status"] == "paga" and prev["pagamento_fatura_id"] != inv["id"]:
+                raise HTTPException(409, detail="Fatura já está paga por outra transação")
         fields["updated_at"] = utcnow_iso_z()
         set_clause = ", ".join(f"{k} = ?" for k in fields)
         conn.execute(
@@ -401,6 +425,28 @@ def update_transaction(tx_id: str, body: TransactionUpdate):
             affected_parcelas.add(new_parcela)
         for pid in affected_parcelas:
             _maybe_update_parcela_status(conn, pid)
+        # Sincroniza status das faturas pagas/des-pagas via pagamento_fatura_id.
+        # - Linkando: marca fatura como `paga` + data_pagamento = data da tx
+        # - Deslinkando: reverte fatura pra 'fechada' + clear data_pagamento
+        if "pagamento_fatura_id" in fields:
+            new_pag = fields["pagamento_fatura_id"]
+            old_pag = prev["pagamento_fatura_id"]
+            new_data = fields.get("data", prev["data"])
+            now_iso = utcnow_iso_z()
+            # Desvincula a fatura anterior se mudou
+            if old_pag and old_pag != new_pag:
+                conn.execute(
+                    "UPDATE fin_invoice SET status = 'fechada', data_pagamento = NULL, "
+                    "updated_at = ? WHERE id = ?",
+                    (now_iso, old_pag),
+                )
+            # Marca a nova fatura como paga
+            if new_pag:
+                conn.execute(
+                    "UPDATE fin_invoice SET status = 'paga', data_pagamento = ?, "
+                    "updated_at = ? WHERE id = ?",
+                    (new_data, now_iso, new_pag),
+                )
         conn.commit()
         row = conn.execute(
             f"SELECT {TRANSACTION_COLUMNS} FROM fin_transaction WHERE id = ?",
@@ -412,12 +458,14 @@ def update_transaction(tx_id: str, body: TransactionUpdate):
 @router.delete("/api/finance/transactions/{tx_id}", status_code=204)
 def delete_transaction(tx_id: str):
     with get_conn() as conn:
-        # Pega divida_id e parcela_id antes de deletar pra recalcular status.
+        # Pega FKs antes de deletar pra recalcular/reverter o que depende.
         row = conn.execute(
-            "SELECT divida_id, parcela_id FROM fin_transaction WHERE id = ?", (tx_id,)
+            "SELECT divida_id, parcela_id, pagamento_fatura_id "
+            "FROM fin_transaction WHERE id = ?", (tx_id,)
         ).fetchone()
         prev_divida = row["divida_id"] if row else None
         prev_parcela = row["parcela_id"] if row else None
+        prev_pag_fatura = row["pagamento_fatura_id"] if row else None
         conn.execute("DELETE FROM fin_transaction WHERE id = ?", (tx_id,))
         if prev_divida:
             # Saldo voltou a subir — se era 'paid_off', volta pra 'active'.
@@ -433,6 +481,13 @@ def delete_transaction(tx_id: str):
                     )
         if prev_parcela:
             _maybe_update_parcela_status(conn, prev_parcela)
+        # Reverte fatura desvinculada — perdeu sua tx de pagamento.
+        if prev_pag_fatura:
+            conn.execute(
+                "UPDATE fin_invoice SET status = 'fechada', data_pagamento = NULL, "
+                "updated_at = ? WHERE id = ?",
+                (utcnow_iso_z(), prev_pag_fatura),
+            )
         conn.commit()
     return None
 
@@ -1118,25 +1173,980 @@ def delete_debt(debt_id: str):
         # action). Fazemos manualmente: limpa vínculos antes.
         conn.execute("UPDATE fin_transaction SET divida_id = NULL WHERE divida_id = ?", (debt_id,))
         conn.execute("DELETE FROM fin_debt WHERE id = ?", (debt_id,))
+        # Parcelas têm CASCADE declarado, somem junto.
         conn.commit()
     return None
 
 
+# ─── Parcelas de Dívida (cronograma flexível com auto-balanço) ────────────
+
+DEBT_PARCELA_COLUMNS = (
+    "id, divida_id, numero, data_prevista, valor_planejado, "
+    "transacao_pagamento_id, notas"
+)
+
+
+def _enrich_debt_parcelas(conn, divida_id: str) -> list[dict]:
+    """Carrega parcelas + computa `valor_efetivo`, `is_auto`, `status`,
+    `valor_pago`, `data_pagamento`. Auto-balança: rateia o saldo restante
+    (total - sum(planejados fixos)) entre parcelas com valor_planejado=NULL.
+    """
+    from datetime import date as _date
+    debt = conn.execute(
+        "SELECT valor_total_original FROM fin_debt WHERE id = ?", (divida_id,)
+    ).fetchone()
+    if not debt:
+        return []
+    total_debt = float(debt["valor_total_original"])
+
+    rows = conn.execute(
+        f"SELECT {DEBT_PARCELA_COLUMNS} FROM fin_debt_parcela "
+        "WHERE divida_id = ? ORDER BY numero ASC",
+        (divida_id,),
+    ).fetchall()
+    if not rows:
+        return []
+    parcelas = [dict(r) for r in rows]
+
+    # Calcula rateio das auto. Soma os fixos (planejado != NULL).
+    fixed_sum = sum(float(p["valor_planejado"] or 0) for p in parcelas if p["valor_planejado"] is not None)
+    auto_count = sum(1 for p in parcelas if p["valor_planejado"] is None)
+    remaining = total_debt - fixed_sum
+    auto_value = remaining / auto_count if auto_count > 0 else 0.0
+    # Negativo possível: usuário fixou mais que o total. Mostra negativo
+    # pra ele ver que está superalocando — UI alerta.
+
+    today = _date.today().isoformat()
+    out: list[dict] = []
+    for p in parcelas:
+        is_auto = p["valor_planejado"] is None
+        valor_efetivo = float(p["valor_planejado"]) if not is_auto else auto_value
+
+        # Status: paga se tem transação; senão atrasada/pendente baseado em data
+        valor_pago = None
+        data_pagamento = None
+        status = "pendente"
+        tx_id = p["transacao_pagamento_id"]
+        if tx_id:
+            tx = conn.execute(
+                "SELECT valor, data FROM fin_transaction WHERE id = ?", (tx_id,)
+            ).fetchone()
+            if tx:
+                status = "paga"
+                valor_pago = abs(float(tx["valor"]))
+                data_pagamento = tx["data"]
+            else:
+                # Transação foi deletada — limpa vínculo orfão
+                conn.execute(
+                    "UPDATE fin_debt_parcela SET transacao_pagamento_id = NULL WHERE id = ?",
+                    (p["id"],),
+                )
+                conn.commit()
+        if status != "paga" and p["data_prevista"] and p["data_prevista"] < today:
+            status = "atrasada"
+
+        out.append({
+            **p,
+            "valor_efetivo": round(valor_efetivo, 2),
+            "is_auto": is_auto,
+            "status": status,
+            "valor_pago": valor_pago,
+            "data_pagamento": data_pagamento,
+        })
+    return out
+
+
+@router.get("/api/finance/debts/{debt_id}/parcelas", response_model=list[DebtParcelaOut])
+def list_debt_parcelas(debt_id: str):
+    with get_conn() as conn:
+        if not conn.execute(
+            "SELECT 1 FROM fin_debt WHERE id = ?", (debt_id,)
+        ).fetchone():
+            raise HTTPException(404, detail="Dívida não encontrada")
+        return _enrich_debt_parcelas(conn, debt_id)
+
+
+@router.post("/api/finance/debts/{debt_id}/parcelas", response_model=DebtParcelaOut, status_code=201)
+def create_debt_parcela(debt_id: str, body: DebtParcelaCreate):
+    """Cria uma parcela ao final do cronograma (numero = max(numero)+1)."""
+    with get_conn() as conn:
+        if not conn.execute(
+            "SELECT 1 FROM fin_debt WHERE id = ?", (debt_id,)
+        ).fetchone():
+            raise HTTPException(404, detail="Dívida não encontrada")
+        max_num = conn.execute(
+            "SELECT COALESCE(MAX(numero), 0) AS m FROM fin_debt_parcela WHERE divida_id = ?",
+            (debt_id,),
+        ).fetchone()["m"]
+        parcela_id = _new_id()
+        conn.execute(
+            "INSERT INTO fin_debt_parcela"
+            "(id, divida_id, numero, data_prevista, valor_planejado, notas) "
+            "VALUES(?,?,?,?,?,?)",
+            (parcela_id, debt_id, max_num + 1,
+             body.data_prevista, body.valor_planejado, body.notas),
+        )
+        conn.commit()
+        # Devolve com computed fields
+        all_p = _enrich_debt_parcelas(conn, debt_id)
+        for p in all_p:
+            if p["id"] == parcela_id:
+                return p
+    raise HTTPException(500, detail="Erro inesperado ao criar parcela")
+
+
+@router.post("/api/finance/debts/{debt_id}/parcelas/generate", status_code=204)
+def generate_debt_parcelas(debt_id: str, body: DebtParcelaGenerate):
+    """Gera N parcelas iniciais (modo uniforme = total/N, open = null)."""
+    if body.n_parcelas <= 0 or body.n_parcelas > 360:
+        raise HTTPException(400, detail="n_parcelas deve estar entre 1 e 360")
+    if body.modo not in ("uniforme", "open"):
+        raise HTTPException(400, detail="modo deve ser 'uniforme' ou 'open'")
+    with get_conn() as conn:
+        debt = conn.execute(
+            "SELECT valor_total_original FROM fin_debt WHERE id = ?", (debt_id,)
+        ).fetchone()
+        if not debt:
+            raise HTTPException(404, detail="Dívida não encontrada")
+        total = float(debt["valor_total_original"])
+        valor_each = round(total / body.n_parcelas, 2) if body.modo == "uniforme" else None
+        # Avança data de mês em mês a partir de body.data_inicio.
+        from datetime import date
+        try:
+            yy, mm, dd = (int(x) for x in body.data_inicio.split("-"))
+            base = date(yy, mm, dd)
+        except Exception:
+            raise HTTPException(400, detail="data_inicio inválida (use YYYY-MM-DD)")
+        # Acha o próximo numero pra continuar a sequência
+        max_num = conn.execute(
+            "SELECT COALESCE(MAX(numero), 0) AS m FROM fin_debt_parcela WHERE divida_id = ?",
+            (debt_id,),
+        ).fetchone()["m"]
+        for i in range(body.n_parcelas):
+            month = base.month + i
+            year = base.year + (month - 1) // 12
+            month = ((month - 1) % 12) + 1
+            # Ajusta dia se mês não tem (ex: dia 31 em fev → último dia)
+            from calendar import monthrange
+            last_day = monthrange(year, month)[1]
+            day = min(base.day, last_day)
+            data_iso = f"{year:04d}-{month:02d}-{day:02d}"
+            conn.execute(
+                "INSERT INTO fin_debt_parcela"
+                "(id, divida_id, numero, data_prevista, valor_planejado) "
+                "VALUES(?,?,?,?,?)",
+                (_new_id(), debt_id, max_num + 1 + i, data_iso, valor_each),
+            )
+        conn.commit()
+    return None
+
+
+@router.post("/api/finance/debts/{debt_id}/parcelas/complete", status_code=204)
+def complete_debt_parcelas(debt_id: str, body: DebtParcelaComplete):
+    """Cria N parcelas FIXAS com valor = (total − soma_fixas_atuais) / N.
+    Datas começam em `body.data_inicio` ou em (última_parcela.data_prevista
+    + 1 mês) se não dado. Não toca em parcelas existentes — apenas adiciona
+    no fim do cronograma. Se há parcelas auto pendentes, elas vão recalcular
+    naturalmente após a soma fixa aumentar.
+    """
+    if body.n_parcelas <= 0 or body.n_parcelas > 360:
+        raise HTTPException(400, detail="n_parcelas deve estar entre 1 e 360")
+    with get_conn() as conn:
+        debt = conn.execute(
+            "SELECT valor_total_original FROM fin_debt WHERE id = ?", (debt_id,)
+        ).fetchone()
+        if not debt:
+            raise HTTPException(404, detail="Dívida não encontrada")
+        total = float(debt["valor_total_original"])
+
+        # Soma das parcelas com valor_planejado fixo (ignora auto/null)
+        sum_fixed_row = conn.execute(
+            "SELECT COALESCE(SUM(valor_planejado), 0) AS s "
+            "FROM fin_debt_parcela WHERE divida_id = ? AND valor_planejado IS NOT NULL",
+            (debt_id,),
+        ).fetchone()
+        sum_fixed = float(sum_fixed_row["s"] or 0)
+        restante = total - sum_fixed
+        # Threshold mais forgiving: rejeita só se MUITO pequeno (centavos) ou
+        # negativo (parcelas fixas excedem total).
+        if restante < -0.01:
+            raise HTTPException(
+                400,
+                detail=f"Parcelas fixas (R${sum_fixed:.2f}) excedem o total da dívida (R${total:.2f}). Reduza alguma parcela fixa primeiro.",
+            )
+        if restante < 1.0:  # menos de 1 real não vale criar parcelas
+            raise HTTPException(
+                400,
+                detail=f"Saldo restante (R${restante:.2f}) muito pequeno pra dividir. Total: R${total:.2f}, fixas somam R${sum_fixed:.2f}.",
+            )
+        valor_each = round(restante / body.n_parcelas, 2)
+
+        # Determina data_inicio: dado ou inferido (last + 1 mês)
+        from datetime import date
+        from calendar import monthrange
+        if body.data_inicio:
+            try:
+                yy, mm, dd = (int(x) for x in body.data_inicio.split("-"))
+                base = date(yy, mm, dd)
+            except Exception:
+                raise HTTPException(400, detail="data_inicio inválida (use YYYY-MM-DD)")
+        else:
+            last_row = conn.execute(
+                "SELECT data_prevista FROM fin_debt_parcela "
+                "WHERE divida_id = ? AND data_prevista IS NOT NULL "
+                "ORDER BY numero DESC LIMIT 1",
+                (debt_id,),
+            ).fetchone()
+            if last_row:
+                yy, mm, dd = (int(x) for x in last_row["data_prevista"].split("-"))
+                # +1 mês
+                next_month = mm + 1
+                next_year = yy + (next_month - 1) // 12
+                next_month = ((next_month - 1) % 12) + 1
+                last_day = monthrange(next_year, next_month)[1]
+                day = min(dd, last_day)
+                base = date(next_year, next_month, day)
+            else:
+                base = date.today()
+
+        max_num = conn.execute(
+            "SELECT COALESCE(MAX(numero), 0) AS m FROM fin_debt_parcela WHERE divida_id = ?",
+            (debt_id,),
+        ).fetchone()["m"]
+        for i in range(body.n_parcelas):
+            month = base.month + i
+            year = base.year + (month - 1) // 12
+            month = ((month - 1) % 12) + 1
+            last_day = monthrange(year, month)[1]
+            day = min(base.day, last_day)
+            data_iso = f"{year:04d}-{month:02d}-{day:02d}"
+            conn.execute(
+                "INSERT INTO fin_debt_parcela"
+                "(id, divida_id, numero, data_prevista, valor_planejado) "
+                "VALUES(?,?,?,?,?)",
+                (_new_id(), debt_id, max_num + 1 + i, data_iso, valor_each),
+            )
+        conn.commit()
+    return None
+
+
+@router.patch("/api/finance/debts/parcelas/{parcela_id}", response_model=DebtParcelaOut)
+def update_debt_parcela(parcela_id: str, body: DebtParcelaUpdate):
+    fields: dict = {name: getattr(body, name) for name in body.model_fields_set}
+    if not fields:
+        raise HTTPException(400, detail="Nada a atualizar")
+    with get_conn() as conn:
+        existing = conn.execute(
+            "SELECT divida_id FROM fin_debt_parcela WHERE id = ?", (parcela_id,)
+        ).fetchone()
+        if not existing:
+            raise HTTPException(404, detail="Parcela não encontrada")
+        # Valida transacao_pagamento_id se setando
+        if "transacao_pagamento_id" in fields and fields["transacao_pagamento_id"]:
+            if not conn.execute(
+                "SELECT 1 FROM fin_transaction WHERE id = ?",
+                (fields["transacao_pagamento_id"],),
+            ).fetchone():
+                raise HTTPException(422, detail="transacao_pagamento_id não existe")
+        fields["updated_at"] = utcnow_iso_z()
+        set_clause = ", ".join(f"{k} = ?" for k in fields)
+        conn.execute(
+            f"UPDATE fin_debt_parcela SET {set_clause} WHERE id = ?",
+            [*fields.values(), parcela_id],
+        )
+        conn.commit()
+        for p in _enrich_debt_parcelas(conn, existing["divida_id"]):
+            if p["id"] == parcela_id:
+                return p
+    raise HTTPException(500, detail="Erro inesperado ao atualizar parcela")
+
+
+@router.delete("/api/finance/debts/parcelas/{parcela_id}", status_code=204)
+def delete_debt_parcela(parcela_id: str):
+    with get_conn() as conn:
+        conn.execute("DELETE FROM fin_debt_parcela WHERE id = ?", (parcela_id,))
+        conn.commit()
+    return None
+
+
+# ─── Recurring Bills (contas fixas: luz, água, internet, etc) ─────────────
+
+RECURRING_BILL_COLUMNS = (
+    "id, descricao, valor_estimado, dia_vencimento, categoria_id, "
+    "conta_pagamento_id, ativa, recorrencia, tipo, notas, sort_order"
+)
+
+
+def _bill_row_to_dict(row) -> dict:
+    """SQLite armazena boolean como INTEGER. Converte de volta pra bool."""
+    d = dict(row)
+    d["ativa"] = bool(d.get("ativa", 1))
+    return d
+
+
+@router.get("/api/finance/recurring-bills", response_model=list[RecurringBillOut])
+def list_recurring_bills():
+    with get_conn() as conn:
+        rows = conn.execute(
+            f"SELECT {RECURRING_BILL_COLUMNS} FROM fin_recurring_bill "
+            "ORDER BY ativa DESC, sort_order ASC, descricao ASC"
+        ).fetchall()
+    return [_bill_row_to_dict(r) for r in rows]
+
+
+@router.post("/api/finance/recurring-bills", response_model=RecurringBillOut, status_code=201)
+def create_recurring_bill(body: RecurringBillCreate):
+    descricao = body.descricao.strip()
+    if not descricao:
+        raise HTTPException(400, detail="descricao é obrigatória")
+    bill_id = _new_id()
+    with get_conn() as conn:
+        # Valida FKs opcionais
+        if body.categoria_id and not conn.execute(
+            "SELECT 1 FROM fin_category WHERE id = ?", (body.categoria_id,)
+        ).fetchone():
+            raise HTTPException(422, detail="categoria_id não existe")
+        if body.conta_pagamento_id and not conn.execute(
+            "SELECT 1 FROM fin_account WHERE id = ?", (body.conta_pagamento_id,)
+        ).fetchone():
+            raise HTTPException(422, detail="conta_pagamento_id não existe")
+        max_sort = conn.execute(
+            "SELECT COALESCE(MAX(sort_order), 0) AS m FROM fin_recurring_bill"
+        ).fetchone()["m"]
+        conn.execute(
+            "INSERT INTO fin_recurring_bill"
+            "(id, descricao, valor_estimado, dia_vencimento, categoria_id, "
+            "conta_pagamento_id, ativa, recorrencia, tipo, notas, sort_order) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                bill_id, descricao, body.valor_estimado, body.dia_vencimento,
+                body.categoria_id, body.conta_pagamento_id,
+                1 if body.ativa else 0, 'mensal', body.tipo,
+                body.notas, max_sort + 1,
+            ),
+        )
+        conn.commit()
+        row = conn.execute(
+            f"SELECT {RECURRING_BILL_COLUMNS} FROM fin_recurring_bill WHERE id = ?",
+            (bill_id,),
+        ).fetchone()
+    return _bill_row_to_dict(row)
+
+
+@router.patch("/api/finance/recurring-bills/{bill_id}", response_model=RecurringBillOut)
+def update_recurring_bill(bill_id: str, body: RecurringBillUpdate):
+    fields: dict = {name: getattr(body, name) for name in body.model_fields_set}
+    if not fields:
+        raise HTTPException(400, detail="Nada a atualizar")
+    # bool → int pra coluna SQLite
+    if "ativa" in fields:
+        fields["ativa"] = 1 if fields["ativa"] else 0
+    with get_conn() as conn:
+        if not conn.execute(
+            "SELECT 1 FROM fin_recurring_bill WHERE id = ?", (bill_id,)
+        ).fetchone():
+            raise HTTPException(404, detail="Conta fixa não encontrada")
+        if "categoria_id" in fields and fields["categoria_id"] and not conn.execute(
+            "SELECT 1 FROM fin_category WHERE id = ?", (fields["categoria_id"],)
+        ).fetchone():
+            raise HTTPException(422, detail="categoria_id não existe")
+        if "conta_pagamento_id" in fields and fields["conta_pagamento_id"] and not conn.execute(
+            "SELECT 1 FROM fin_account WHERE id = ?", (fields["conta_pagamento_id"],)
+        ).fetchone():
+            raise HTTPException(422, detail="conta_pagamento_id não existe")
+        fields["updated_at"] = utcnow_iso_z()
+        set_clause = ", ".join(f"{k} = ?" for k in fields)
+        conn.execute(
+            f"UPDATE fin_recurring_bill SET {set_clause} WHERE id = ?",
+            [*fields.values(), bill_id],
+        )
+        conn.commit()
+        row = conn.execute(
+            f"SELECT {RECURRING_BILL_COLUMNS} FROM fin_recurring_bill WHERE id = ?",
+            (bill_id,),
+        ).fetchone()
+    return _bill_row_to_dict(row)
+
+
+@router.delete("/api/finance/recurring-bills/{bill_id}", status_code=204)
+def delete_recurring_bill(bill_id: str):
+    with get_conn() as conn:
+        conn.execute("DELETE FROM fin_recurring_bill WHERE id = ?", (bill_id,))
+        conn.commit()
+    return None
+
+
+@router.post("/api/finance/recurring-bills/reorder", status_code=204)
+def reorder_recurring_bills(body: dict):
+    """Reordena contas fixas por sort_order. Body: `{"ids": [...]}`."""
+    ids = body.get("ids") or []
+    if not isinstance(ids, list) or not all(isinstance(i, str) for i in ids):
+        raise HTTPException(400, detail="body precisa de `ids` (lista de strings)")
+    with get_conn() as conn:
+        for idx, bill_id in enumerate(ids, start=1):
+            conn.execute(
+                "UPDATE fin_recurring_bill SET sort_order = ? WHERE id = ?",
+                (idx, bill_id),
+            )
+        conn.commit()
+    return None
+
+
+@router.get("/api/finance/recurring-bills/status", response_model=RecurringBillStatusMonth)
+def recurring_bills_status(
+    year: int = Query(..., ge=2000, le=2100),
+    month: int = Query(..., ge=1, le=12),
+):
+    """Status mensal de cada conta fixa ativa: paga/recebida / pendente / atrasada.
+
+    Inferência:
+    - Busca transações do mês com `categoria_id = bill.categoria_id` E descrição
+      contendo (case-insensitive) qualquer palavra significativa do nome da bill.
+    - Filtra por SINAL conforme `bill.tipo`: despesa → valor < 0; receita → valor > 0.
+    - Se achou → "paga"/"recebida", anexa transacao_id e valor real.
+    - Se não achou e hoje passou de `dia_vencimento` → "atrasada".
+    - Caso contrário → "pendente".
+
+    Honra regra de competência: transação com fatura de cartão paga conta no
+    mês do pagamento (igual monthly-summary). Receitas não passam por fatura
+    (só despesas de cartão), então pra receita é só o filtro direto de data.
+
+    Totais agregados são separados por tipo pra UI de previsão.
+    """
+    from calendar import monthrange
+    from datetime import date as _date
+    last_day = monthrange(year, month)[1]
+    data_de = f"{year:04d}-{month:02d}-01"
+    data_ate = f"{year:04d}-{month:02d}-{last_day:02d}"
+
+    with get_conn() as conn:
+        bills = conn.execute(
+            f"SELECT {RECURRING_BILL_COLUMNS} FROM fin_recurring_bill "
+            "WHERE ativa = 1 ORDER BY sort_order ASC, descricao ASC"
+        ).fetchall()
+        if not bills:
+            return RecurringBillStatusMonth(
+                year=year, month=month, items=[],
+                total_estimado=0.0, total_pago=0.0, total_pendente=0.0,
+                despesa_total_estimado=0.0, despesa_total_pago=0.0, despesa_total_pendente=0.0,
+                receita_total_estimado=0.0, receita_total_recebido=0.0, receita_total_pendente=0.0,
+            )
+
+        items = []
+        total_estimado = 0.0
+        total_pago = 0.0
+        despesa_estimado = 0.0
+        despesa_pago = 0.0
+        receita_estimado = 0.0
+        receita_recebido = 0.0
+        today = _date.today()
+
+        for b in bills:
+            bill_dict = _bill_row_to_dict(b)
+            tipo = bill_dict.get("tipo") or "despesa"
+            valor_est = float(bill_dict["valor_estimado"])
+            total_estimado += valor_est
+            if tipo == "receita":
+                receita_estimado += valor_est
+            else:
+                despesa_estimado += valor_est
+
+            # Procura transação match: mesmo mês, mesma categoria (se bill tem),
+            # descrição contém alguma palavra ≥4 chars do nome da bill.
+            # Filtro de SINAL conforme tipo da bill.
+            words = [w.strip().lower() for w in bill_dict["descricao"].split() if len(w.strip()) >= 4]
+            tx_match = None
+            if words:
+                like_clauses = " OR ".join(["LOWER(t.descricao) LIKE ?" for _ in words])
+                like_params = [f"%{w}%" for w in words]
+                cat_clause = ""
+                cat_params: list = []
+                if bill_dict["categoria_id"]:
+                    cat_clause = " AND t.categoria_id = ?"
+                    cat_params = [bill_dict["categoria_id"]]
+                if tipo == "receita":
+                    # Receitas: só transação direta (não passam por fatura).
+                    tx_match = conn.execute(
+                        f"""SELECT t.id, t.data, t.valor
+                              FROM fin_transaction t
+                              WHERE t.valor > 0
+                                AND ({like_clauses})
+                                {cat_clause}
+                                AND t.data >= ? AND t.data <= ?
+                              ORDER BY t.data ASC LIMIT 1""",
+                        (*like_params, *cat_params, data_de, data_ate),
+                    ).fetchone()
+                else:
+                    # Despesas: respeita regra de competência via fatura.
+                    tx_match = conn.execute(
+                        f"""SELECT t.id, t.data, t.valor
+                              FROM fin_transaction t
+                              LEFT JOIN fin_invoice f ON f.id = t.fatura_id
+                              WHERE t.valor < 0
+                                AND ({like_clauses})
+                                {cat_clause}
+                                AND (
+                                  (t.fatura_id IS NULL AND t.data >= ? AND t.data <= ?)
+                                  OR
+                                  (t.fatura_id IS NOT NULL AND f.status = 'paga'
+                                   AND f.data_pagamento >= ? AND f.data_pagamento <= ?)
+                                )
+                              ORDER BY t.data ASC LIMIT 1""",
+                        (*like_params, *cat_params,
+                         data_de, data_ate, data_de, data_ate),
+                    ).fetchone()
+
+            if tx_match:
+                valor_real = abs(float(tx_match["valor"]))
+                total_pago += valor_real
+                if tipo == "receita":
+                    receita_recebido += valor_real
+                else:
+                    despesa_pago += valor_real
+                items.append({
+                    "bill_id": bill_dict["id"],
+                    "descricao": bill_dict["descricao"],
+                    "valor_estimado": bill_dict["valor_estimado"],
+                    "dia_vencimento": bill_dict["dia_vencimento"],
+                    "categoria_id": bill_dict["categoria_id"],
+                    "tipo": tipo,
+                    "status": "recebida" if tipo == "receita" else "paga",
+                    "valor_pago": valor_real,
+                    "transacao_id": tx_match["id"],
+                    "data_pagamento": tx_match["data"],
+                })
+            else:
+                # Pendente ou atrasada (só faz sentido pro mês corrente)
+                status = "pendente"
+                if year == today.year and month == today.month and bill_dict["dia_vencimento"]:
+                    if today.day > bill_dict["dia_vencimento"]:
+                        status = "atrasada"
+                items.append({
+                    "bill_id": bill_dict["id"],
+                    "descricao": bill_dict["descricao"],
+                    "valor_estimado": bill_dict["valor_estimado"],
+                    "dia_vencimento": bill_dict["dia_vencimento"],
+                    "categoria_id": bill_dict["categoria_id"],
+                    "tipo": tipo,
+                    "status": status,
+                    "valor_pago": None,
+                    "transacao_id": None,
+                    "data_pagamento": None,
+                })
+
+    return RecurringBillStatusMonth(
+        year=year, month=month, items=items,
+        total_estimado=round(total_estimado, 2),
+        total_pago=round(total_pago, 2),
+        total_pendente=round(total_estimado - total_pago, 2),
+        despesa_total_estimado=round(despesa_estimado, 2),
+        despesa_total_pago=round(despesa_pago, 2),
+        despesa_total_pendente=round(despesa_estimado - despesa_pago, 2),
+        receita_total_estimado=round(receita_estimado, 2),
+        receita_total_recebido=round(receita_recebido, 2),
+        receita_total_pendente=round(receita_estimado - receita_recebido, 2),
+    )
+
+
+# ─── Month Commitments (visão consolidada de vencimentos) ─────────────────
+
+@router.get("/api/finance/month-commitments", response_model=MonthCommitmentsResponse)
+def month_commitments(
+    year: int = Query(..., ge=2000, le=2100),
+    month: int = Query(..., ge=1, le=12),
+):
+    """Compromissos do mês — agrega recurring bills + debt parcelas + freela
+    parcelas com data_prevista no mês, retorna lista ordenada por dia.
+
+    UI consome isso pra montar uma "checklist do mês" — o que vence quando,
+    quem ainda devo pagar, quem vai cair na conta. Status é inferido (mesmo
+    pattern de recurring-bills/status pras bills; direto da parcela.status
+    pras debt e freela parcelas).
+    """
+    from calendar import monthrange
+    from datetime import date as _date
+
+    last_day = monthrange(year, month)[1]
+    data_de = f"{year:04d}-{month:02d}-01"
+    data_ate = f"{year:04d}-{month:02d}-{last_day:02d}"
+    today = _date.today()
+    is_current_month = today.year == year and today.month == month
+
+    items: list[dict] = []
+    total_a_pagar = 0.0
+    total_a_receber = 0.0
+    total_pago = 0.0
+    total_recebido = 0.0
+
+    with get_conn() as conn:
+        # ─── 1) Recurring bills (despesa + receita) ────────────────────────
+        bills = conn.execute(
+            f"SELECT {RECURRING_BILL_COLUMNS} FROM fin_recurring_bill "
+            "WHERE ativa = 1 ORDER BY sort_order ASC, descricao ASC"
+        ).fetchall()
+        for b in bills:
+            bill = _bill_row_to_dict(b)
+            tipo = bill.get("tipo") or "despesa"
+
+            # Inferência de match (reusa lógica de recurring_bills_status)
+            words = [w.strip().lower() for w in bill["descricao"].split() if len(w.strip()) >= 4]
+            tx_match = None
+            if words:
+                like_clauses = " OR ".join(["LOWER(t.descricao) LIKE ?" for _ in words])
+                like_params = [f"%{w}%" for w in words]
+                cat_clause = ""
+                cat_params: list = []
+                if bill["categoria_id"]:
+                    cat_clause = " AND t.categoria_id = ?"
+                    cat_params = [bill["categoria_id"]]
+                if tipo == "receita":
+                    tx_match = conn.execute(
+                        f"""SELECT t.id, t.data, t.valor
+                              FROM fin_transaction t
+                              WHERE t.valor > 0
+                                AND ({like_clauses}) {cat_clause}
+                                AND t.data >= ? AND t.data <= ?
+                              ORDER BY t.data ASC LIMIT 1""",
+                        (*like_params, *cat_params, data_de, data_ate),
+                    ).fetchone()
+                else:
+                    tx_match = conn.execute(
+                        f"""SELECT t.id, t.data, t.valor
+                              FROM fin_transaction t
+                              LEFT JOIN fin_invoice f ON f.id = t.fatura_id
+                              WHERE t.valor < 0
+                                AND ({like_clauses}) {cat_clause}
+                                AND (
+                                  (t.fatura_id IS NULL AND t.data >= ? AND t.data <= ?)
+                                  OR
+                                  (t.fatura_id IS NOT NULL AND f.status = 'paga'
+                                   AND f.data_pagamento >= ? AND f.data_pagamento <= ?)
+                                )
+                              ORDER BY t.data ASC LIMIT 1""",
+                        (*like_params, *cat_params,
+                         data_de, data_ate, data_de, data_ate),
+                    ).fetchone()
+
+            valor_est = float(bill["valor_estimado"])
+            if tx_match:
+                valor_real = abs(float(tx_match["valor"]))
+                status = "recebida" if tipo == "receita" else "paga"
+                if tipo == "receita":
+                    total_recebido += valor_real
+                else:
+                    total_pago += valor_real
+                items.append({
+                    "kind": "bill",
+                    "id": bill["id"],
+                    "descricao": bill["descricao"],
+                    "sub_descricao": "salário/recorrente" if tipo == "receita" else "conta fixa",
+                    "tipo": tipo,
+                    "dia": bill["dia_vencimento"],
+                    "data_prevista": tx_match["data"],  # data real do pagamento pra ordenar
+                    "valor": valor_est,
+                    "valor_pago": valor_real,
+                    "status": status,
+                    "transacao_id": tx_match["id"],
+                    "data_pagamento": tx_match["data"],
+                    "bill_id": bill["id"],
+                })
+            else:
+                status = "pendente"
+                if is_current_month and bill["dia_vencimento"]:
+                    if today.day > bill["dia_vencimento"]:
+                        status = "atrasada"
+                if tipo == "receita":
+                    total_a_receber += valor_est
+                else:
+                    total_a_pagar += valor_est
+                # Para ordenação: usa dia_vencimento como YYYY-MM-DD
+                data_for_sort = (
+                    f"{year:04d}-{month:02d}-{min(bill['dia_vencimento'], last_day):02d}"
+                    if bill["dia_vencimento"] else None
+                )
+                items.append({
+                    "kind": "bill",
+                    "id": bill["id"],
+                    "descricao": bill["descricao"],
+                    "sub_descricao": "salário/recorrente" if tipo == "receita" else "conta fixa",
+                    "tipo": tipo,
+                    "dia": bill["dia_vencimento"],
+                    "data_prevista": data_for_sort,
+                    "valor": valor_est,
+                    "valor_pago": None,
+                    "status": status,
+                    "transacao_id": None,
+                    "data_pagamento": None,
+                    "bill_id": bill["id"],
+                })
+
+        # ─── 2) Debt parcelas com data no mês ──────────────────────────────
+        # Pega todas dívidas ativas, depois filtra parcelas no mês.
+        debts = conn.execute(
+            f"SELECT {DEBT_COLUMNS} FROM fin_debt WHERE status = 'active'"
+        ).fetchall()
+        for d in debts:
+            debt_dict = dict(d)
+            # Total parcelas dessa dívida (pra exibir "3/12")
+            total_parcelas_row = conn.execute(
+                "SELECT COUNT(*) AS n FROM fin_debt_parcela WHERE divida_id = ?",
+                (debt_dict["id"],),
+            ).fetchone()
+            total_parcelas = int(total_parcelas_row["n"] or 0)
+            if total_parcelas == 0:
+                continue  # dívida sem cronograma, não aparece aqui
+
+            # Carrega enriched parcelas. Inclui:
+            # - Parcelas com data NESSE mês (qualquer status)
+            # - Atrasadas de meses anteriores (carry-over) — só se mês corrente,
+            #   pra não poluir visualizações de meses passados/futuros
+            enriched = _enrich_debt_parcelas(conn, debt_dict["id"])
+            for p in enriched:
+                if not p.get("data_prevista"):
+                    continue
+                in_month = data_de <= p["data_prevista"] <= data_ate
+                is_carryover = (
+                    is_current_month
+                    and p["data_prevista"] < data_de
+                    and p["status"] == "atrasada"
+                )
+                if not (in_month or is_carryover):
+                    continue
+                valor_efetivo = float(p["valor_efetivo"])
+                status = p["status"]  # 'paga' | 'pendente' | 'atrasada'
+                # Despesa sempre pra parcelas de dívida.
+                if status == "paga":
+                    total_pago += float(p["valor_pago"] or valor_efetivo)
+                else:
+                    total_a_pagar += valor_efetivo
+                # Dia do mês a partir de data_prevista
+                try:
+                    dia_num = int(p["data_prevista"].split("-")[2])
+                except Exception:
+                    dia_num = None
+                items.append({
+                    "kind": "debt_parcela",
+                    "id": p["id"],
+                    "descricao": debt_dict["descricao"],
+                    "sub_descricao": f"parcela {p['numero']}/{total_parcelas}",
+                    "tipo": "despesa",
+                    "dia": dia_num,
+                    "data_prevista": p["data_prevista"],
+                    "valor": valor_efetivo,
+                    "valor_pago": p.get("valor_pago"),
+                    "status": status,
+                    "transacao_id": p.get("transacao_pagamento_id"),
+                    "data_pagamento": p.get("data_pagamento"),
+                    "debt_id": debt_dict["id"],
+                    "debt_descricao": debt_dict["descricao"],
+                    "parcela_numero": p["numero"],
+                    "parcela_total": total_parcelas,
+                })
+
+        # ─── 3) Freela parcelas com data no mês ────────────────────────────
+        # Status no schema: 'pendente' | 'recebido' | 'atrasado' | 'cancelada'.
+        # Mapeia pra padrão do MonthCommitment (recebida/atrasada/pendente);
+        # 'cancelada' não aparece (não conta como compromisso ativo).
+        # Mesmo carry-over das debt parcelas: atrasadas de meses anteriores
+        # aparecem no mês corrente, pra não escapar do radar.
+        # `transacao_recebimento_id` NÃO é coluna — é FK reverso de
+        # fin_transaction.parcela_id; precisa LEFT JOIN aqui.
+        freela_parcelas = conn.execute(
+            """SELECT fp.id, fp.projeto_id, fp.numero, fp.valor, fp.data_prevista,
+                      fp.status,
+                      p.title AS projeto_titulo,
+                      (SELECT COUNT(*) FROM fin_parcela WHERE projeto_id = fp.projeto_id) AS total,
+                      t.id AS tx_id, t.data AS tx_data, t.valor AS tx_valor
+                 FROM fin_parcela fp
+                 JOIN projects p ON p.id = fp.projeto_id
+                 LEFT JOIN fin_transaction t ON t.parcela_id = fp.id
+                WHERE fp.status != 'cancelada'
+                  AND fp.data_prevista IS NOT NULL"""
+        ).fetchall()
+        for fp in freela_parcelas:
+            data_prev = fp["data_prevista"]
+            in_month = data_de <= data_prev <= data_ate
+            is_carryover = (
+                is_current_month
+                and data_prev < data_de
+                and fp["status"] == "atrasado"
+            )
+            if not (in_month or is_carryover):
+                continue
+            valor_est = float(fp["valor"])
+            # Mapeia status do schema pro padrão do commitment
+            raw_status = fp["status"]
+            status = (
+                "recebida" if raw_status == "recebido"
+                else "atrasada" if raw_status == "atrasado"
+                else "pendente"
+            )
+            tx_id = fp["tx_id"]
+            data_pag = fp["tx_data"] if tx_id else None
+            valor_pago = abs(float(fp["tx_valor"])) if tx_id and fp["tx_valor"] is not None else None
+            if status == "recebida":
+                total_recebido += valor_pago or valor_est
+            else:
+                total_a_receber += valor_est
+            try:
+                dia_num = int(data_prev.split("-")[2])
+            except Exception:
+                dia_num = None
+            total = int(fp["total"] or 0)
+            items.append({
+                "kind": "freela_parcela",
+                "id": fp["id"],
+                "descricao": fp["projeto_titulo"] or "freela",
+                "sub_descricao": (
+                    f"parcela {fp['numero']}/{total}" if total > 0
+                    else f"parcela {fp['numero']}"
+                ),
+                "tipo": "receita",
+                "dia": dia_num,
+                "data_prevista": data_prev,
+                "valor": valor_est,
+                "valor_pago": valor_pago,
+                "status": status,
+                "transacao_id": tx_id,
+                "data_pagamento": data_pag,
+                "parcela_numero": fp["numero"],
+                "parcela_total": total if total > 0 else None,
+                "freela_projeto_id": fp["projeto_id"],
+            })
+
+        # ─── 4) Faturas de cartão com vencimento (ou pagamento) no mês ─────
+        # Critérios de inclusão:
+        #  - Status 'paga' com data_pagamento no mês → status final 'paga'
+        #  - Status aberta/fechada/atrasada com data_vencimento no mês →
+        #    'pendente' (ou 'atrasada' se já passou e é mês corrente)
+        #  - Carry-over: aberta/fechada/atrasada com vencimento em mês
+        #    anterior + mês corrente → 'atrasada' (não escapar do radar)
+        # Total da fatura é a soma das compras vinculadas (mesma fórmula
+        # do _invoice_with_total).
+        today_str = today.isoformat()
+        invoices_rows = conn.execute(
+            """SELECT i.id, i.cartao_id, i.mes_referencia,
+                      i.data_vencimento, i.data_pagamento, i.status,
+                      a.nome AS cartao_nome,
+                      COALESCE((SELECT SUM(-valor) FROM fin_transaction
+                                  WHERE fatura_id = i.id AND valor < 0), 0) AS total
+                 FROM fin_invoice i
+                 JOIN fin_account a ON a.id = i.cartao_id"""
+        ).fetchall()
+        mes_ref_atual = f"{year:04d}-{month:02d}"
+        for inv in invoices_rows:
+            inv_status = inv["status"]
+            data_pag = inv["data_pagamento"]
+            data_venc = inv["data_vencimento"]
+            mes_ref = inv["mes_referencia"]
+            valor_inv = float(inv["total"] or 0)
+
+            paga_no_mes = inv_status == "paga" and data_pag and data_de <= data_pag <= data_ate
+            # Pendente: se tem data_vencimento, usa ela. Se NÃO tem, usa
+            # mes_referencia como fallback (cobre faturas recém-criadas sem
+            # data preenchida — comum no fluxo de import do Nubank).
+            if data_venc:
+                pendente_no_mes = inv_status in ("aberta", "fechada", "atrasada") and \
+                    data_de <= data_venc <= data_ate
+                is_carryover = (
+                    is_current_month
+                    and inv_status in ("aberta", "fechada", "atrasada")
+                    and data_venc < data_de
+                )
+            else:
+                pendente_no_mes = inv_status in ("aberta", "fechada", "atrasada") and \
+                    mes_ref == mes_ref_atual
+                is_carryover = (
+                    is_current_month
+                    and inv_status in ("aberta", "fechada", "atrasada")
+                    and mes_ref < mes_ref_atual
+                )
+            if not (paga_no_mes or pendente_no_mes or is_carryover):
+                continue
+
+            # Fatura sem compras vinculadas (total = 0): não vale a pena
+            # poluir Compromissos. Ex: fatura "aberta" recém-criada.
+            if valor_inv == 0 and inv_status != "paga":
+                continue
+
+            if paga_no_mes:
+                status = "paga"
+                total_pago += valor_inv
+                data_for_sort = data_pag
+            else:
+                # Pendente / atrasada
+                if is_current_month and data_venc and data_venc < today_str:
+                    status = "atrasada"
+                else:
+                    status = "pendente"
+                total_a_pagar += valor_inv
+                # Pra ordenação: data_vencimento se houver, senão último dia
+                # do mes_referencia (visualmente "no fim do mês").
+                if data_venc:
+                    data_for_sort = data_venc
+                else:
+                    try:
+                        ref_y, ref_m = mes_ref.split("-")
+                        ref_last = monthrange(int(ref_y), int(ref_m))[1]
+                        data_for_sort = f"{ref_y}-{ref_m}-{ref_last:02d}"
+                    except Exception:
+                        data_for_sort = None
+
+            try:
+                dia_num = int(data_for_sort.split("-")[2]) if data_for_sort else None
+            except Exception:
+                dia_num = None
+
+            items.append({
+                "kind": "invoice",
+                "id": inv["id"],
+                "descricao": f"Fatura {inv['cartao_nome']}",
+                "sub_descricao": f"ref. {inv['mes_referencia']}",
+                "tipo": "despesa",
+                "dia": dia_num,
+                "data_prevista": data_for_sort,
+                "valor": valor_inv,
+                "valor_pago": valor_inv if status == "paga" else None,
+                "status": status,
+                "transacao_id": None,
+                "data_pagamento": data_pag,
+                "invoice_id": inv["id"],
+                "cartao_id": inv["cartao_id"],
+                "cartao_nome": inv["cartao_nome"],
+            })
+
+    # Ordena por data_prevista (sem data vai pro fim)
+    items.sort(key=lambda i: (i["data_prevista"] or "9999-99-99", i["descricao"]))
+
+    sobra_projetada = (total_a_receber + total_recebido) - (total_a_pagar + total_pago)
+
+    return MonthCommitmentsResponse(
+        year=year, month=month,
+        items=[MonthCommitment(**i) for i in items],
+        total_a_pagar=round(total_a_pagar, 2),
+        total_a_receber=round(total_a_receber, 2),
+        total_pago=round(total_pago, 2),
+        total_recebido=round(total_recebido, 2),
+        sobra_projetada=round(sobra_projetada, 2),
+    )
+
+
 # ─── Categorization Rules ─────────────────────────────────────────────────
 
-CATEGORIZATION_RULE_COLUMNS = "id, pattern, categoria_id, times_matched, created_at"
+CATEGORIZATION_RULE_COLUMNS = "id, pattern, categoria_id, times_matched, created_at, link_cartao_id"
 
 
-def _apply_rules(conn, descricao: str) -> Optional[str]:
+def _apply_rules(conn, descricao: str) -> Optional[dict]:
     """Roda regras de categorização contra uma descrição (lower-case substring).
-    Primeira que bater ganha. Devolve `categoria_id` ou `None` se nada bateu.
-    Incrementa `times_matched` quando bate (uso/debug).
+    Primeira que bater ganha. Devolve dict com `categoria_id` e `link_cartao_id`
+    da regra (este último opcional, pra auto-link de pagamento de fatura) ou
+    None se nada bateu. Incrementa `times_matched` quando bate (uso/debug).
     """
     descricao_lower = (descricao or "").lower()
     if not descricao_lower:
         return None
     rules = conn.execute(
-        "SELECT id, pattern, categoria_id FROM fin_categorization_rule"
+        "SELECT id, pattern, categoria_id, link_cartao_id FROM fin_categorization_rule"
     ).fetchall()
     for r in rules:
         pat = (r["pattern"] or "").lower().strip()
@@ -1145,8 +2155,51 @@ def _apply_rules(conn, descricao: str) -> Optional[str]:
                 "UPDATE fin_categorization_rule SET times_matched = times_matched + 1 WHERE id = ?",
                 (r["id"],),
             )
-            return r["categoria_id"]
+            return {
+                "categoria_id": r["categoria_id"],
+                "link_cartao_id": r["link_cartao_id"],
+            }
     return None
+
+
+def _try_link_invoice_payment(conn, tx_id: str, tx_data: str, tx_valor: float,
+                              cartao_id: str) -> Optional[str]:
+    """Tenta linkar uma tx como pagamento da fatura aberta/fechada/atrasada do
+    cartão informado, com base em match exato de valor (tolerância R$0,01).
+
+    Se exatamente 1 fatura bate o valor → linka (set tx.pagamento_fatura_id +
+    update fatura status='paga' + data_pagamento). Retorna o id da fatura.
+    Se 0 ou >1 → não faz nada (deixa pro link manual). Retorna None.
+
+    Usado pelo auto-link via regra de categorização (link_cartao_id).
+    """
+    valor_abs = abs(float(tx_valor))
+    if valor_abs <= 0:
+        return None
+    tol = 0.01
+    candidates = conn.execute(
+        """SELECT i.id,
+                  COALESCE((SELECT SUM(-valor) FROM fin_transaction
+                              WHERE fatura_id = i.id AND valor < 0), 0) AS total
+             FROM fin_invoice i
+            WHERE i.cartao_id = ?
+              AND i.status IN ('aberta', 'fechada', 'atrasada')""",
+        (cartao_id,),
+    ).fetchall()
+    matches = [c for c in candidates if abs(float(c["total"]) - valor_abs) <= tol]
+    if len(matches) != 1:
+        return None
+    invoice_id = matches[0]["id"]
+    now_iso = utcnow_iso_z()
+    conn.execute(
+        "UPDATE fin_transaction SET pagamento_fatura_id = ?, updated_at = ? WHERE id = ?",
+        (invoice_id, now_iso, tx_id),
+    )
+    conn.execute(
+        "UPDATE fin_invoice SET status = 'paga', data_pagamento = ?, updated_at = ? WHERE id = ?",
+        (tx_data, now_iso, invoice_id),
+    )
+    return invoice_id
 
 
 @router.get("/api/finance/categorization-rules", response_model=list[CategorizationRuleOut])
@@ -1173,11 +2226,16 @@ def create_categorization_rule(body: CategorizationRuleCreate):
             "SELECT 1 FROM fin_category WHERE id = ?", (body.categoria_id,)
         ).fetchone():
             raise HTTPException(422, detail="categoria_id não existe")
+        if body.link_cartao_id and not conn.execute(
+            "SELECT 1 FROM fin_account WHERE id = ? AND tipo = 'credito'",
+            (body.link_cartao_id,),
+        ).fetchone():
+            raise HTTPException(422, detail="link_cartao_id deve ser cartão de crédito existente")
         rule_id = _new_id()
         conn.execute(
-            "INSERT INTO fin_categorization_rule(id, pattern, categoria_id) "
-            "VALUES(?,?,?)",
-            (rule_id, pattern, body.categoria_id),
+            "INSERT INTO fin_categorization_rule(id, pattern, categoria_id, link_cartao_id) "
+            "VALUES(?,?,?,?)",
+            (rule_id, pattern, body.categoria_id, body.link_cartao_id),
         )
         conn.commit()
         row = conn.execute(
@@ -1209,6 +2267,11 @@ def update_categorization_rule(rule_id: str, body: CategorizationRuleUpdate):
             "SELECT 1 FROM fin_category WHERE id = ?", (fields["categoria_id"],)
         ).fetchone():
             raise HTTPException(422, detail="categoria_id não existe")
+        if "link_cartao_id" in fields and fields["link_cartao_id"] and not conn.execute(
+            "SELECT 1 FROM fin_account WHERE id = ? AND tipo = 'credito'",
+            (fields["link_cartao_id"],),
+        ).fetchone():
+            raise HTTPException(422, detail="link_cartao_id deve ser cartão de crédito existente")
         set_clause = ", ".join(f"{k} = ?" for k in fields)
         conn.execute(
             f"UPDATE fin_categorization_rule SET {set_clause} WHERE id = ?",
@@ -1278,14 +2341,15 @@ def apply_backfill_rule(rule_id: str, overwrite: bool = Query(False)):
     """
     with get_conn() as conn:
         rule = conn.execute(
-            "SELECT pattern, categoria_id FROM fin_categorization_rule WHERE id = ?",
+            "SELECT pattern, categoria_id, link_cartao_id "
+            "FROM fin_categorization_rule WHERE id = ?",
             (rule_id,),
         ).fetchone()
         if not rule:
             raise HTTPException(404, detail="Regra não encontrada")
         pattern = (rule["pattern"] or "").strip()
         if not pattern:
-            return {"updated": 0}
+            return {"updated": 0, "linked_invoices": 0}
         if not conn.execute(
             "SELECT 1 FROM fin_category WHERE id = ?", (rule["categoria_id"],)
         ).fetchone():
@@ -1312,8 +2376,23 @@ def apply_backfill_rule(rule_id: str, overwrite: bool = Query(False)):
                 "SET times_matched = times_matched + ? WHERE id = ?",
                 (updated, rule_id),
             )
+        # Auto-link de pagamento de fatura: aplica retroativamente nas tx
+        # que bateram a regra e ainda não têm pagamento_fatura_id.
+        linked = 0
+        if rule["link_cartao_id"]:
+            candidates = conn.execute(
+                "SELECT id, data, valor FROM fin_transaction "
+                "WHERE LOWER(descricao) LIKE ? AND valor < 0 "
+                "AND pagamento_fatura_id IS NULL",
+                (like,),
+            ).fetchall()
+            for tx in candidates:
+                if _try_link_invoice_payment(
+                    conn, tx["id"], tx["data"], tx["valor"], rule["link_cartao_id"]
+                ):
+                    linked += 1
         conn.commit()
-    return {"updated": updated}
+    return {"updated": updated, "linked_invoices": linked}
 
 
 # ─── CSV Import ────────────────────────────────────────────────────────────
@@ -1440,8 +2519,10 @@ async def import_nubank_csv(
                     continue
 
             # Auto-categorização via regras existentes (substring case-insens
-            # da descrição). None se nenhuma regra bate.
-            categoria_id = _apply_rules(conn, descricao)
+            # da descrição). None se nenhuma regra bate. `rule_match` é dict
+            # com `categoria_id` + `link_cartao_id` opcional.
+            rule_match = _apply_rules(conn, descricao)
+            categoria_id = rule_match["categoria_id"] if rule_match else None
             if categoria_id:
                 auto_categorized += 1
 
@@ -1465,6 +2546,12 @@ async def import_nubank_csv(
                 )
                 if parcela_id:
                     _maybe_update_parcela_status(conn, parcela_id)
+                # Auto-link de pagamento de fatura: regra com link_cartao_id
+                # acionou + tx é saída → tenta achar fatura de valor exato.
+                if rule_match and rule_match.get("link_cartao_id") and valor < 0:
+                    _try_link_invoice_payment(
+                        conn, tx_id, data_iso, valor, rule_match["link_cartao_id"]
+                    )
                 imported += 1
             except Exception as exc:
                 # Index unique pode dar conflict em race extrema (mesmo arquivo
@@ -1492,13 +2579,19 @@ async def import_nubank_csv(
 def summary():
     """Visão consolidada pro dashboard: saldo total + por conta + contagens.
 
-    `saldo_total` é o consolidado em BRL. Saldos em outras moedas são
-    convertidos via `fin_account.cotacao_brl` (manual). Contas em moeda !=
-    BRL sem `cotacao_brl` definido são EXCLUÍDAS do total e marcadas em
-    `saldos_nao_convertidos` pra UI alertar o usuário.
+    `saldo_total` é o consolidado em BRL **só de contas líquidas** (corrente,
+    wallet, wise) — cartões de crédito (tipo='credito') são EXCLUÍDOS porque
+    seu saldo negativo representa dívida da fatura aberta, não dinheiro
+    disponível. A dívida de cartão já aparece no card Compromissos do Mês +
+    no kind 'invoice' pra ser tratada como compromisso, não como saldo.
+
+    Saldos em outras moedas são convertidos via `fin_account.cotacao_brl`
+    (manual). Contas em moeda != BRL sem `cotacao_brl` definido são
+    EXCLUÍDAS do total e marcadas em `saldos_nao_convertidos` pra UI
+    alertar o usuário.
 
     `saldos_por_moeda` mantém o agregado por moeda nativa pra mostrar
-    separado quando útil (ex: "Wise USD: $ Y").
+    separado quando útil (ex: "Wise USD: $ Y") — também só contas líquidas.
     """
     with get_conn() as conn:
         accounts = conn.execute(
@@ -1513,6 +2606,10 @@ def summary():
         saldo_total_brl = 0.0
 
         for c in contas_com_saldo:
+            # Cartão de crédito tem "saldo" = -total das compras na fatura
+            # aberta. Excluído do saldo geral pra não confundir o usuário.
+            if c.get("tipo") == "credito":
+                continue
             moeda = c.get("moeda") or "BRL"
             saldo = float(c["saldo"])
             saldos_por_moeda[moeda] = saldos_por_moeda.get(moeda, 0.0) + saldo
@@ -1900,88 +2997,3 @@ def monthly_summary(
     }
 
 
-@router.get("/api/finance/budget")
-def budget_status(
-    year: int = Query(..., ge=2000, le=2100),
-    month: int = Query(..., ge=1, le=12),
-):
-    """Status do orçamento mensal por categoria.
-
-    Lista cada categoria que tem `limite_mensal` definido + quanto foi gasto
-    (ou recebido) no mês. Inclui categorias-pai com limite e soma também as
-    transações das filhas (limite do pai funciona como teto consolidado).
-
-    Aplica a mesma regra de competência da monthly-summary: compras no
-    cartão entram no mês de pagamento da fatura, não no mês da compra.
-    """
-    from calendar import monthrange
-    last_day = monthrange(year, month)[1]
-    data_de = f"{year:04d}-{month:02d}-01"
-    data_ate = f"{year:04d}-{month:02d}-{last_day:02d}"
-
-    with get_conn() as conn:
-        cats_with_limit = conn.execute(
-            f"SELECT {CATEGORY_COLUMNS} FROM fin_category "
-            "WHERE limite_mensal IS NOT NULL AND limite_mensal > 0 "
-            "ORDER BY tipo, nome"
-        ).fetchall()
-        if not cats_with_limit:
-            return {"year": year, "month": month, "items": []}
-
-        # Mapa pai → filhos pra agrupar consumo. Categoria sem limite mas que
-        # é filha de uma com limite contribui pro pai.
-        children_by_parent: dict = {}
-        for r in conn.execute(
-            "SELECT id, categoria_pai_id FROM fin_category "
-            "WHERE categoria_pai_id IS NOT NULL"
-        ).fetchall():
-            children_by_parent.setdefault(r["categoria_pai_id"], []).append(r["id"])
-
-        items = []
-        for c in cats_with_limit:
-            cat_id = c["id"]
-            tipo = c["tipo"]
-            relevant_ids = [cat_id] + children_by_parent.get(cat_id, [])
-            placeholders = ",".join(["?"] * len(relevant_ids))
-            # Para despesa: soma absoluto de saídas. Para receita: soma de entradas.
-            # Outros tipos não são esperados aqui mas tratamos como despesa (abs).
-            sign_filter = "t.valor < 0" if tipo == "despesa" else (
-                "t.valor > 0" if tipo == "receita" else "1=1"
-            )
-            row = conn.execute(
-                f"""SELECT
-                       COALESCE(SUM(ABS(t.valor)), 0) AS consumido,
-                       COUNT(*) AS n_tx
-                     FROM fin_transaction t
-                     LEFT JOIN fin_invoice f ON f.id = t.fatura_id
-                     WHERE t.categoria_id IN ({placeholders})
-                       AND {sign_filter}
-                       AND (
-                         (t.fatura_id IS NULL AND t.data >= ? AND t.data <= ?)
-                         OR
-                         (t.fatura_id IS NOT NULL AND f.status = 'paga'
-                          AND f.data_pagamento >= ? AND f.data_pagamento <= ?)
-                       )""",
-                (*relevant_ids, data_de, data_ate, data_de, data_ate),
-            ).fetchone()
-            consumido = float(row["consumido"] or 0)
-            limite = float(c["limite_mensal"])
-            items.append({
-                "categoria_id": cat_id,
-                "nome": c["nome"],
-                "tipo": tipo,
-                "cor": c["cor"],
-                "limite_mensal": limite,
-                "consumido": round(consumido, 2),
-                "restante": round(limite - consumido, 2),
-                "percent": round((consumido / limite) * 100, 1) if limite > 0 else 0,
-                "transacoes_count": row["n_tx"] or 0,
-            })
-
-    return {
-        "year": year,
-        "month": month,
-        "data_de": data_de,
-        "data_ate": data_ate,
-        "items": items,
-    }
