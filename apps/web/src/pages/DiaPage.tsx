@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import { Sunrise, Sun, Moon, X, ArrowRight, Calendar as CalendarIcon, Trash2, AlertTriangle, Search } from 'lucide-react'
 import type { ActiveSession, Area, Deliverable, Project, Quest, Routine, Task } from '../types'
 import { fetchAllRoutines, fetchTasks, fetchQuests, fetchDeliverables, fetchRoutinesForDate, updateTask, deleteTask, reportApiError } from '../api'
+import { confirmDialog } from '../lib/dialog'
 import { isoToLocalYmd } from '../utils/datetime'
 import { effectiveQuestDeadline } from '../utils/quests'
 import type { DateRange } from '../utils/dateRange'
@@ -15,8 +16,8 @@ import { getAllBlockRangesForDay } from '../utils/blocks'
 import { DateRangeFilter } from '../components/DateRangeFilter'
 import { DayPeriodsEditModal } from '../components/DayPeriodsEditModal'
 import { PlannedItemRow } from '../components/PlannedItemRow'
-import { modalHairline, modalHeader } from './finance/components/styleHelpers'
-import { PageShell, TechId } from '../components/ui/CyberShell'
+import { modalHeader } from './finance/components/styleHelpers'
+import { PageShell, TechId, DataReadoutFrame } from '../components/ui/CyberShell'
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
 
@@ -457,8 +458,14 @@ export function DiaView({ projects, quests, areas, activeSession, onSessionUpdat
       .then(() => refreshAllTasks())
       .catch(err => reportApiError('DiaPage', err))
   }
-  function handleTaskDiscard(t: Task) {
-    if (!window.confirm(`Descartar "${t.title}"? A tarefa será excluída.`)) return
+  async function handleTaskDiscard(t: Task) {
+    const ok = await confirmDialog({
+      title: 'Descartar tarefa',
+      message: `Descartar "${t.title}"?\nA tarefa será excluída.`,
+      confirmLabel: 'DESCARTAR',
+      danger: true,
+    })
+    if (!ok) return
     deleteTask(t.id)
       .then(() => refreshAllTasks())
       .catch(err => reportApiError('DiaPage', err))
@@ -718,104 +725,149 @@ export function DiaView({ projects, quests, areas, activeSession, onSessionUpdat
         />
       )}
 
-      {/* ─── Veredito em tempo real ─────────────────────────────────────────
-          Tudo ao vivo: capacidade restante (do relógio até o fim dos períodos),
-          pendente (itens planejados não-feitos) e folga/déficit atual.
-          Atualiza a cada minuto. O "planejamento original" é passado — só
-          interessa o quanto você ainda tem pra fazer agora. */}
-      <section style={{ marginTop: 48, marginBottom: 56 }}>
-        <div style={{
-          fontSize: 10, color: 'var(--color-text-tertiary)',
-          letterSpacing: '0.2em', textTransform: 'uppercase', fontWeight: 600,
-          marginBottom: 12,
-          display: 'flex', alignItems: 'center', gap: 10,
-        }}>
-          <span>Agora</span>
-          <span style={{ color: 'var(--color-text-muted)', fontWeight: 500, letterSpacing: '0.05em' }}>
-            {String(nowDate.getHours()).padStart(2, '0')}:{String(nowDate.getMinutes()).padStart(2, '0')}
-          </span>
-        </div>
-
-        <div style={{
-          fontSize: 36, fontWeight: 700, lineHeight: 1.1,
-          color: liveColor,
-          fontFamily: 'var(--font-mono)',
-          letterSpacing: '-0.02em',
-          display: 'flex', alignItems: 'baseline', gap: 14, flexWrap: 'wrap',
-        }}>
-          <span>{fmtHM(Math.abs(liveSlackMin))}</span>
-          <span style={{
-            fontSize: 12, fontWeight: 500, color: 'var(--color-text-tertiary)',
-            textTransform: 'uppercase', letterSpacing: '0.15em',
-          }}>
-            {liveDeficit ? 'de déficit' : 'de folga'}
-          </span>
-        </div>
-
-        {/* Barra: pendente / livre (ao vivo). */}
-        {(() => {
-          // Real = sem teto (pode passar de 100% em caso de déficit).
-          // Visível = capado em 100% só pra barra não vazar graficamente.
-          const livePctRaw = productiveMinRemaining > 0
-            ? (pendingMin / productiveMinRemaining) * 100
-            : (pendingMin > 0 ? 999 : 0)
-          const livePct = Math.min(100, livePctRaw)
-          const overflow = productiveMinRemaining > 0 && pendingMin > productiveMinRemaining
-          return (
-            <div style={{ marginTop: 18, maxWidth: 520 }}>
+      {/* ─── Veredito em tempo real ─── DataReadoutFrame compacto.
+          Hero (folga/déficit) à esquerda + stats inline à direita. Tudo
+          numa só linha visual pra economizar espaço vertical. */}
+      <section style={{ marginTop: 20, marginBottom: 24 }}>
+        <DataReadoutFrame
+          compact
+          title="SCHEDULE.LIVE"
+          meta={`${String(nowDate.getHours()).padStart(2, '0')}:${String(nowDate.getMinutes()).padStart(2, '0')}`}
+        >
+          {(() => {
+            const livePctRaw = productiveMinRemaining > 0
+              ? (pendingMin / productiveMinRemaining) * 100
+              : (pendingMin > 0 ? 999 : 0)
+            const overflow = productiveMinRemaining > 0 && pendingMin > productiveMinRemaining
+            const accentColor = overflow ? 'var(--color-accent-primary)' : liveColor
+            return (
               <div style={{
-                height: 6, borderRadius: 3,
-                background: 'var(--color-bg-tertiary)',
-                overflow: 'hidden', position: 'relative',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 24,
+                flexWrap: 'wrap',
               }}>
+                {/* HERO HEADLINE — folga/déficit (compacto) */}
                 <div style={{
-                  height: '100%',
-                  width: `${livePct}%`,
-                  background: liveColor,
-                  transition: 'width 0.3s ease-out',
-                }} />
-                {overflow && (
-                  <div style={{
-                    position: 'absolute', top: 0, right: 0, bottom: 0,
-                    width: 3, background: 'var(--color-accent-primary)',
-                  }} />
-                )}
-              </div>
-              <div style={{
-                marginTop: 8, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
-                fontSize: 10, color: 'var(--color-text-tertiary)',
-                fontFamily: 'var(--font-mono)',
-              }}>
-                <span>
-                  <span style={{ color: 'var(--color-text-muted)', marginRight: 5 }}>pendente</span>
-                  {fmtHM(pendingMin)}
-                </span>
-                <span>·</span>
-                <span>
-                  <span style={{ color: 'var(--color-text-muted)', marginRight: 5 }}>livre até fim</span>
-                  {fmtHM(productiveMinRemaining)}
-                </span>
-                <span>·</span>
-                <span style={{ color: liveColor, fontWeight: 600 }}>{Math.round(livePctRaw)}%</span>
-              </div>
-            </div>
-          )
-        })()}
+                  fontFamily: 'var(--font-display)',
+                  fontWeight: 700, lineHeight: 1,
+                  color: liveColor,
+                  textShadow: liveDeficit ? 'none' : '0 0 14px rgba(143, 191, 211, 0.40)',
+                  letterSpacing: '0.02em',
+                  textTransform: 'uppercase',
+                  display: 'flex', alignItems: 'baseline', gap: 8,
+                  flex: '0 0 auto',
+                }}>
+                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: 26 }}>
+                    {fmtHM(Math.abs(liveSlackMin))}
+                  </span>
+                  <span style={{
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: 9, fontWeight: 700,
+                    color: 'var(--color-text-muted)',
+                    letterSpacing: '0.22em',
+                  }}>
+                    {liveDeficit ? 'DÉFICIT' : 'FOLGA'}
+                  </span>
+                </div>
 
-        {/* Breakdown por tipo — mantém pro contexto rápido do que tá no plano. */}
-        <div style={{
-          marginTop: 14, fontSize: 10,
-          color: 'var(--color-text-muted)',
-          fontFamily: 'var(--font-mono)',
-          display: 'flex', gap: 12,
-          letterSpacing: '0.05em',
-        }}>
-          <span>{questCount} {questCount === 1 ? 'quest' : 'quests'}</span>
-          <span>·</span>
-          <span>{taskCount} {taskCount === 1 ? 'tarefa' : 'tarefas'}</span>
-          <span>·</span>
-          <span>{routineCount} {routineCount === 1 ? 'rotina' : 'rotinas'}</span>
-        </div>
+                {/* Vertical divider */}
+                <div style={{ width: 1, height: 28, background: 'var(--color-ice-deep)', flexShrink: 0 }} />
+
+                {/* PENDENTE inline */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                  <span style={{
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: 8, fontWeight: 700,
+                    letterSpacing: '0.22em', textTransform: 'uppercase',
+                    color: 'var(--color-text-muted)',
+                  }}>
+                    PENDENTE
+                  </span>
+                  <span style={{
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: 14, fontWeight: 700,
+                    color: pendingMin > 0 ? 'var(--color-text-primary)' : 'var(--color-text-tertiary)',
+                    lineHeight: 1.1,
+                  }}>
+                    {fmtHM(pendingMin)}
+                  </span>
+                </div>
+
+                {/* LIVRE inline */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                  <span style={{
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: 8, fontWeight: 700,
+                    letterSpacing: '0.22em', textTransform: 'uppercase',
+                    color: 'var(--color-text-muted)',
+                  }}>
+                    LIVRE
+                  </span>
+                  <span style={{
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: 14, fontWeight: 700,
+                    color: 'var(--color-ice-light)',
+                    lineHeight: 1.1,
+                    textShadow: '0 0 8px rgba(143, 191, 211, 0.25)',
+                  }}>
+                    {fmtHM(productiveMinRemaining)}
+                  </span>
+                </div>
+
+                {/* LOAD% + segmented progress (flex:1 pra esticar até o fim) */}
+                <div style={{
+                  flex: '1 1 160px', minWidth: 140,
+                  display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-end',
+                }}>
+                  <span style={{
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: 8, fontWeight: 700,
+                    letterSpacing: '0.22em', textTransform: 'uppercase',
+                    color: 'var(--color-text-muted)',
+                  }}>
+                    LOAD {Math.round(livePctRaw)}%
+                  </span>
+                  <div style={{ display: 'flex', gap: 2, width: '100%' }}>
+                    {Array.from({ length: 10 }).map((_, i) => {
+                      const filled = (Math.min(100, livePctRaw) / 10) > i
+                      const overFlowSeg = overflow && i === 9
+                      return (
+                        <div
+                          key={i}
+                          style={{
+                            flex: 1, height: 3,
+                            background: overFlowSeg
+                              ? 'var(--color-accent-primary)'
+                              : filled
+                                ? accentColor
+                                : 'rgba(255, 255, 255, 0.08)',
+                            boxShadow: filled ? `0 0 4px ${accentColor}` : 'none',
+                          }}
+                        />
+                      )
+                    })}
+                  </div>
+                </div>
+
+                {/* Breakdown chips */}
+                <div style={{
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: 9, fontWeight: 700,
+                  color: 'var(--color-text-muted)',
+                  letterSpacing: '0.15em',
+                  textTransform: 'uppercase',
+                  display: 'flex', gap: 8,
+                  flex: '0 0 auto',
+                }}>
+                  <span><span style={{ color: 'var(--color-ice)', marginRight: 3 }}>QST</span>[{questCount}]</span>
+                  <span><span style={{ color: 'var(--color-warning)', marginRight: 3 }}>TSK</span>[{taskCount}]</span>
+                  <span><span style={{ color: 'var(--color-success)', marginRight: 3 }}>RTN</span>[{routineCount}]</span>
+                </div>
+              </div>
+            )
+          })()}
+        </DataReadoutFrame>
       </section>
 
       {/* ─── Períodos ─── */}
@@ -1005,48 +1057,74 @@ function PeriodSection({
 
   return (
     <section>
+      {/* Header CP2077: tab marker ice + // PERIOD label + range mono +
+          metric semântica à direita. Hairline ice deep abaixo. */}
       <div style={{
         display: 'flex', alignItems: 'center', gap: 12,
         marginBottom: 14,
+        paddingBottom: 8,
+        borderBottom: '1px solid var(--color-ice-deep)',
+        position: 'relative',
       }}>
-        <META.Icon size={12} strokeWidth={1.8} style={{ color: 'var(--color-text-tertiary)' }} />
-        <div style={{
-          fontSize: 10, color: 'var(--color-text-tertiary)',
-          letterSpacing: '0.2em', textTransform: 'uppercase', fontWeight: 600,
-        }}>
-          {META.label}
-        </div>
-        <div style={{
-          fontSize: 10, color: 'var(--color-text-muted)',
+        {/* Tab marker ice 3x18 */}
+        <div
+          aria-hidden="true"
+          style={{
+            width: 3, height: 18,
+            background: isPeriodOver ? 'var(--color-text-muted)' : 'var(--color-ice)',
+            boxShadow: isPeriodOver ? 'none' : '0 0 8px var(--color-ice-glow)',
+            flexShrink: 0,
+          }}
+        />
+        <META.Icon size={12} strokeWidth={1.8} style={{ color: isPeriodOver ? 'var(--color-text-muted)' : 'var(--color-ice-light)' }} />
+        <span style={{
           fontFamily: 'var(--font-mono)',
+          fontSize: 10, fontWeight: 700,
+          letterSpacing: '0.25em',
+          textTransform: 'uppercase',
+          color: isPeriodOver ? 'var(--color-text-muted)' : 'var(--color-ice-light)',
+        }}>
+          <span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
+          {META.label}
+        </span>
+        <span style={{
+          fontFamily: 'var(--font-mono)',
+          fontSize: 10, fontWeight: 600,
+          color: 'var(--color-text-muted)',
+          letterSpacing: '0.12em',
         }}>
           {minutesToHHMM(startMin)}–{minutesToHHMM(endMin)}
-        </div>
+        </span>
         <div style={{ flex: 1 }} />
         <div style={{
-          display: 'flex', alignItems: 'baseline', gap: 8,
+          display: 'flex', alignItems: 'center', gap: 10,
         }}>
           {undefinedCount > 0 && !isPeriodOver && (
             <span
               title={`${undefinedCount} atividade${undefinedCount === 1 ? '' : 's'} sem tempo definido — preencha pra cálculo correto`}
               style={{
-                fontSize: 9, color: 'var(--color-warning)',
                 fontFamily: 'var(--font-mono)',
-                textTransform: 'lowercase',
+                fontSize: 9, fontWeight: 700,
+                color: 'var(--color-warning)',
+                letterSpacing: '0.18em',
+                textTransform: 'uppercase',
               }}
             >
-              ⚠ {undefinedCount} sem tempo
+              ⚠ {undefinedCount} SEM TEMPO
             </span>
           )}
           <div style={{
-            fontSize: 10, color: metricColor,
-            fontFamily: 'var(--font-mono)', fontWeight: 600,
+            fontFamily: 'var(--font-mono)',
+            fontSize: 10, fontWeight: 700,
+            color: metricColor,
+            letterSpacing: '0.18em',
+            textTransform: 'uppercase',
           }}>
             {isPeriodOver
-              ? 'encerrado'
+              ? 'ENCERRADO'
               : isExceeded
                 ? `−${fmtHM(Math.abs(remainingMin))}`
-                : `+${fmtHM(remainingMin)} livre`}
+                : `+${fmtHM(remainingMin)} LIVRE`}
           </div>
         </div>
       </div>
@@ -1088,21 +1166,33 @@ function PeriodSection({
         <button
           onClick={onOpenPlanner}
           style={{
-            width: '100%', padding: '18px 16px', background: 'none',
-            border: '1px dashed var(--color-border)', borderRadius: 3,
-            color: 'var(--color-text-muted)', fontSize: 11,
-            fontStyle: 'italic', cursor: 'pointer', transition: 'all 0.15s',
+            width: '100%', padding: '20px 18px',
+            background: 'rgba(8, 12, 18, 0.30)',
+            border: '1px dashed var(--color-ice-deep)',
+            borderRadius: 0,
+            clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%)',
+            fontFamily: 'var(--font-mono)',
+            color: 'var(--color-text-muted)', fontSize: 10,
+            fontWeight: 700,
+            letterSpacing: '0.22em',
+            textTransform: 'uppercase',
+            cursor: 'pointer', transition: 'all 0.15s',
           }}
           onMouseEnter={e => {
-            e.currentTarget.style.borderColor = 'var(--color-accent-light)'
-            e.currentTarget.style.color = 'var(--color-accent-light)'
+            e.currentTarget.style.borderColor = 'var(--color-ice)'
+            e.currentTarget.style.color = 'var(--color-ice-light)'
+            e.currentTarget.style.background = 'rgba(143, 191, 211, 0.06)'
+            e.currentTarget.style.boxShadow = '0 0 12px rgba(143, 191, 211, 0.18)'
           }}
           onMouseLeave={e => {
-            e.currentTarget.style.borderColor = 'var(--color-border)'
+            e.currentTarget.style.borderColor = 'var(--color-ice-deep)'
             e.currentTarget.style.color = 'var(--color-text-muted)'
+            e.currentTarget.style.background = 'rgba(8, 12, 18, 0.30)'
+            e.currentTarget.style.boxShadow = 'none'
           }}
         >
-          vazio — planejar
+          <span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 6, letterSpacing: 0 }}>//</span>
+          SLOT VAZIO · TAP TO PLAN
         </button>
       )}
     </section>
@@ -1225,8 +1315,8 @@ function PlannerDrawer({
         boxShadow: 'var(--shadow-lg)',
         overflow: 'hidden',
       }}>
-        {/* Hairline oxblood no topo — assinatura visual do design system. */}
-        <div style={modalHairline} />
+        {/* Hairline ice elétrica no topo — assinatura HUD CP2077. */}
+        <div className="hq-hairline-ice" />
 
         {/* Header HERO: padding generoso (32px lateral, 28/24 vertical) +
             grain sobre o radial oxblood. Eyebrow oxblood-light pra virar
@@ -1247,54 +1337,58 @@ function PlannerDrawer({
         >
           <div style={{ minWidth: 0, flex: '1 1 auto' }}>
             <div style={{
-              fontSize: 'var(--text-sm)',
-              color: 'var(--color-accent-light)',
+              fontFamily: 'var(--font-mono)',
+              fontSize: 11,
+              color: 'var(--color-ice-light)',
               letterSpacing: '0.28em',
               textTransform: 'uppercase',
               fontWeight: 700,
-              marginBottom: 'var(--space-4)',
+              marginBottom: 'var(--space-3)',
               lineHeight: 1,
-              display: 'inline-flex', alignItems: 'center', gap: 'var(--space-2)',
+              display: 'inline-flex', alignItems: 'center', gap: 8,
             }}>
-              {/* Glifo discreto antes do eyebrow pra dar peso visual */}
-              <span style={{
-                width: 14, height: 1,
-                background: 'var(--color-accent-light)',
-                opacity: 0.7,
-                display: 'inline-block',
-              }} />
-              Planejar
+              <div
+                aria-hidden="true"
+                style={{
+                  width: 8, height: 8,
+                  background: 'var(--color-ice)',
+                  boxShadow: '0 0 8px var(--color-ice-glow)',
+                }}
+              />
+              <span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
+              PLANEJAR · {new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}
             </div>
             <div style={{
-              fontSize: 'var(--text-xl)',
+              fontFamily: 'var(--font-display)',
+              fontSize: 22,
               color: 'var(--color-text-primary)',
-              fontWeight: 700,
-              letterSpacing: '-0.02em',
+              fontWeight: 600,
+              letterSpacing: '0.02em',
               lineHeight: 1.2,
+              textTransform: 'uppercase',
               whiteSpace: 'nowrap',
               overflow: 'hidden',
               textOverflow: 'ellipsis',
             }}>
-              Distribuir itens pelos períodos do dia
+              DISTRIBUIR ITENS PELOS PERÍODOS DO DIA
             </div>
           </div>
 
-          {/* Busca: glass sutil. Ring oxblood ao focus pra feedback claro. */}
+          {/* Busca: glass cyber. Ring ice ao focus. */}
           <div
             style={{
               flex: '0 1 340px', minWidth: 200,
               display: 'flex', alignItems: 'center', gap: 'var(--space-2)',
-              background: 'var(--glass-bg)',
-              backdropFilter: 'var(--glass-blur)',
-              WebkitBackdropFilter: 'var(--glass-blur)',
+              background: 'rgba(8, 12, 18, 0.55)',
               border: '1px solid var(--color-border)',
-              borderRadius: 'var(--radius-md)',
+              borderRadius: 0,
+              clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%)',
               padding: '7px 12px',
               transition: 'border-color var(--motion-fast) var(--ease-smooth), box-shadow var(--motion-fast) var(--ease-smooth)',
             }}
             onFocusCapture={e => {
-              e.currentTarget.style.borderColor = 'var(--color-accent-primary)'
-              e.currentTarget.style.boxShadow = '0 0 0 2px rgba(159, 18, 57, 0.18)'
+              e.currentTarget.style.borderColor = 'rgba(143, 191, 211, 0.55)'
+              e.currentTarget.style.boxShadow = '0 0 12px rgba(143, 191, 211, 0.20)'
             }}
             onBlurCapture={e => {
               e.currentTarget.style.borderColor = 'var(--color-border)'
@@ -1339,26 +1433,25 @@ function PlannerDrawer({
             onClick={onClose}
             aria-label="Fechar drawer"
             style={{
-              background: 'var(--glass-bg)',
-              backdropFilter: 'var(--glass-blur)',
-              WebkitBackdropFilter: 'var(--glass-blur)',
+              background: 'rgba(8, 12, 18, 0.55)',
               border: '1px solid var(--color-border)',
               cursor: 'pointer',
               color: 'var(--color-text-tertiary)',
-              width: 32, height: 32, borderRadius: 'var(--radius-md)',
+              width: 32, height: 32, borderRadius: 0,
+              clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%)',
               display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
               transition: 'all var(--motion-fast) var(--ease-smooth)',
               flexShrink: 0,
             }}
             onMouseEnter={e => {
-              e.currentTarget.style.color = 'var(--color-text-primary)'
-              e.currentTarget.style.borderColor = 'var(--color-border-chrome)'
-              e.currentTarget.style.background = 'var(--glass-bg-hover)'
+              e.currentTarget.style.color = 'var(--color-ice-light)'
+              e.currentTarget.style.borderColor = 'rgba(143, 191, 211, 0.45)'
+              e.currentTarget.style.background = 'rgba(143, 191, 211, 0.10)'
             }}
             onMouseLeave={e => {
               e.currentTarget.style.color = 'var(--color-text-tertiary)'
               e.currentTarget.style.borderColor = 'var(--color-border)'
-              e.currentTarget.style.background = 'var(--glass-bg)'
+              e.currentTarget.style.background = 'rgba(8, 12, 18, 0.55)'
             }}
           >
             <X size={15} strokeWidth={1.8} />
@@ -1380,15 +1473,25 @@ function PlannerDrawer({
           flexShrink: 0,
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ fontSize: 9, color: 'var(--color-text-muted)', letterSpacing: '0.15em', textTransform: 'uppercase', fontWeight: 700 }}>
-              Janela
+            <span style={{
+              fontFamily: 'var(--font-mono)',
+              fontSize: 9, color: 'var(--color-text-muted)',
+              letterSpacing: '0.22em', textTransform: 'uppercase', fontWeight: 700,
+            }}>
+              <span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
+              JANELA
             </span>
             <DateRangeFilter value={plannerRange} onChange={setPlannerRange} />
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ fontSize: 9, color: 'var(--color-text-muted)', letterSpacing: '0.15em', textTransform: 'uppercase', fontWeight: 700 }}>
-              Tipos
+            <span style={{
+              fontFamily: 'var(--font-mono)',
+              fontSize: 9, color: 'var(--color-text-muted)',
+              letterSpacing: '0.22em', textTransform: 'uppercase', fontWeight: 700,
+            }}>
+              <span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
+              TIPOS
             </span>
             {typeChips.map(t => {
               const active = plannerTypes.has(t.key)
@@ -1404,27 +1507,35 @@ function PlannerDrawer({
                   })}
                   title={`${t.label} · shift+clique pra isolar`}
                   style={{
-                    background: 'transparent',
-                    color: active ? 'var(--color-text-primary)' : 'var(--color-text-muted)',
-                    border: 'none', cursor: 'pointer',
-                    fontSize: 10, padding: '3px 4px',
-                    letterSpacing: '0.08em', textTransform: 'lowercase',
-                    fontWeight: active ? 700 : 400,
-                    transition: 'color 0.12s',
-                    opacity: active ? 1 : 0.55,
+                    background: active ? 'rgba(143, 191, 211, 0.10)' : 'rgba(8, 12, 18, 0.55)',
+                    color: active ? 'var(--color-ice-light)' : 'var(--color-text-tertiary)',
+                    border: `1px solid ${active ? 'rgba(143, 191, 211, 0.45)' : 'var(--color-border)'}`,
+                    cursor: 'pointer',
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: 9, padding: '5px 10px',
+                    letterSpacing: '0.18em', textTransform: 'uppercase',
+                    fontWeight: 700,
+                    borderRadius: 0,
+                    clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 5px), calc(100% - 5px) 100%, 0 100%)',
+                    transition: 'all 0.15s',
+                    boxShadow: active ? '0 0 12px rgba(143, 191, 211, 0.18)' : 'none',
                   }}
-                  onMouseEnter={e => { if (!active) e.currentTarget.style.opacity = '0.85' }}
-                  onMouseLeave={e => { if (!active) e.currentTarget.style.opacity = '0.55' }}
                 >
-                  {t.label.toLowerCase()}
+                  {t.label.toUpperCase()}
                 </button>
               )
             })}
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
-            <span style={{ fontSize: 9, color: 'var(--color-text-muted)', letterSpacing: '0.15em', textTransform: 'uppercase', fontWeight: 700, marginRight: 3 }}>
-              Prioridade
+            <span style={{
+              fontFamily: 'var(--font-mono)',
+              fontSize: 9, color: 'var(--color-text-muted)',
+              letterSpacing: '0.22em', textTransform: 'uppercase', fontWeight: 700,
+              marginRight: 3,
+            }}>
+              <span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
+              PRIORIDADE
             </span>
             {([
               { key: 'critical', label: 'crítica', color: 'var(--color-accent-primary)' },
@@ -1469,25 +1580,30 @@ function PlannerDrawer({
           </div>
 
           <label style={{
-            display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer',
-            color: 'var(--color-text-tertiary)',
+            display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer',
+            color: plannerIncludeUndated
+              ? 'var(--color-ice-light)'
+              : 'var(--color-text-tertiary)',
+            transition: 'color var(--motion-fast) var(--ease-smooth)',
           }}>
             <input
               type="checkbox"
               checked={plannerIncludeUndated}
               onChange={e => setPlannerIncludeUndated(e.target.checked)}
-              style={{ cursor: 'pointer' }}
+              style={{ cursor: 'pointer', accentColor: 'var(--color-ice)' }}
             />
-            <span style={{ fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase' }}>
-              incluir sem data
+            <span style={{
+              fontFamily: 'var(--font-mono)',
+              fontSize: 9, fontWeight: 700,
+              letterSpacing: '0.18em', textTransform: 'uppercase',
+            }}>
+              INCLUIR SEM DATA
             </span>
           </label>
 
-          {/* Toggle: mostrar quests de TODOS os entregáveis (não só o ativo).
-              Default OFF — quando ON, libera puxar quests de entregáveis
-              futuros do mesmo projeto pro dia. Highlight ice quando ativo. */}
+          {/* Toggle: mostrar quests de TODOS os entregáveis (não só o ativo). */}
           <label style={{
-            display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer',
+            display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer',
             color: plannerShowAllDeliverables
               ? 'var(--color-ice-light)'
               : 'var(--color-text-tertiary)',
@@ -1497,13 +1613,17 @@ function PlannerDrawer({
               type="checkbox"
               checked={plannerShowAllDeliverables}
               onChange={e => setPlannerShowAllDeliverables(e.target.checked)}
-              style={{ cursor: 'pointer' }}
+              style={{ cursor: 'pointer', accentColor: 'var(--color-ice)' }}
             />
             <span
               title="Quando desligado, só aparece o entregável corrente de cada projeto. Ligue pra puxar quests de entregáveis futuros."
-              style={{ fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase' }}
+              style={{
+                fontFamily: 'var(--font-mono)',
+                fontSize: 9, fontWeight: 700,
+                letterSpacing: '0.18em', textTransform: 'uppercase',
+              }}
             >
-              todos entregáveis
+              TODOS ENTREGÁVEIS
             </span>
           </label>
         </div>
@@ -1529,25 +1649,38 @@ function PlannerDrawer({
               }
             }}
             style={{
-              borderRight: '1px solid var(--color-divider)',
+              borderRight: '1px solid var(--color-ice-deep)',
               overflowY: 'auto',
               padding: 'var(--space-5) var(--space-6)',
-              background: draggedFromPeriod ? 'rgba(90, 122, 106, 0.08)' : 'transparent',
+              background: draggedFromPeriod ? 'rgba(143, 191, 211, 0.08)' : 'transparent',
               transition: 'background var(--motion-fast) var(--ease-smooth)',
             }}
           >
             <div style={{
-              fontSize: 'var(--text-xs)', color: 'var(--color-text-tertiary)',
-              letterSpacing: '0.18em', textTransform: 'uppercase', fontWeight: 600,
+              fontFamily: 'var(--font-mono)',
+              fontSize: 10, fontWeight: 700,
+              color: 'var(--color-ice-light)',
+              letterSpacing: '0.25em', textTransform: 'uppercase',
               marginBottom: 'var(--space-4)',
-              display: 'flex', alignItems: 'baseline', gap: 'var(--space-2)',
+              display: 'flex', alignItems: 'center', gap: 8,
+              paddingBottom: 8,
+              borderBottom: '1px solid var(--color-ice-deep)',
             }}>
-              <span>Disponíveis</span>
+              <div
+                aria-hidden="true"
+                style={{
+                  width: 3, height: 14,
+                  background: 'var(--color-ice)',
+                  boxShadow: '0 0 8px var(--color-ice-glow)',
+                }}
+              />
+              <span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
+              DISPONÍVEIS
               <span style={{
-                color: 'var(--color-text-muted)', fontFamily: 'var(--font-mono)',
-                fontWeight: 400, letterSpacing: 0,
+                color: 'var(--color-text-muted)',
+                fontWeight: 700, letterSpacing: '0.12em',
               }}>
-                {availableItems.length}
+                [{availableItems.length}]
               </span>
             </div>
             {availableItems.length > 0 ? (
@@ -1561,12 +1694,16 @@ function PlannerDrawer({
               />
             ) : (
               <div style={{
-                fontSize: 11, color: 'var(--color-text-muted)', fontStyle: 'italic',
+                fontFamily: 'var(--font-mono)',
+                fontSize: 10, color: 'var(--color-text-muted)',
+                letterSpacing: '0.18em', textTransform: 'uppercase',
+                fontWeight: 700,
                 padding: '16px 0',
               }}>
+                <span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
                 {filteredItems.length === 0
-                  ? 'Nada neste filtro.'
-                  : 'Tudo foi planejado.'}
+                  ? 'NADA NESTE FILTRO'
+                  : 'TUDO FOI PLANEJADO'}
               </div>
             )}
           </div>
@@ -1649,56 +1786,84 @@ function PlannerDrawer({
                     })
                   }}
                   style={{
-                    background: 'var(--glass-bg)',
-                    backdropFilter: 'var(--glass-blur)',
-                    WebkitBackdropFilter: 'var(--glass-blur)',
+                    background: 'rgba(8, 12, 18, 0.55)',
                     border: draggedItem && !dayPlan[period].includes(draggedItem.id)
-                      ? '1px dashed var(--color-accent-primary)'
+                      ? '1px dashed var(--color-ice)'
                       : isExceeded
-                        ? '1px solid var(--color-accent-primary)'
-                        : '1px solid var(--color-border)',
-                    borderRadius: 'var(--radius-md)',
+                        ? '1px solid rgba(159, 18, 57, 0.55)'
+                        : '1px solid var(--color-ice-deep)',
+                    borderRadius: 0,
+                    clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 12px), calc(100% - 12px) 100%, 0 100%)',
                     padding: 'var(--space-4) var(--space-5)',
-                    transition: 'border-color var(--motion-fast) var(--ease-smooth), background var(--motion-fast) var(--ease-smooth)',
+                    transition: 'border-color var(--motion-fast) var(--ease-smooth), background var(--motion-fast) var(--ease-smooth), box-shadow var(--motion-fast) var(--ease-smooth)',
                     display: 'flex', flexDirection: 'column', flexShrink: 0,
                     boxShadow: isExceeded
-                      ? '0 0 0 1px rgba(159, 18, 57, 0.15), 0 4px 12px rgba(159, 18, 57, 0.08)'
-                      : 'none',
+                      ? '0 0 12px rgba(159, 18, 57, 0.20)'
+                      : draggedItem && !dayPlan[period].includes(draggedItem.id)
+                        ? '0 0 12px rgba(143, 191, 211, 0.25)'
+                        : 'none',
                   }}
                 >
                   <div style={{
-                    display: 'flex', alignItems: 'center', gap: 'var(--space-3)',
+                    display: 'flex', alignItems: 'center', gap: 10,
                     marginBottom: 'var(--space-4)',
+                    paddingBottom: 8,
+                    borderBottom: `1px solid ${isExceeded ? 'rgba(159, 18, 57, 0.35)' : 'var(--color-ice-deep)'}`,
                   }}>
-                    <META.Icon size={12} strokeWidth={1.8} style={{ color: 'var(--color-text-secondary)' }} />
-                    <div style={{
-                      fontSize: 'var(--text-xs)', color: 'var(--color-text-secondary)',
-                      letterSpacing: '0.16em', textTransform: 'uppercase', fontWeight: 600,
+                    <div
+                      aria-hidden="true"
+                      style={{
+                        width: 3, height: 16,
+                        background: isPeriodOver
+                          ? 'var(--color-text-muted)'
+                          : isExceeded
+                            ? 'var(--color-accent-primary)'
+                            : 'var(--color-ice)',
+                        boxShadow: isPeriodOver
+                          ? 'none'
+                          : isExceeded
+                            ? '0 0 8px rgba(159, 18, 57, 0.45)'
+                            : '0 0 8px var(--color-ice-glow)',
+                        flexShrink: 0,
+                      }}
+                    />
+                    <META.Icon size={12} strokeWidth={1.8} style={{
+                      color: isPeriodOver ? 'var(--color-text-muted)' : 'var(--color-ice-light)',
+                    }} />
+                    <span style={{
+                      fontFamily: 'var(--font-mono)',
+                      fontSize: 10, fontWeight: 700,
+                      color: isPeriodOver ? 'var(--color-text-muted)' : 'var(--color-ice-light)',
+                      letterSpacing: '0.22em', textTransform: 'uppercase',
                     }}>
-                      {META.label}
-                    </div>
-                    <div style={{
-                      fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)',
-                      fontFamily: 'var(--font-mono)', letterSpacing: 0,
+                      <span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
+                      {META.label.toUpperCase()}
+                    </span>
+                    <span style={{
+                      fontFamily: 'var(--font-mono)',
+                      fontSize: 9, fontWeight: 600,
+                      color: 'var(--color-text-muted)',
+                      letterSpacing: '0.12em',
                     }}>
                       {minutesToHHMM(startMin)}–{minutesToHHMM(endMin)}
-                    </div>
+                    </span>
                     <div style={{ flex: 1 }} />
                     <div
                       title={isPeriodOver
                         ? `período encerrado · ${fmtHM(usedMin)} ainda pendente`
                         : `${fmtHM(usedMin)} usado de ${fmtHM(availableMin)} disponível`}
                       style={{
-                        fontSize: 'var(--text-xs)', color: metricColor,
-                        fontFamily: 'var(--font-mono)', fontWeight: 600,
-                        fontVariantNumeric: 'tabular-nums',
+                        fontFamily: 'var(--font-mono)',
+                        fontSize: 10, fontWeight: 700,
+                        color: metricColor,
+                        letterSpacing: '0.18em', textTransform: 'uppercase',
                       }}
                     >
                       {isPeriodOver
-                        ? 'encerrado'
+                        ? 'ENCERRADO'
                         : isExceeded
                           ? `−${fmtHM(Math.abs(remainingMin))}`
-                          : `+${fmtHM(remainingMin)} livre`}
+                          : `+${fmtHM(remainingMin)} LIVRE`}
                     </div>
                   </div>
 
@@ -1740,24 +1905,31 @@ function PlannerDrawer({
                             })
                           }}
                           style={{
-                            background: 'var(--color-bg-primary)',
-                            border: '1px solid var(--color-border)',
-                            borderRadius: 'var(--radius-sm)',
-                            padding: '10px 14px',
+                            background: 'rgba(8, 10, 14, 0.7)',
+                            border: '1px solid rgba(143, 191, 211, 0.22)',
+                            borderRadius: 0,
+                            clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%)',
+                            padding: '8px 12px',
                             display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                             gap: 'var(--space-3)', cursor: 'grab',
-                            fontSize: 'var(--text-sm)', color: 'var(--color-text-secondary)',
-                            lineHeight: 1.4,
-                            transition: 'background var(--motion-fast) var(--ease-smooth), border-color var(--motion-fast) var(--ease-smooth), opacity var(--motion-fast) var(--ease-smooth)',
+                            fontFamily: 'var(--font-display)',
+                            fontSize: 12, fontWeight: 600,
+                            letterSpacing: '0.03em',
+                            textTransform: 'uppercase',
+                            color: 'var(--color-text-secondary)',
+                            lineHeight: 1.3,
+                            transition: 'background var(--motion-fast) var(--ease-smooth), border-color var(--motion-fast) var(--ease-smooth), box-shadow var(--motion-fast) var(--ease-smooth), opacity var(--motion-fast) var(--ease-smooth)',
                             opacity: itemDone ? 0.5 : 1,
                           }}
                           onMouseEnter={e => {
-                            e.currentTarget.style.background = 'var(--glass-bg-hover)'
-                            e.currentTarget.style.borderColor = 'var(--color-border-strong)'
+                            e.currentTarget.style.background = 'rgba(143, 191, 211, 0.08)'
+                            e.currentTarget.style.borderColor = 'rgba(143, 191, 211, 0.45)'
+                            e.currentTarget.style.boxShadow = '0 0 10px rgba(143, 191, 211, 0.15)'
                           }}
                           onMouseLeave={e => {
-                            e.currentTarget.style.background = 'var(--color-bg-primary)'
-                            e.currentTarget.style.borderColor = 'var(--color-border)'
+                            e.currentTarget.style.background = 'rgba(8, 10, 14, 0.7)'
+                            e.currentTarget.style.borderColor = 'rgba(143, 191, 211, 0.22)'
+                            e.currentTarget.style.boxShadow = 'none'
                           }}
                         >
                           <span style={{
@@ -1773,8 +1945,9 @@ function PlannerDrawer({
                             }))}
                             style={{
                               background: 'none', border: 'none', cursor: 'pointer',
-                              color: 'var(--color-text-muted)', fontSize: 10,
+                              color: 'var(--color-text-muted)', fontSize: 11,
                               padding: '0 4px', transition: 'color 0.15s',
+                              fontFamily: 'var(--font-mono)',
                             }}
                             onMouseEnter={e => (e.currentTarget.style.color = 'var(--color-accent-light)')}
                             onMouseLeave={e => (e.currentTarget.style.color = 'var(--color-text-muted)')}
@@ -1786,10 +1959,16 @@ function PlannerDrawer({
                     </div>
                   ) : (
                     <div style={{
-                      fontSize: 10, color: 'var(--color-text-muted)',
-                      fontStyle: 'italic', textAlign: 'center', padding: '8px 0',
+                      fontFamily: 'var(--font-mono)',
+                      fontSize: 9, fontWeight: 700,
+                      color: 'var(--color-text-muted)',
+                      letterSpacing: '0.22em', textTransform: 'uppercase',
+                      textAlign: 'center', padding: '12px 0',
+                      border: '1px dashed var(--color-ice-deep)',
+                      clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 5px), calc(100% - 5px) 100%, 0 100%)',
                     }}>
-                      arraste aqui
+                      <span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 6, letterSpacing: 0 }}>//</span>
+                      DRAG HERE
                     </div>
                   )}
                 </div>
@@ -1798,16 +1977,15 @@ function PlannerDrawer({
           </div>
         </div>
 
-        {/* Footer: hairline ice (echo do topo) + actions com glass. */}
+        {/* Footer: hairline ice (echo do topo) + actions cyber. */}
         <div className="hq-hairline-ice" style={{ opacity: 0.5 }} />
         <div
-          className="hq-grain"
           style={{
-            padding: '20px 32px',
+            padding: '18px 32px',
             display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-3)',
             flexShrink: 0,
             background: `
-              radial-gradient(ellipse 80% 100% at 100% 100%, rgba(159, 18, 57, 0.04), transparent 60%),
+              radial-gradient(ellipse 80% 100% at 100% 100%, rgba(143, 191, 211, 0.04), transparent 60%),
               linear-gradient(0deg, rgba(236, 232, 227, 0.015), transparent)
             `,
           }}
@@ -1815,55 +1993,55 @@ function PlannerDrawer({
           <button
             onClick={onClose}
             style={{
-              background: 'var(--glass-bg)',
-              backdropFilter: 'var(--glass-blur)',
-              WebkitBackdropFilter: 'var(--glass-blur)',
+              background: 'rgba(8, 12, 18, 0.55)',
               border: '1px solid var(--color-border)',
               color: 'var(--color-text-tertiary)', cursor: 'pointer',
-              padding: '9px 20px', fontSize: 'var(--text-xs)', fontWeight: 600,
-              letterSpacing: '0.12em', textTransform: 'uppercase',
-              borderRadius: 'var(--radius-md)',
+              fontFamily: 'var(--font-mono)',
+              padding: '8px 18px', fontSize: 10, fontWeight: 700,
+              letterSpacing: '0.22em', textTransform: 'uppercase',
+              borderRadius: 0,
+              clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%)',
               transition: 'all var(--motion-fast) var(--ease-smooth)',
             }}
             onMouseEnter={e => {
-              e.currentTarget.style.color = 'var(--color-text-primary)'
-              e.currentTarget.style.borderColor = 'var(--color-border-chrome)'
-              e.currentTarget.style.background = 'var(--glass-bg-hover)'
+              e.currentTarget.style.color = 'var(--color-ice-light)'
+              e.currentTarget.style.borderColor = 'rgba(143, 191, 211, 0.45)'
+              e.currentTarget.style.background = 'rgba(143, 191, 211, 0.10)'
             }}
             onMouseLeave={e => {
               e.currentTarget.style.color = 'var(--color-text-tertiary)'
               e.currentTarget.style.borderColor = 'var(--color-border)'
-              e.currentTarget.style.background = 'var(--glass-bg)'
+              e.currentTarget.style.background = 'rgba(8, 12, 18, 0.55)'
             }}
           >
-            Fechar
+            FECHAR
           </button>
           <button
             onClick={onClose}
             style={{
-              background: 'var(--color-accent-primary)',
-              border: '1px solid var(--color-accent-primary)',
-              color: 'var(--color-bg-primary)', cursor: 'pointer',
-              padding: '9px 22px', fontSize: 'var(--text-xs)', fontWeight: 700,
-              letterSpacing: '0.12em', textTransform: 'uppercase',
-              borderRadius: 'var(--radius-md)',
-              boxShadow: '0 4px 12px rgba(159, 18, 57, 0.25)',
+              background: 'rgba(143, 191, 211, 0.14)',
+              border: '1px solid var(--color-ice)',
+              color: 'var(--color-ice-light)', cursor: 'pointer',
+              fontFamily: 'var(--font-mono)',
+              padding: '8px 22px', fontSize: 10, fontWeight: 700,
+              letterSpacing: '0.22em', textTransform: 'uppercase',
+              borderRadius: 0,
+              clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%)',
+              boxShadow: '0 0 14px rgba(143, 191, 211, 0.30)',
               transition: 'all var(--motion-fast) var(--ease-smooth)',
             }}
             onMouseEnter={e => {
-              e.currentTarget.style.background = 'var(--color-accent-secondary)'
-              e.currentTarget.style.borderColor = 'var(--color-accent-secondary)'
-              e.currentTarget.style.boxShadow = '0 6px 16px rgba(159, 18, 57, 0.35)'
+              e.currentTarget.style.background = 'rgba(143, 191, 211, 0.22)'
+              e.currentTarget.style.boxShadow = '0 0 20px rgba(143, 191, 211, 0.50)'
               e.currentTarget.style.transform = 'translateY(-1px)'
             }}
             onMouseLeave={e => {
-              e.currentTarget.style.background = 'var(--color-accent-primary)'
-              e.currentTarget.style.borderColor = 'var(--color-accent-primary)'
-              e.currentTarget.style.boxShadow = '0 4px 12px rgba(159, 18, 57, 0.25)'
+              e.currentTarget.style.background = 'rgba(143, 191, 211, 0.14)'
+              e.currentTarget.style.boxShadow = '0 0 14px rgba(143, 191, 211, 0.30)'
               e.currentTarget.style.transform = 'translateY(0)'
             }}
           >
-            Concluir
+            ✓ CONCLUIR
           </button>
         </div>
       </div>
@@ -1912,21 +2090,30 @@ function OverdueTasksBanner({ tasks, onToToday, onReschedule, onDiscard }: {
 
   return (
     <section style={{ marginTop: 24 }}>
+      {/* Alert header CP2077 — pulse-square oxblood + // ALERT label */}
       <div style={{
         display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12,
+        paddingBottom: 8,
+        borderBottom: '1px solid rgba(159, 18, 57, 0.45)',
       }}>
-        <div style={{
-          fontSize: 10, color: 'var(--color-accent-light)',
-          letterSpacing: '0.2em', textTransform: 'uppercase', fontWeight: 700,
+        <div className="hq-pulse-square" aria-hidden="true" />
+        <span style={{
+          fontFamily: 'var(--font-mono)',
+          fontSize: 10, fontWeight: 700,
+          letterSpacing: '0.25em',
+          textTransform: 'uppercase',
+          color: 'var(--color-accent-light)',
         }}>
-          Pendentes de ontem · {tasks.length}
-        </div>
+          <span style={{ color: 'var(--color-accent-primary)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
+          ALERT · {tasks.length} {tasks.length === 1 ? 'TAREFA ATRASADA' : 'TAREFAS ATRASADAS'}
+        </span>
       </div>
 
       <div style={{
-        border: '1px solid var(--color-border)',
+        border: '1px solid rgba(159, 18, 57, 0.45)',
         borderLeft: '2px solid var(--color-accent-primary)',
-        borderRadius: 3, background: 'var(--color-bg-secondary)',
+        background: 'rgba(159, 18, 57, 0.06)',
+        clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 12px), calc(100% - 12px) 100%, 0 100%)',
       }}>
         {tasks.map((t, i) => {
           const isPicking = picking === t.id
@@ -1941,17 +2128,24 @@ function OverdueTasksBanner({ tasks, onToToday, onReschedule, onDiscard }: {
             >
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{
-                  fontSize: 12, color: 'var(--color-text-primary)', fontWeight: 500,
+                  fontFamily: 'var(--font-display)',
+                  fontSize: 13, color: 'var(--color-text-primary)', fontWeight: 600,
+                  letterSpacing: '0.03em',
+                  textTransform: 'uppercase',
                   overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                 }}>
                   {t.title}
                 </div>
                 <div style={{
-                  fontSize: 9, color: 'var(--color-text-tertiary)', marginTop: 2,
-                  fontFamily: 'var(--font-mono)', letterSpacing: '0.05em',
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: 9, fontWeight: 700,
+                  color: 'var(--color-accent-light)',
+                  letterSpacing: '0.18em',
+                  textTransform: 'uppercase',
+                  marginTop: 4,
                 }}>
-                  {daysAway(t.scheduled_date)}
-                  {t.duration_minutes ? ` · ~${t.duration_minutes}min` : ''}
+                  {daysAway(t.scheduled_date).toUpperCase()}
+                  {t.duration_minutes ? ` · ~${t.duration_minutes}MIN` : ''}
                 </div>
               </div>
 
@@ -2005,24 +2199,30 @@ function OverdueTasksBanner({ tasks, onToToday, onReschedule, onDiscard }: {
                     onClick={() => onToToday(t)}
                     title="Reagendar pra hoje"
                     style={{
-                      background: 'transparent', border: '1px solid var(--color-border)',
-                      color: 'var(--color-text-secondary)', cursor: 'pointer',
-                      fontSize: 9, fontWeight: 600, padding: '4px 10px',
-                      letterSpacing: '0.08em', textTransform: 'uppercase', borderRadius: 3,
+                      background: 'rgba(8, 12, 18, 0.55)',
+                      border: '1px solid var(--color-border)',
+                      color: 'var(--color-text-tertiary)', cursor: 'pointer',
+                      fontFamily: 'var(--font-mono)',
+                      fontSize: 9, fontWeight: 700, padding: '5px 10px',
+                      letterSpacing: '0.18em', textTransform: 'uppercase',
+                      borderRadius: 0,
+                      clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 5px), calc(100% - 5px) 100%, 0 100%)',
                       display: 'inline-flex', alignItems: 'center', gap: 5,
                       transition: 'all 0.15s',
                     }}
                     onMouseEnter={e => {
-                      e.currentTarget.style.borderColor = 'var(--color-accent-light)'
-                      e.currentTarget.style.color = 'var(--color-accent-light)'
+                      e.currentTarget.style.borderColor = 'rgba(143, 191, 211, 0.45)'
+                      e.currentTarget.style.color = 'var(--color-ice-light)'
+                      e.currentTarget.style.background = 'rgba(143, 191, 211, 0.10)'
                     }}
                     onMouseLeave={e => {
                       e.currentTarget.style.borderColor = 'var(--color-border)'
-                      e.currentTarget.style.color = 'var(--color-text-secondary)'
+                      e.currentTarget.style.color = 'var(--color-text-tertiary)'
+                      e.currentTarget.style.background = 'rgba(8, 12, 18, 0.55)'
                     }}
                   >
                     <ArrowRight size={10} strokeWidth={2} />
-                    pra hoje
+                    PRA HOJE
                   </button>
                   <button
                     onClick={() => {
@@ -2147,21 +2347,25 @@ function AvailableList({ items, areas, projects, delivsByProject, onDragStart, o
   const projectGroups = Array.from(projectMap.values())
 
   const sectionHeaderStyle: React.CSSProperties = {
+    fontFamily: 'var(--font-mono)',
     fontSize: 9, color: 'var(--color-text-muted)',
-    letterSpacing: '0.18em', textTransform: 'uppercase', fontWeight: 700,
+    letterSpacing: '0.22em', textTransform: 'uppercase', fontWeight: 700,
     marginBottom: 6,
+    display: 'flex', alignItems: 'center', gap: 4,
   }
   const projectHeaderStyle = (color: string): React.CSSProperties => ({
-    fontSize: 10, color: 'var(--color-text-secondary)',
-    letterSpacing: '0.12em', textTransform: 'uppercase', fontWeight: 700,
-    marginBottom: 4,
+    fontFamily: 'var(--font-mono)',
+    fontSize: 10, color: 'var(--color-ice-light)',
+    letterSpacing: '0.18em', textTransform: 'uppercase', fontWeight: 700,
+    marginBottom: 6,
     display: 'flex', alignItems: 'center', gap: 6,
     borderLeft: `2px solid ${color}`, paddingLeft: 8,
   })
   const delivHeaderStyle: React.CSSProperties = {
+    fontFamily: 'var(--font-mono)',
     fontSize: 9, color: 'var(--color-text-muted)',
-    fontStyle: 'italic',
-    marginBottom: 4, marginTop: 2,
+    letterSpacing: '0.15em', textTransform: 'uppercase', fontWeight: 600,
+    marginBottom: 6, marginTop: 4,
     paddingLeft: 10,
   }
 
@@ -2196,7 +2400,10 @@ function AvailableList({ items, areas, projects, delivsByProject, onDragStart, o
 
       {taskItems.length > 0 && (
         <div>
-          <div style={sectionHeaderStyle}>Tarefas</div>
+          <div style={sectionHeaderStyle}>
+            <span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
+            TAREFAS
+          </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {taskItems.map(item => (
               <AvailableCard
@@ -2215,7 +2422,10 @@ function AvailableList({ items, areas, projects, delivsByProject, onDragStart, o
 
       {routineItems.length > 0 && (
         <div>
-          <div style={sectionHeaderStyle}>Rotinas</div>
+          <div style={sectionHeaderStyle}>
+            <span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
+            ROTINAS
+          </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {routineItems.map(item => (
               <AvailableCard
@@ -2272,20 +2482,27 @@ function AvailableCard({ item, areas, projects, delivsByProject, onDragStart, on
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
       style={{
-        background: 'var(--color-bg-tertiary)',
-        border: '1px solid var(--color-border)',
-        borderLeft: `3px solid ${color}`,
-        borderRadius: 3, padding: '8px 10px',
-        cursor: 'grab', transition: 'background 0.15s, border-color 0.15s, opacity 0.15s',
+        background: 'rgba(8, 12, 18, 0.55)',
+        border: '1px solid rgba(143, 191, 211, 0.22)',
+        borderLeft: `2px solid ${color}`,
+        borderRadius: 0,
+        clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%)',
+        padding: '8px 12px',
+        cursor: 'grab',
+        transition: 'background 0.15s, border-color 0.15s, box-shadow 0.15s, opacity 0.15s, transform 0.15s',
         opacity: done ? 0.5 : 1,
       }}
       onMouseEnter={e => {
-        e.currentTarget.style.background = 'var(--color-bg-primary)'
-        e.currentTarget.style.borderColor = color
+        e.currentTarget.style.background = 'rgba(143, 191, 211, 0.08)'
+        e.currentTarget.style.borderColor = 'rgba(143, 191, 211, 0.45)'
+        e.currentTarget.style.boxShadow = '0 0 10px rgba(143, 191, 211, 0.15)'
+        e.currentTarget.style.transform = 'translateX(2px)'
       }}
       onMouseLeave={e => {
-        e.currentTarget.style.background = 'var(--color-bg-tertiary)'
-        e.currentTarget.style.borderColor = 'var(--color-border)'
+        e.currentTarget.style.background = 'rgba(8, 12, 18, 0.55)'
+        e.currentTarget.style.borderColor = 'rgba(143, 191, 211, 0.22)'
+        e.currentTarget.style.boxShadow = 'none'
+        e.currentTarget.style.transform = 'translateX(0)'
       }}
     >
       <div style={{
@@ -2293,7 +2510,10 @@ function AvailableCard({ item, areas, projects, delivsByProject, onDragStart, on
       }}>
         <div style={{
           flex: 1, minWidth: 0,
-          fontSize: 12, color: 'var(--color-text-primary)', fontWeight: 500,
+          fontFamily: 'var(--font-display)',
+          fontSize: 12, color: 'var(--color-text-primary)', fontWeight: 600,
+          letterSpacing: '0.03em',
+          textTransform: 'uppercase',
           overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
           textDecoration: done ? 'line-through' : 'none',
         }}>
@@ -2312,28 +2532,42 @@ function AvailableCard({ item, areas, projects, delivsByProject, onDragStart, on
         )}
       </div>
       <div style={{
-        marginTop: 3, display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap',
-        fontSize: 9, color: 'var(--color-text-tertiary)',
+        marginTop: 4, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap',
         fontFamily: 'var(--font-mono)',
+        fontSize: 9, fontWeight: 700,
+        color: 'var(--color-text-muted)',
+        letterSpacing: '0.15em', textTransform: 'uppercase',
       }}>
-        <span style={{ color, textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 600 }}>
+        <span style={{ color }}>
           {typeLabel}
         </span>
         {parent && (
-          <span style={{ color: 'var(--color-text-tertiary)' }}>
-            › {parent.title}
-          </span>
+          <>
+            <span style={{ opacity: 0.4 }}>·</span>
+            <span style={{ color: 'var(--color-text-tertiary)' }}>
+              {parent.title}
+            </span>
+          </>
         )}
         {deliverable && (
-          <span style={{ color: 'var(--color-text-muted)' }}>
-            › {deliverable.title}
-          </span>
+          <>
+            <span style={{ opacity: 0.4 }}>·</span>
+            <span style={{ color: 'var(--color-ice-light)' }}>
+              {deliverable.title}
+            </span>
+          </>
         )}
         {duration > 0 && (
-          <span>· ~{fmtHM(duration)}</span>
+          <>
+            <span style={{ opacity: 0.4 }}>·</span>
+            <span style={{ opacity: 0.85 }}>~{fmtHM(duration)}</span>
+          </>
         )}
         {isTask && (item as any).start_time && (item as any).end_time && (
-          <span>· {(item as any).start_time}–{(item as any).end_time}</span>
+          <>
+            <span style={{ opacity: 0.4 }}>·</span>
+            <span style={{ opacity: 0.85 }}>{(item as any).start_time}–{(item as any).end_time}</span>
+          </>
         )}
       </div>
     </div>

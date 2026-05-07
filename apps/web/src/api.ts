@@ -424,6 +424,12 @@ export interface ActiveSession {
   started_at: string
   ended_at: string | null
   is_active: boolean
+  parent_title?: string | null
+  deliverable_title?: string | null
+  routine_date?: string | null
+  /** Tempo estimado da entidade em minutos. Banner usa pra detectar overflow
+   *  (tempo gasto > estimado → muda paleta da animação pra vermelho/prata). */
+  estimated_minutes?: number | null
   /** @deprecated */
   quest_id?: string | null
 }

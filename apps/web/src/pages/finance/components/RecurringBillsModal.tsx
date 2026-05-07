@@ -29,6 +29,7 @@ import {
   modalShell, modalHairline, modalHeader, modalBody,
 } from './styleHelpers'
 import { EmptyState, IconButton } from '../../../components/ui/Primitives'
+import { confirmDialog, alertDialog } from '../../../lib/dialog'
 
 export function RecurringBillsModal({
   bills, status, accounts, categories, onClose, onChanged,
@@ -60,16 +61,19 @@ export function RecurringBillsModal({
   const billsReceita = bills.filter(b => b.tipo === 'receita')
 
   async function handleDelete(bill: FinRecurringBill) {
-    if (!window.confirm(
-      `Deletar "${bill.descricao}"? Histórico de transações já lançadas ` +
-      `não é afetado — só remove o cadastro recorrente.`
-    )) return
+    const ok = await confirmDialog({
+      title: 'Deletar recorrente',
+      message: `Deletar "${bill.descricao}"?\nHistórico de transações já lançadas não é afetado — só remove o cadastro recorrente.`,
+      confirmLabel: 'DELETAR',
+      danger: true,
+    })
+    if (!ok) return
     try {
       await deleteFinRecurringBill(bill.id)
       onChanged()
     } catch (err) {
       reportApiError('RecurringBillsModal.delete', err)
-      alert('Erro ao deletar — veja o console.')
+      alertDialog({ title: 'Erro', message: 'Erro ao deletar — veja o console.', variant: 'danger' })
     }
   }
 
@@ -79,7 +83,7 @@ export function RecurringBillsModal({
       onChanged()
     } catch (err) {
       reportApiError('RecurringBillsModal.togglePause', err)
-      alert('Erro ao alterar — veja o console.')
+      alertDialog({ title: 'Erro', message: 'Erro ao alterar — veja o console.', variant: 'danger' })
     }
   }
 
@@ -532,15 +536,15 @@ function RecurringBillFormModal({
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
-    if (!descricao.trim()) { alert('Descrição é obrigatória.'); return }
+    if (!descricao.trim()) { alertDialog({ title: 'Descrição obrigatória', message: 'Descrição é obrigatória.', variant: 'warning' }); return }
     const valorNum = parseBRL(valorEstimado)
-    if (valorNum == null || valorNum <= 0) { alert('Valor inválido.'); return }
+    if (valorNum == null || valorNum <= 0) { alertDialog({ title: 'Valor inválido', message: 'Valor inválido.', variant: 'warning' }); return }
 
     let diaNum: number | null = null
     if (diaVencimento.trim()) {
       diaNum = parseInt(diaVencimento, 10)
       if (isNaN(diaNum) || diaNum < 1 || diaNum > 31) {
-        alert('Dia entre 1 e 31, ou vazio.')
+        alertDialog({ title: 'Dia inválido', message: 'Dia entre 1 e 31, ou vazio.', variant: 'warning' })
         return
       }
     }
@@ -564,7 +568,7 @@ function RecurringBillFormModal({
       onSaved()
     } catch (err) {
       reportApiError('RecurringBillFormModal.submit', err)
-      alert('Erro ao salvar — veja o console.')
+      alertDialog({ title: 'Erro', message: 'Erro ao salvar — veja o console.', variant: 'danger' })
       setBusy(false)
     }
   }
@@ -800,12 +804,12 @@ function MarkPaidModal({ bill, accounts, onClose, onPaid }: {
   async function submit(e: React.FormEvent) {
     e.preventDefault()
     if (!descricao.trim() || !contaId) {
-      alert('Descrição e conta são obrigatórias.')
+      alertDialog({ title: 'Campos obrigatórios', message: 'Descrição e conta são obrigatórias.', variant: 'warning' })
       return
     }
     const valorNum = parseBRL(valor)
     if (valorNum == null || valorNum <= 0) {
-      alert('Valor inválido.')
+      alertDialog({ title: 'Valor inválido', message: 'Valor inválido.', variant: 'warning' })
       return
     }
     setBusy(true)
@@ -823,7 +827,7 @@ function MarkPaidModal({ bill, accounts, onClose, onPaid }: {
       onPaid()
     } catch (err) {
       reportApiError('MarkPaidModal.submit', err)
-      alert('Erro ao registrar — veja o console.')
+      alertDialog({ title: 'Erro', message: 'Erro ao registrar — veja o console.', variant: 'danger' })
       setBusy(false)
     }
   }

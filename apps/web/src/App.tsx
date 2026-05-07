@@ -5,11 +5,6 @@ import {
 /* Phosphor duotone — substitui os Lucide simples do sidebar pra dar
    peso visual + suporte a duotone (corpo cinza + accent ice quando
    ativo). Vibe Hell Is Us / Cron Calendar / Things 3. */
-import {
-  SquaresFour, SunHorizon, CalendarBlank, Folders as PFolders, Target,
-  CheckSquareOffset, ArrowsClockwise, Lightbulb as LightbulbDuo,
-  Vault, Archive as PArchive,
-} from '@phosphor-icons/react'
 import { Routes, Route, NavLink, Navigate, useNavigate, useLocation } from 'react-router-dom'
 import {
   fetchQuests, fetchProjects, fetchAreas, fetchProfile, fetchActiveSession, fetchTasks,
@@ -25,8 +20,9 @@ import { SessionHistoryModal } from './components/SessionHistoryModal'
 import { DashboardView } from './pages/DashboardPage'
 import { DiaView } from './pages/DiaPage'
 import { CalendarView } from './pages/CalendarPage'
-import { QuestsView } from './pages/QuestsPage'
 import { AreasView, AreaDetailRoute } from './pages/AreasPage'
+import { DialogPortal } from './components/ui/CyberDialog'
+import { BannerGridOverlay } from './components/BannerGridOverlay'
 import { RoutinesView } from './pages/RoutinesPage'
 import { TasksView } from './pages/TasksPage'
 import { MicroDumpView } from './pages/MicroDumpPage'
@@ -40,10 +36,9 @@ import { DividasPage } from './pages/finance/DividasPage'
 import { FreelasPage } from './pages/finance/FreelasPage'
 import { CategoriasPage } from './pages/finance/CategoriasPage'
 
-/* Phosphor accept "size" + "weight" + "color" + "duotone-color".
-   Nosso wrapper usa weight="duotone" (default) + size + style pra glow. */
-type IconProps = { size?: number; weight?: 'thin' | 'light' | 'regular' | 'bold' | 'duotone' | 'fill'; color?: string; style?: React.CSSProperties }
-type NavItem = { path: string; label: string; Icon: React.FC<IconProps> }
+/** Item de navegação cyber HUD. `label` aparece quando expandido; `abbr`
+ *  (3 letras mono uppercase) aparece quando colapsado — vibe CP2077. */
+type NavItem = { path: string; label: string; abbr: string }
 type NavSection = { label: string; items: NavItem[] }
 
 /**
@@ -60,33 +55,32 @@ type NavSection = { label: string; items: NavItem[] }
  */
 const NAV_SECTIONS: NavSection[] = [
   {
-    label: 'Main',
+    label: 'MAIN',
     items: [
-      { path: '/dashboard',   label: 'Dashboard',   Icon: SquaresFour as React.FC<IconProps> },
-      { path: '/dia',         label: 'Dia',         Icon: SunHorizon as React.FC<IconProps> },
-      { path: '/calendario',  label: 'Calendário',  Icon: CalendarBlank as React.FC<IconProps> },
-      { path: '/areas',       label: 'Áreas',       Icon: PFolders as React.FC<IconProps> },
+      { path: '/dashboard',   label: 'Dashboard',   abbr: 'DSH' },
+      { path: '/dia',         label: 'Dia',         abbr: 'DIA' },
+      { path: '/calendario',  label: 'Calendário',  abbr: 'CAL' },
+      { path: '/areas',       label: 'Áreas',       abbr: 'ARE' },
     ],
   },
   {
-    label: 'Work',
+    label: 'WORK',
     items: [
-      { path: '/quests',      label: 'Quests',      Icon: Target as React.FC<IconProps> },
-      { path: '/tarefas',     label: 'Tarefas',     Icon: CheckSquareOffset as React.FC<IconProps> },
-      { path: '/rotinas',     label: 'Rotinas',     Icon: ArrowsClockwise as React.FC<IconProps> },
-      { path: '/micro-dump',  label: 'Dump',        Icon: LightbulbDuo as React.FC<IconProps> },
+      { path: '/tarefas',     label: 'Tarefas',     abbr: 'TSK' },
+      { path: '/rotinas',     label: 'Rotinas',     abbr: 'ROT' },
+      { path: '/micro-dump',  label: 'Dump',        abbr: 'DMP' },
     ],
   },
   {
-    label: 'Finance',
+    label: 'FINANCE',
     items: [
-      { path: '/hub-finance', label: 'Hub Finance', Icon: Vault as React.FC<IconProps> },
+      { path: '/hub-finance', label: 'Hub Finance', abbr: 'FIN' },
     ],
   },
   {
-    label: 'Archive',
+    label: 'ARCHIVE',
     items: [
-      { path: '/arquivados',  label: 'Arquivados',  Icon: PArchive as React.FC<IconProps> },
+      { path: '/arquivados',  label: 'Arquivados',  abbr: 'ARQ' },
     ],
   },
 ]
@@ -131,6 +125,14 @@ export default function App() {
     return saved ? JSON.parse(saved) : false
   })
   const [activeSession, setActiveSession] = useState<ActiveSession | null>(null)
+  // Lifecycle do banner — controla a cutscene de materialize/dematerialize.
+  // - `session`: sessão renderizada (lag em relação a activeSession durante exit)
+  // - `stage`: 'entering' (cutscene de aparecer ~1.1s), 'idle' (estado normal),
+  //   'exiting' (cutscene de desmonte ~1.1s antes de unmount).
+  const [bannerLifecycle, setBannerLifecycle] = useState<{
+    session: ActiveSession | null
+    stage: 'idle' | 'entering' | 'exiting'
+  }>({ session: null, stage: 'idle' })
   const [bannerTimer, setBannerTimer] = useState(0)
   const [bannerClosedSec, setBannerClosedSec] = useState(0)
   const [isHydrated, setIsHydrated] = useState(false)
@@ -181,6 +183,41 @@ export default function App() {
     setIsHydrated(true)
     refreshActiveSession()
   }, [])
+
+  // Sincroniza bannerLifecycle com activeSession — triggers cutscene de
+  // entering quando aparece, exiting quando some. Updates de mesma sessão
+  // (pause/resume → is_active flip) só atualizam os campos sem re-animar.
+  useEffect(() => {
+    setBannerLifecycle(prev => {
+      if (activeSession && !prev.session) {
+        return { session: activeSession, stage: 'entering' }
+      }
+      if (!activeSession && prev.session && prev.stage !== 'exiting') {
+        return { session: prev.session, stage: 'exiting' }
+      }
+      if (activeSession && prev.session) {
+        return { session: activeSession, stage: prev.stage }
+      }
+      return prev
+    })
+  }, [activeSession])
+
+  // Timers para fechar as cutscenes — quando entra em 'entering' ou
+  // 'exiting', dispara timer de 1100ms que avança pro próximo estado.
+  useEffect(() => {
+    if (bannerLifecycle.stage === 'entering') {
+      const t = setTimeout(() => {
+        setBannerLifecycle(prev => prev.stage === 'entering' ? { ...prev, stage: 'idle' } : prev)
+      }, 1300)
+      return () => clearTimeout(t)
+    }
+    if (bannerLifecycle.stage === 'exiting') {
+      const t = setTimeout(() => {
+        setBannerLifecycle({ session: null, stage: 'idle' })
+      }, 1300)
+      return () => clearTimeout(t)
+    }
+  }, [bannerLifecycle.stage])
 
   // Fetch active session + refresh quests/projects when update is triggered
   useEffect(() => {
@@ -378,14 +415,6 @@ export default function App() {
     return () => { document.head.removeChild(style) }
   }, [])
 
-  // Refetch quests+projects when entering /quests (URL-driven)
-  useEffect(() => {
-    if (location.pathname.startsWith('/quests')) {
-      fetchQuests().then(setQuests).catch(err => reportApiError('App', err))
-      fetchProjects().then(setProjects).catch(err => reportApiError('App', err))
-    }
-  }, [location.pathname])
-
   // ESC: go back one level (area detail → areas list → /dia)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -413,13 +442,9 @@ export default function App() {
     const overdueTasks = tasks.filter(t =>
       !t.done && t.scheduled_date && t.scheduled_date < todayYmd
     ).length
-    const activeQuests = quests.filter(q =>
-      q.status !== 'done' && q.status !== 'cancelled'
-    ).length
     const archived = projects.filter(p => p.archived_at).length
     return {
       '/tarefas': { count: overdueTasks, urgent: true },
-      '/quests': { count: activeQuests, urgent: false },
       '/arquivados': { count: archived, urgent: false },
     } as Record<string, { count: number; urgent: boolean }>
   })()
@@ -579,123 +604,136 @@ export default function App() {
           padding: '0 var(--space-2)',
         }}>
           {NAV_SECTIONS.map(section => (
-            <div key={section.label} style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-              {!sidebarCollapsed && (
+            <div key={section.label} style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+              {!sidebarCollapsed ? (
+                /* Section label cyber: tab marker ice + // LABEL mono */
+                <div style={{
+                  display: 'flex', alignItems: 'center', gap: 8,
+                  padding: '4px 12px 8px',
+                  marginBottom: 2,
+                }}>
+                  <div
+                    aria-hidden="true"
+                    style={{
+                      width: 3, height: 12,
+                      background: 'var(--color-ice)',
+                      boxShadow: '0 0 6px var(--color-ice-glow)',
+                      flexShrink: 0,
+                    }}
+                  />
+                  <span style={{
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: 9, fontWeight: 700,
+                    color: 'var(--color-ice-light)',
+                    letterSpacing: '0.28em', textTransform: 'uppercase',
+                  }}>
+                    <span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
+                    {section.label}
+                  </span>
+                </div>
+              ) : (
+                /* Quando colapsado: hairline ice horizontal mini divisor */
                 <div
-                  className="hq-tech-label"
+                  aria-hidden="true"
                   style={{
-                    padding: '6px 12px 4px',
-                    color: 'var(--color-text-muted)',
+                    height: 1,
+                    margin: '4px 14px 4px',
+                    background: 'rgba(143, 191, 211, 0.18)',
+                  }}
+                />
+              )}
+              {section.items.map(n => (
+                <NavLink
+                  key={n.path}
+                  to={n.path}
+                  title={sidebarCollapsed ? n.label : undefined}
+                  style={({ isActive }) => ({
+                    position: 'relative',
+                    background: isActive ? 'var(--color-ice-soft)' : 'transparent',
+                    borderTop: isActive
+                      ? '1px solid rgba(143, 191, 211, 0.18)'
+                      : '1px solid transparent',
+                    borderRight: isActive
+                      ? '1px solid rgba(143, 191, 211, 0.18)'
+                      : '1px solid transparent',
+                    borderBottom: isActive
+                      ? '1px solid rgba(143, 191, 211, 0.18)'
+                      : '1px solid transparent',
+                    borderLeft: isActive
+                      ? '2px solid var(--color-ice)'
+                      : '2px solid transparent',
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                    padding: sidebarCollapsed ? '10px 0' : '8px 12px',
+                    color: isActive
+                      ? 'var(--color-ice-light)'
+                      : 'var(--color-text-tertiary)',
+                    /* Mono uppercase pra vibe HUD CP2077 (era body font default). */
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: sidebarCollapsed ? 10 : 11,
+                    fontWeight: 700,
+                    letterSpacing: sidebarCollapsed ? '0.15em' : '0.18em',
+                    textTransform: 'uppercase',
+                    borderRadius: 0,
+                    clipPath: isActive
+                      ? 'polygon(0 0, 100% 0, 100% 100%, 10px 100%, 0 calc(100% - 10px))'
+                      : undefined,
+                    transition: 'background var(--motion-fast) var(--ease-smooth), color var(--motion-fast) var(--ease-smooth), border-color var(--motion-fast) var(--ease-smooth)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 'var(--space-2)',
+                    justifyContent: sidebarCollapsed ? 'center' : 'flex-start',
+                    textDecoration: 'none',
+                    boxShadow: isActive
+                      ? 'inset 8px 0 24px -8px rgba(143, 191, 211, 0.20), 0 0 16px -4px rgba(143, 191, 211, 0.18)'
+                      : 'none',
+                  })}
+                  onMouseEnter={e => {
+                    if (!e.currentTarget.classList.contains('active')) {
+                      e.currentTarget.style.background = 'rgba(143, 191, 211, 0.06)'
+                      e.currentTarget.style.color = 'var(--color-ice-light)'
+                    }
+                  }}
+                  onMouseLeave={e => {
+                    if (!e.currentTarget.classList.contains('active')) {
+                      e.currentTarget.style.background = 'transparent'
+                      e.currentTarget.style.color = 'var(--color-text-tertiary)'
+                    }
                   }}
                 >
-                  {section.label}
-                </div>
-              )}
-          {section.items.map(n => (
-            <NavLink
-              key={n.path}
-              to={n.path}
-              title={sidebarCollapsed ? n.label : undefined}
-              style={({ isActive }) => ({
-                position: 'relative',
-                /* Active item em estilo HUD CP2077: edge-rail ice esquerda
-                   + chamfer-bl angular + ice background sutil. Sem radius
-                   suave — formas angulares dão o ar "data row de painel". */
-                background: isActive
-                  ? 'var(--color-ice-soft)'
-                  : 'transparent',
-                borderTop: isActive
-                  ? '1px solid rgba(143, 191, 211, 0.18)'
-                  : '1px solid transparent',
-                borderRight: isActive
-                  ? '1px solid rgba(143, 191, 211, 0.18)'
-                  : '1px solid transparent',
-                borderBottom: isActive
-                  ? '1px solid rgba(143, 191, 211, 0.18)'
-                  : '1px solid transparent',
-                borderLeft: isActive
-                  ? '2px solid var(--color-ice)'
-                  : '2px solid transparent',
-                cursor: 'pointer',
-                textAlign: 'left',
-                padding: sidebarCollapsed ? '10px' : '9px 12px',
-                color: isActive
-                  ? 'var(--color-ice-light)'
-                  : 'var(--color-text-tertiary)',
-                fontSize: 'var(--text-sm)',
-                fontWeight: isActive ? 600 : 500,
-                borderRadius: 0,
-                clipPath: isActive
-                  ? 'polygon(0 0, 100% 0, 100% 100%, 10px 100%, 0 calc(100% - 10px))'
-                  : undefined,
-                transition: 'background var(--motion-fast) var(--ease-smooth), color var(--motion-fast) var(--ease-smooth), border-color var(--motion-fast) var(--ease-smooth)',
-                display: 'flex',
-                alignItems: 'center',
-                gap: sidebarCollapsed ? 0 : 'var(--space-3)',
-                justifyContent: sidebarCollapsed ? 'center' : 'flex-start',
-                textDecoration: 'none',
-                boxShadow: isActive
-                  ? 'inset 8px 0 24px -8px rgba(143, 191, 211, 0.20), 0 0 16px -4px rgba(143, 191, 211, 0.18)'
-                  : 'none',
-              })}
-              onMouseEnter={e => {
-                if (!e.currentTarget.classList.contains('active')) {
-                  e.currentTarget.style.background = 'var(--glass-bg-hover)'
-                  e.currentTarget.style.color = 'var(--color-text-primary)'
-                }
-              }}
-              onMouseLeave={e => {
-                if (!e.currentTarget.classList.contains('active')) {
-                  e.currentTarget.style.background = 'transparent'
-                  e.currentTarget.style.color = 'var(--color-text-tertiary)'
-                }
-              }}
-            >
-              {({ isActive }) => (
-                <>
-                  {/* Active marker: edge-rail esquerdo (border-left 2px ice)
-                      + chamfer-bl no NavLink já marcam claramente o item
-                      selecionado — sem dot/chevron extra pra evitar ruído. */}
-                  <n.Icon
-                    size={18}
-                    weight={isActive ? 'duotone' : 'duotone'}
-                    color={isActive ? 'var(--color-ice-light)' : 'currentColor'}
-                    style={isActive ? {
-                      filter: 'drop-shadow(0 0 6px var(--color-ice-glow-strong))',
-                    } : undefined}
-                  />
-                  {!sidebarCollapsed && (
-                    <span style={{ flex: 1 }}>{n.label}</span>
+                  {sidebarCollapsed ? (
+                    /* Collapsed: abreviação 3-letras mono — vibe CP2077 HUD tag */
+                    <span style={{ flex: 1, textAlign: 'center' }}>{n.abbr}</span>
+                  ) : (
+                    <span style={{ flex: 1 }}>{n.label.toUpperCase()}</span>
                   )}
-                  {/* Badge: contador ao vivo. Urgente = oxblood, neutro =
-                      glass. Some quando 0. */}
+                  {/* Badge cyber chamferado mono. Urgent = oxblood + glow. */}
                   {!sidebarCollapsed && sidebarBadges[n.path]?.count > 0 && (
                     <span style={{
-                      fontSize: 9,
-                      fontWeight: 700,
                       fontFamily: 'var(--font-mono)',
-                      padding: '2px 6px',
-                      borderRadius: 999,
-                      minWidth: 20,
-                      textAlign: 'center',
-                      letterSpacing: 0,
+                      fontSize: 9, fontWeight: 700,
+                      padding: '2px 7px',
+                      letterSpacing: '0.05em',
+                      borderRadius: 0,
+                      clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 3px), calc(100% - 3px) 100%, 0 100%)',
                       background: sidebarBadges[n.path].urgent
-                        ? 'rgba(159, 18, 57, 0.25)'
-                        : 'var(--glass-bg-elevated)',
+                        ? 'rgba(159, 18, 57, 0.18)'
+                        : 'rgba(8, 12, 18, 0.55)',
                       color: sidebarBadges[n.path].urgent
                         ? 'var(--color-accent-light)'
                         : 'var(--color-text-tertiary)',
                       border: sidebarBadges[n.path].urgent
-                        ? '1px solid rgba(159, 18, 57, 0.4)'
+                        ? '1px solid var(--color-accent-primary)'
                         : '1px solid var(--color-border)',
+                      boxShadow: sidebarBadges[n.path].urgent
+                        ? '0 0 8px rgba(159, 18, 57, 0.30)'
+                        : 'none',
                     }}>
-                      {sidebarBadges[n.path].count}
+                      {sidebarBadges[n.path].count.toString().padStart(2, '0')}
                     </span>
                   )}
-                </>
-              )}
-            </NavLink>
-          ))}
+                </NavLink>
+              ))}
             </div>
           ))}
         </nav>
@@ -766,9 +804,29 @@ export default function App() {
         </div>
       </aside>
 
-      {isHydrated && activeSession && (
+      {isHydrated && bannerLifecycle.session && (() => {
+        const activeSession = bannerLifecycle.session
+        // Detecção de overflow — tempo total (sessão atual + fechadas) maior
+        // que o estimated_minutes da entidade. Quando true, banner muda pra
+        // paleta vermelho/prata (drift overflow + border tone) com crossfade.
+        const totalElapsedSec = bannerTimer + bannerClosedSec
+        const estSec = (activeSession.estimated_minutes ?? 0) * 60
+        const bannerOverflow = activeSession.is_active && estSec > 0 && totalElapsedSec > estSec
+        const lifecycleClass = bannerLifecycle.stage === 'entering'
+          ? ' hq-banner-fill-in'
+          : bannerLifecycle.stage === 'exiting'
+            ? ' hq-banner-fill-out'
+            : ''
+        return (
+        <>
+        {bannerLifecycle.stage !== 'idle' && (
+          <BannerGridOverlay
+            stage={bannerLifecycle.stage}
+            sidebarCollapsed={sidebarCollapsed}
+          />
+        )}
         <div
-          className={`hq-animate-fade-down hq-grain hq-chrome-hairline${activeSession.is_active ? ' hq-scanlines' : ''}`}
+          className={`hq-grain hq-chrome-hairline hq-scanlines${activeSession.is_active ? '' : ' hq-scanlines--paused'}${lifecycleClass}`}
           style={{
             position: 'fixed', top: 0,
             left: sidebarCollapsed ? 72 : 220,
@@ -785,31 +843,42 @@ export default function App() {
                  rgba(8, 10, 14, 0.7)`,
             backdropFilter: 'blur(24px) saturate(160%)',
             WebkitBackdropFilter: 'blur(24px) saturate(160%)',
-            // Borda inferior com gradient ice quando live (HUD timer ligado),
-            // border neutra quando pausado.
+            // Borda inferior: live normal = ice deep; live overflow = silver/red
+            // alert; paused = neutra.
             borderBottom: activeSession.is_active
               ? '1px solid transparent'
               : '1px solid var(--color-border)',
             display: 'flex', alignItems: 'center',
             gap: 'var(--space-5)',
             padding: '0 var(--space-6)',
-            transition: 'left var(--motion-base) var(--ease-emphasis)',
+            transition: 'left var(--motion-base) var(--ease-emphasis), box-shadow 1.8s ease, border-bottom-color 0.8s ease, background 0.8s ease',
             zIndex: 99,
             boxShadow: activeSession.is_active
-              ? 'inset 0 -1px 0 rgba(143, 191, 211, 0.24), 0 0 32px rgba(143, 191, 211, 0.04)'
+              ? bannerOverflow
+                ? 'inset 0 -1px 0 rgba(220, 220, 230, 0.55), 0 0 32px rgba(159, 18, 57, 0.16)'
+                : 'inset 0 -1px 0 rgba(143, 191, 211, 0.24), 0 0 32px rgba(143, 191, 211, 0.04)'
               : 'inset 0 -1px 0 var(--color-border)',
             overflow: 'hidden',
           }}
         >
-          {/* Live-only animated overlays — gradient drift slow + grain
-              shake, ambos abaixo do conteúdo (z-index 0). Não aparecem
-              quando paused (HUD adormecido). */}
-          {activeSession.is_active && (
-            <>
-              <div className="hq-banner-live-drift" aria-hidden="true" />
-              <div className="hq-banner-live-grain" aria-hidden="true" />
-            </>
-          )}
+          {/* Live-only animated overlays — sempre mounted, fade via opacity.
+              Quando paused: ambas drifts + grain ficam opacity 0 (transition
+              suave de 1.8s). Quando live: aplica `--fade` em uma das drifts
+              pra crossfade entre normal e overflow palette. Manter sempre
+              mounted evita corte abrupto na pausa. */}
+          <div
+            className={`hq-banner-live-drift${(!activeSession.is_active || bannerOverflow) ? ' hq-banner-live-drift--fade' : ''}`}
+            aria-hidden="true"
+          />
+          <div
+            className={`hq-banner-live-drift hq-banner-live-drift--overflow${(!activeSession.is_active || !bannerOverflow) ? ' hq-banner-live-drift--fade' : ''}`}
+            aria-hidden="true"
+          />
+          <div
+            className={`hq-banner-live-grain${!activeSession.is_active ? ' hq-banner-live-grain--fade' : ''}`}
+            aria-hidden="true"
+          />
+
 
           {/* Status pulsante — square angular CP2077 (substitui dot redondo).
               Live = oxblood pulsando; pausado = verde estático. */}
@@ -829,12 +898,14 @@ export default function App() {
               fontWeight: 700,
               letterSpacing: '0.22em',
               textTransform: 'uppercase',
+              transition: 'color 0.6s ease',
             }}>
               <span style={{ position: 'relative' }}>
                 <span style={{
                   color: activeSession.is_active ? 'var(--color-accent-primary)' : 'var(--color-success)',
                   marginRight: 4,
                   opacity: 0.85,
+                  transition: 'color 0.6s ease',
                 }}>//</span>
                 {activeSession.is_active ? 'LIVE' : 'PAUSED'}
               </span>
@@ -939,6 +1010,7 @@ export default function App() {
                 : 'none',
               lineHeight: 1,
               letterSpacing: '-0.02em',
+              transition: 'color 0.6s ease, text-shadow 0.6s ease',
             }}>
               {formatHMS(bannerTimer)}
             </span>
@@ -1035,7 +1107,9 @@ export default function App() {
             </button>
           </div>
         </div>
-      )}
+        </>
+        )
+      })()}
 
       {bannerHistoryOpen && (
         <SessionHistoryModal
@@ -1067,16 +1141,6 @@ export default function App() {
           <Route path="/dashboard" element={<DashboardView projects={projects} quests={quests} areas={areas} profile={profile} onProfileUpdate={setProfile} onSelectProject={setSelectedProjectId} />} />
           <Route path="/dia" element={<DiaView projects={projects} quests={quests} areas={areas} activeSession={activeSession} onSessionUpdate={onSessionUpdate} onSelectProject={setSelectedProjectId} />} />
           <Route path="/calendario" element={<CalendarView projects={projects} quests={quests} areas={areas} sessionUpdateTrigger={sessionUpdateTrigger} onSessionUpdate={onSessionUpdate} />} />
-          <Route path="/quests" element={<QuestsView projects={projects} quests={quests} areas={areas} onSessionUpdate={onSessionUpdate} sessionUpdateTrigger={sessionUpdateTrigger} onQuestUpdate={(id, patch) => {
-            setQuests(qs => qs.map(q => q.id === id ? { ...q, ...patch } : q))
-            patchQuest(id, patch)
-              .then(() => {
-                // Backend fecha sessão aberta ao mover status pra terminal —
-                // refresca o estado da sessão ativa pro banner sumir.
-                if ('status' in patch) onSessionUpdate()
-              })
-              .catch(err => reportApiError('App', err))
-          }} />} />
           <Route path="/rotinas" element={<RoutinesView />} />
           <Route path="/tarefas" element={<TasksView activeSession={activeSession} onSessionUpdate={onSessionUpdate} sessionUpdateTrigger={sessionUpdateTrigger} />} />
           {/* Hub Finance — layout com sub-rotas (visão geral, lançamentos, etc).
@@ -1097,6 +1161,7 @@ export default function App() {
             <AreasView
               areas={areas}
               projects={projects}
+              quests={quests}
               onAreaCreate={(a) => setAreas(prev => [...prev, a])}
               onAreaUpdate={(slug, patch) => setAreas(prev => prev.map(x => x.slug === slug ? { ...x, ...patch } : x))}
               onAreaDelete={(slug) => setAreas(prev => prev.filter(x => x.slug !== slug))}
@@ -1144,6 +1209,7 @@ export default function App() {
         </Routes>
         </div>
       </main>
+      <DialogPortal />
     </div>
   )
 }

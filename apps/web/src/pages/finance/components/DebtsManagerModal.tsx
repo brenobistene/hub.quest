@@ -11,6 +11,7 @@ import {
   modalShell, modalHairline, modalHeader, modalBody,
 } from './styleHelpers'
 import { DebtParcelasModal } from './DebtParcelasModal'
+import { confirmDialog, alertDialog } from '../../../lib/dialog'
 
 /**
  * Modal de gerenciamento de dívidas — abre via botão "gerenciar dívidas"
@@ -296,11 +297,11 @@ function DebtFormModal({ debt, categories, onClose, onSaved, onDeleted }: {
     e.preventDefault()
     const total = parseNum(valorTotal)
     if (!descricao.trim() || total == null || total <= 0) {
-      alert('Preencha descrição e valor total (> 0).'); return
+      alertDialog({ title: 'Campos obrigatórios', message: 'Preencha descrição e valor total (> 0).', variant: 'warning' }); return
     }
     const parcela = parcelaMensal.trim() ? parseNum(parcelaMensal) : null
     if (parcelaMensal.trim() && (parcela == null || parcela <= 0)) {
-      alert('Parcela mensal inválida.'); return
+      alertDialog({ title: 'Parcela inválida', message: 'Parcela mensal inválida.', variant: 'warning' }); return
     }
     setBusy(true)
     try {
@@ -316,24 +317,27 @@ function DebtFormModal({ debt, categories, onClose, onSaved, onDeleted }: {
       onSaved()
     } catch (err) {
       reportApiError('DebtFormModal.submit', err)
-      alert('Erro ao salvar — veja o console.')
+      alertDialog({ title: 'Erro', message: 'Erro ao salvar — veja o console.', variant: 'danger' })
       setBusy(false)
     }
   }
 
   async function handleDelete() {
     if (!debt) return
-    if (!window.confirm(
-      `Deletar dívida "${debt.descricao}"? Transações vinculadas continuam ` +
-      `existindo, mas perdem o vínculo.`
-    )) return
+    const ok = await confirmDialog({
+      title: 'Deletar dívida',
+      message: `Deletar dívida "${debt.descricao}"?\nTransações vinculadas continuam existindo, mas perdem o vínculo.`,
+      confirmLabel: 'DELETAR',
+      danger: true,
+    })
+    if (!ok) return
     setBusy(true)
     try {
       await deleteFinDebt(debt.id)
       onDeleted()
     } catch (err) {
       reportApiError('DebtFormModal.delete', err)
-      alert('Erro ao deletar — veja o console.')
+      alertDialog({ title: 'Erro', message: 'Erro ao deletar — veja o console.', variant: 'danger' })
       setBusy(false)
     }
   }

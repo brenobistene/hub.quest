@@ -7,6 +7,7 @@ import {
   modalOverlay, formatBRL, formatDate,
   modalShell, modalHairline, modalHeader, modalBody,
 } from './styleHelpers'
+import { confirmDialog, alertDialog } from '../../../lib/dialog'
 
 /**
  * Modal de gerenciamento de faturas — abre via botão "gerenciar" no card
@@ -30,16 +31,18 @@ export function InvoicesManagerModal({ invoices, accounts, onClose, onChanged }:
   const historicas = invoices.filter(i => i.status === 'paga' || i.status === 'atrasada').slice(0, 10)
 
   async function handleClose(inv: FinInvoice) {
-    if (!window.confirm(
-      `Fechar fatura ${inv.mes_referencia} (${formatBRL(inv.total)})? ` +
-      `Próximas compras no cartão criarão nova fatura aberta.`
-    )) return
+    const ok = await confirmDialog({
+      title: 'Fechar fatura',
+      message: `Fechar fatura ${inv.mes_referencia} (${formatBRL(inv.total)})?\nPróximas compras no cartão criarão nova fatura aberta.`,
+      confirmLabel: 'FECHAR',
+    })
+    if (!ok) return
     try {
       await closeFinInvoice(inv.id)
       onChanged()
     } catch (err: any) {
       reportApiError('closeFinInvoice', err)
-      alert(err?.message ?? 'Erro ao fechar fatura.')
+      alertDialog({ title: 'Erro', message: err?.message ?? 'Erro ao fechar fatura.', variant: 'danger' })
     }
   }
 
@@ -251,7 +254,7 @@ function PayInvoiceModal({ invoice, accounts, onClose, onPaid }: {
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
-    if (!contaId) { alert('Selecione a conta de pagamento.'); return }
+    if (!contaId) { alertDialog({ title: 'Conta obrigatória', message: 'Selecione a conta de pagamento.', variant: 'warning' }); return }
     setBusy(true)
     try {
       await payFinInvoice(invoice.id, {
@@ -261,7 +264,7 @@ function PayInvoiceModal({ invoice, accounts, onClose, onPaid }: {
       onPaid()
     } catch (err: any) {
       reportApiError('payFinInvoice', err)
-      alert(err?.message ?? 'Erro ao pagar — veja o console.')
+      alertDialog({ title: 'Erro', message: err?.message ?? 'Erro ao pagar — veja o console.', variant: 'danger' })
       setBusy(false)
     }
   }

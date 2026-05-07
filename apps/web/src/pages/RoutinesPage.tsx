@@ -3,6 +3,8 @@ import type { Routine } from '../types'
 import { fetchAllRoutines, createRoutine, updateRoutine, deleteRoutine, reportApiError } from '../api'
 import { RoutineEditor } from '../components/RoutineEditor'
 import { PageShell, TechId } from '../components/ui/CyberShell'
+import { alertDialog, confirmDialog } from '../lib/dialog'
+import { Pencil } from 'lucide-react'
 
 /**
  * `/rotinas` — gerenciador de rotinas. Agrupa por recorrência
@@ -56,12 +58,12 @@ export function RoutinesView() {
     if (!formData.title) return
 
     if ((formData.start_time && !formData.end_time) || (!formData.start_time && formData.end_time)) {
-      alert('Preencha ambos os horários ou deixe em branco')
+      alertDialog({ title: 'Horários incompletos', message: 'Preencha ambos os horários ou deixe em branco.', variant: 'warning' })
       return
     }
 
     if (!formData.start_time && !formData.end_time && !formData.estimated_minutes) {
-      alert('Preencha a duração estimada ou o horário da rotina')
+      alertDialog({ title: 'Tempo obrigatório', message: 'Preencha a duração estimada ou o horário da rotina.', variant: 'warning' })
       return
     }
 
@@ -76,7 +78,7 @@ export function RoutinesView() {
       setEditingId(null)
     } catch (err) {
       reportApiError('RoutinesPage.save', err)
-      alert('Erro ao salvar rotina. Veja o console para detalhes.')
+      alertDialog({ title: 'Erro', message: 'Erro ao salvar rotina. Veja o console para detalhes.', variant: 'danger' })
     }
   }
 
@@ -88,26 +90,45 @@ export function RoutinesView() {
       setEditingId(null)
     } catch (err) {
       reportApiError('RoutinesPage.delete', err)
-      alert('Erro ao excluir rotina.')
+      alertDialog({ title: 'Erro', message: 'Erro ao excluir rotina.', variant: 'danger' })
     }
   }
 
   const getRecurrenceLabel = (r: Routine) => {
-    if (r.recurrence === 'daily') return 'Todo dia'
-    if (r.recurrence === 'weekdays') return 'Dias úteis'
+    if (r.recurrence === 'daily') return 'TODO DIA'
+    if (r.recurrence === 'weekdays') return 'DIAS ÚTEIS'
     if (r.recurrence === 'weekly' && r.days_of_week) {
-      const dayLabels = ['seg', 'ter', 'qua', 'qui', 'sex', 'sab', 'dom']
+      const dayLabels = ['SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SAB', 'DOM']
       const days = r.days_of_week.split(',').map(d => dayLabels[parseInt(d)])
-      return days.join(', ')
+      return days.join(' · ')
     }
     if (r.recurrence === 'monthly' && r.day_of_month) {
-      return `Todo dia ${r.day_of_month}`
+      return `TODO DIA ${r.day_of_month}`
     }
     return ''
   }
 
+  // Cores semânticas pro dot de prioridade.
+  const PRIORITY_META: Record<string, { color: string; label: string }> = {
+    critical: { color: 'var(--color-accent-primary)', label: 'CRÍTICA' },
+    high:     { color: 'var(--color-warning)',         label: 'ALTA' },
+    medium:   { color: 'var(--color-accent-light)',    label: 'MÉDIA' },
+    low:      { color: 'var(--color-text-tertiary)',   label: 'BAIXA' },
+  }
+
   if (loading && routines.length === 0) {
-    return <div style={{ color: 'var(--color-text-tertiary)' }}>Carregando rotinas...</div>
+    return (
+      <div style={{
+        fontFamily: 'var(--font-mono)',
+        fontSize: 10, fontWeight: 700,
+        color: 'var(--color-text-muted)',
+        letterSpacing: '0.22em', textTransform: 'uppercase',
+        padding: 'var(--space-6)',
+      }}>
+        <span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
+        CARREGANDO ROTINAS…
+      </div>
+    )
   }
 
   const totalDaily = routines.filter(r => r.recurrence === 'daily' || r.recurrence === 'weekdays').length
@@ -184,117 +205,211 @@ export function RoutinesView() {
         </div>
       )}
 
-      <div style={{ marginTop: 40, display: 'flex', flexDirection: 'column', gap: 0 }}>
+      <div style={{ marginTop: 32, display: 'flex', flexDirection: 'column', gap: 0 }}>
         {routines.length === 0 && editingId === null ? (
-          <p style={{ fontSize: 12, color: 'var(--color-text-muted)', fontStyle: 'italic' }}>
-            Nenhuma rotina configurada.
-          </p>
+          <div style={{
+            fontFamily: 'var(--font-mono)',
+            fontSize: 10, fontWeight: 700,
+            color: 'var(--color-text-muted)',
+            letterSpacing: '0.18em', textTransform: 'uppercase',
+            padding: '14px 16px',
+            border: '1px dashed rgba(143, 191, 211, 0.30)',
+            clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%)',
+          }}>
+            <span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
+            NENHUMA ROTINA REGISTRADA · CRIE UMA NO + NOVA ROTINA
+          </div>
         ) : (
           (() => {
             const daily = routines.filter(r => r.recurrence === 'daily' || r.recurrence === 'weekdays')
             const weekly = routines.filter(r => r.recurrence === 'weekly')
             const monthly = routines.filter(r => r.recurrence === 'monthly')
 
+            async function handleInlineDelete(r: Routine) {
+              const ok = await confirmDialog({
+                title: 'Excluir rotina',
+                message: `Excluir a rotina "${r.title}"?`,
+                confirmLabel: 'EXCLUIR',
+                danger: true,
+              })
+              if (!ok) return
+              deleteRoutine(r.id).then(() => {
+                setRoutines(rs => rs.filter(rot => rot.id !== r.id))
+              }).catch(() => alertDialog({ title: 'Erro', message: 'Erro ao excluir rotina', variant: 'danger' }))
+            }
+
             const renderGroup = (title: string, items: Routine[]) => {
               if (items.length === 0 && editingId !== 'new') return null
               return (
-                <section key={title} style={{ marginBottom: 40 }}>
+                <section key={title} style={{ marginBottom: 32 }}>
                   <div style={{
-                    fontSize: 10, color: 'var(--color-text-tertiary)',
-                    letterSpacing: '0.2em', textTransform: 'uppercase', fontWeight: 600,
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: 10, fontWeight: 700,
+                    color: 'var(--color-ice-light)',
+                    letterSpacing: '0.25em', textTransform: 'uppercase',
                     marginBottom: 14,
+                    paddingBottom: 8,
+                    borderBottom: '1px solid var(--color-ice-deep)',
+                    display: 'flex', alignItems: 'center', gap: 8,
                   }}>
+                    <div
+                      aria-hidden="true"
+                      style={{
+                        width: 3, height: 14,
+                        background: 'var(--color-ice)',
+                        boxShadow: '0 0 8px var(--color-ice-glow)',
+                      }}
+                    />
+                    <span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
                     {title}
+                    <span style={{ color: 'var(--color-text-muted)', fontWeight: 700 }}>
+                      [{items.length.toString().padStart(2, '0')}]
+                    </span>
                   </div>
-                  {items.map(r => (
-                    <div key={r.id}>
-                      {editingId === r.id && <RoutineEditor routine={r} formData={formData} setFormData={setFormData} onSave={handleSave} onDelete={handleDelete} onCancel={() => setEditingId(null)} />}
-                      {editingId !== r.id && (
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {items.map(r => {
+                      const isEditing = editingId === r.id
+                      const priority = (r as any).priority || 'critical'
+                      const meta = PRIORITY_META[priority] ?? PRIORITY_META.critical
+                      if (isEditing) {
+                        return (
+                          <RoutineEditor
+                            key={r.id}
+                            routine={r}
+                            formData={formData}
+                            setFormData={setFormData}
+                            onSave={handleSave}
+                            onDelete={handleDelete}
+                            onCancel={() => setEditingId(null)}
+                          />
+                        )
+                      }
+                      return (
                         <div
+                          key={r.id}
                           style={{
-                            padding: '14px 0', borderBottom: '1px solid var(--color-border)',
-                            display: 'flex', alignItems: 'center', gap: 10, transition: 'opacity 0.15s',
+                            position: 'relative',
+                            padding: '12px 14px',
+                            background: 'rgba(8, 12, 18, 0.55)',
+                            border: '1px solid rgba(143, 191, 211, 0.18)',
+                            borderLeft: `2px solid ${meta.color}`,
+                            borderRadius: 0,
+                            clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%)',
+                            display: 'flex', alignItems: 'center', gap: 12,
+                            opacity: r.done ? 0.7 : 1,
+                            transition: 'border-color 0.15s, box-shadow 0.15s, transform 0.15s',
                           }}
-                          onMouseEnter={e => (e.currentTarget.style.opacity = '0.7')}
-                          onMouseLeave={e => (e.currentTarget.style.opacity = '1')}
+                          onMouseEnter={e => {
+                            if (r.done) return
+                            e.currentTarget.style.borderColor = 'rgba(143, 191, 211, 0.40)'
+                            e.currentTarget.style.boxShadow = `0 0 12px ${meta.color}33`
+                            e.currentTarget.style.transform = 'translateX(2px)'
+                          }}
+                          onMouseLeave={e => {
+                            e.currentTarget.style.borderColor = 'rgba(143, 191, 211, 0.18)'
+                            e.currentTarget.style.boxShadow = 'none'
+                            e.currentTarget.style.transform = 'translateX(0)'
+                          }}
                         >
-                          <div style={{ flex: 1 }}>
+                          {/* Square dot priority */}
+                          <span
+                            title={`Prioridade: ${meta.label}`}
+                            style={{
+                              width: 8, height: 8,
+                              background: meta.color,
+                              flexShrink: 0,
+                              boxShadow: `0 0 6px ${meta.color}`,
+                            }}
+                          />
+
+                          <div style={{ flex: 1, minWidth: 0 }}>
                             <div style={{
                               color: r.done ? 'var(--color-text-tertiary)' : 'var(--color-text-primary)',
-                              fontWeight: 500, fontSize: 13,
+                              fontFamily: 'var(--font-display)',
+                              fontWeight: 600, fontSize: 14,
+                              letterSpacing: '0.02em',
+                              textTransform: 'uppercase',
                               textDecoration: r.done ? 'line-through' : 'none',
-                              display: 'flex', alignItems: 'center', gap: 10,
+                              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                             }}>
-                              {(() => {
-                                const p = (r as any).priority || 'critical'
-                                const color =
-                                  p === 'critical' ? 'var(--color-accent-primary)'
-                                  : p === 'high'   ? 'var(--color-warning)'
-                                  : p === 'medium' ? 'var(--color-accent-light)'
-                                  :                  'var(--color-text-tertiary)'
-                                const label = p === 'critical' ? 'Crítica' : p === 'high' ? 'Alta' : p === 'medium' ? 'Média' : 'Baixa'
-                                return (
-                                  <span
-                                    title={`Prioridade: ${label}`}
-                                    style={{
-                                      width: 7, height: 7, borderRadius: '50%',
-                                      background: color, flexShrink: 0,
-                                    }}
-                                  />
-                                )
-                              })()}
-                              <span>{r.title}</span>
+                              {r.title}
                             </div>
-                            <div style={{ marginTop: 4, fontSize: 10, color: 'var(--color-text-secondary)' }}>
-                              {getRecurrenceLabel(r)}
-                              {r.start_time && r.end_time && ` • ${r.start_time} – ${r.end_time}`}
-                              {r.estimated_minutes && ` • ${r.estimated_minutes}min`}
+                            <div style={{
+                              marginTop: 6,
+                              display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center',
+                              fontFamily: 'var(--font-mono)',
+                              fontSize: 9, fontWeight: 700,
+                              letterSpacing: '0.18em', textTransform: 'uppercase',
+                            }}>
+                              <span style={{ color: 'var(--color-text-tertiary)' }}>
+                                <span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
+                                {getRecurrenceLabel(r)}
+                              </span>
+                              {r.start_time && r.end_time && (
+                                <span style={{ color: 'var(--color-text-tertiary)' }}>
+                                  <span style={{ color: 'var(--color-text-muted)', marginRight: 4 }}>T</span>
+                                  {r.start_time} → {r.end_time}
+                                </span>
+                              )}
+                              {r.estimated_minutes != null && r.estimated_minutes > 0 && (
+                                <span style={{ color: 'var(--color-text-tertiary)' }}>
+                                  <span style={{ color: 'var(--color-text-muted)', marginRight: 4 }}>EST</span>
+                                  {r.estimated_minutes}MIN
+                                </span>
+                              )}
                             </div>
                           </div>
+
+                          {/* Edit button */}
                           <button
-                            onClick={e => {
-                              e.stopPropagation()
-                              if (confirm(`Excluir rotina "${r.title}"?`)) {
-                                deleteRoutine(r.id).then(() => {
-                                  setRoutines(rs => rs.filter(rot => rot.id !== r.id))
-                                }).catch(() => alert('Erro ao excluir rotina'))
-                              }
+                            onClick={e => { e.stopPropagation(); handleEditRoutine(r) }}
+                            title="Editar rotina"
+                            style={iconBtnStyle}
+                            onMouseEnter={e => {
+                              e.currentTarget.style.color = 'var(--color-ice-light)'
+                              e.currentTarget.style.borderColor = 'rgba(143, 191, 211, 0.45)'
+                              e.currentTarget.style.background = 'rgba(143, 191, 211, 0.10)'
                             }}
-                            style={{
-                              background: 'none', border: 'none', color: 'var(--color-text-secondary)', cursor: 'pointer',
-                              padding: '4px 8px', fontSize: 12, transition: 'color 0.15s',
+                            onMouseLeave={e => {
+                              e.currentTarget.style.color = 'var(--color-text-tertiary)'
+                              e.currentTarget.style.borderColor = 'rgba(143, 191, 211, 0.18)'
+                              e.currentTarget.style.background = 'rgba(143, 191, 211, 0.04)'
                             }}
-                            onMouseEnter={e => (e.currentTarget.style.color = 'var(--color-error)')}
-                            onMouseLeave={e => (e.currentTarget.style.color = 'var(--color-text-secondary)')}
+                          >
+                            <Pencil size={11} strokeWidth={1.8} />
+                          </button>
+                          {/* Delete button */}
+                          <button
+                            onClick={e => { e.stopPropagation(); handleInlineDelete(r) }}
                             title="Excluir rotina"
+                            style={iconBtnStyle}
+                            onMouseEnter={e => {
+                              e.currentTarget.style.color = 'var(--color-accent-light)'
+                              e.currentTarget.style.borderColor = 'rgba(159, 18, 57, 0.45)'
+                              e.currentTarget.style.background = 'rgba(159, 18, 57, 0.10)'
+                            }}
+                            onMouseLeave={e => {
+                              e.currentTarget.style.color = 'var(--color-text-tertiary)'
+                              e.currentTarget.style.borderColor = 'rgba(143, 191, 211, 0.18)'
+                              e.currentTarget.style.background = 'rgba(143, 191, 211, 0.04)'
+                            }}
                           >
                             ✕
                           </button>
-                          <button
-                            onClick={e => { e.stopPropagation(); handleEditRoutine(r) }}
-                            style={{
-                              background: 'none', border: 'none', color: 'var(--color-text-secondary)', cursor: 'pointer',
-                              padding: '4px 8px', fontSize: 12, transition: 'color 0.15s',
-                            }}
-                            onMouseEnter={e => (e.currentTarget.style.color = 'var(--color-accent-light)')}
-                            onMouseLeave={e => (e.currentTarget.style.color = 'var(--color-text-secondary)')}
-                            title="Editar rotina"
-                          >
-                            ✎
-                          </button>
                         </div>
-                      )}
-                    </div>
-                  ))}
+                      )
+                    })}
+                  </div>
                 </section>
               )
             }
 
             return (
               <>
-                {renderGroup('Diárias & Dias úteis', daily)}
-                {renderGroup('Semanais', weekly)}
-                {renderGroup('Mensais', monthly)}
+                {renderGroup('DIÁRIAS & DIAS ÚTEIS', daily)}
+                {renderGroup('SEMANAIS', weekly)}
+                {renderGroup('MENSAIS', monthly)}
               </>
             )
           })()
@@ -302,4 +417,18 @@ export function RoutinesView() {
       </div>
     </PageShell>
   )
+}
+
+const iconBtnStyle: React.CSSProperties = {
+  background: 'rgba(143, 191, 211, 0.04)',
+  border: '1px solid rgba(143, 191, 211, 0.18)',
+  cursor: 'pointer',
+  color: 'var(--color-text-tertiary)',
+  padding: '5px 8px',
+  fontSize: 12,
+  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+  borderRadius: 0,
+  clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 3px), calc(100% - 3px) 100%, 0 100%)',
+  flexShrink: 0,
+  transition: 'all 0.15s',
 }

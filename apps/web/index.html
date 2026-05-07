@@ -538,8 +538,8 @@
         to   { background-position: -200% 50%; }
       }
       @keyframes hq-banner-pulse {
-        0%, 100% { opacity: 0.28; }
-        50%      { opacity: 0.40; }
+        0%, 100% { opacity: 0.42; }
+        50%      { opacity: 0.58; }
       }
 
       /* ─── Animation utility classes ─── */
@@ -593,6 +593,111 @@
         background-size: 200% 100%;
         background-repeat: repeat;
         animation: hq-banner-drift 28s linear infinite;
+        opacity: 1;
+        transition: opacity 1.8s ease;
+      }
+      /* Variante "overflow" — disparada quando o tempo gasto na entidade
+         ultrapassa o estimated_minutes. Paleta troca de azul/oxblood pra
+         vermelho/prata-branco com quase nada de azul; animação 30% mais
+         agitada (28s → 20s) pra reforçar a sensação de urgência.
+         Crossfade controlado pelo classe `--fade` aplicado às duas
+         camadas (normal e overflow) empilhadas no DOM. */
+      .hq-banner-live-drift--overflow {
+        /* "Liquify" — três blobs grandes (vermelho/prata/oxblood) +
+           três partículas pequenas brilhantes (rastro) que se movem em
+           trajetórias 2D distintas. Camadas (de cima pra baixo no stacking
+           CSS, primeiro listado fica por cima):
+             [0..2] partículas — pontos brilhantes pequenos rápidos
+             [3..5] blobs principais — vermelho/prata/oxblood grandes
+             [6]    base linear sutil pra cantos não ficarem mortos
+           Cada partícula segue path próprio com `ease-in-out` — visual de
+           rastro/streak vem da combinação de tamanho pequeno + movimento
+           amplo + blur global. */
+        background-image:
+          /* Partículas — alpha mais baixo + transparent stop mais distante
+             pra ficarem soft/diffuse, parecendo brilhos passando em vez de
+             pontinhos marcados. */
+          radial-gradient(ellipse 22% 70% at 50% 50%, rgba(255, 240, 245, 0.42), transparent 68%),
+          radial-gradient(ellipse 18% 65% at 50% 50%, rgba(255, 220, 230, 0.38), transparent 70%),
+          radial-gradient(ellipse 16% 60% at 50% 50%, rgba(232, 232, 240, 0.40), transparent 68%),
+          /* Blobs médios (vermelho/prata/oxblood). */
+          radial-gradient(ellipse 65% 110% at 50% 50%, rgba(180, 30, 60, 0.55), transparent 65%),
+          radial-gradient(ellipse 55% 100% at 50% 50%, rgba(232, 232, 240, 0.55), transparent 65%),
+          radial-gradient(ellipse 75% 130% at 50% 50%, rgba(159, 18, 57, 0.45), transparent 70%),
+          /* DEEP — vermelho bem escuro (oxblood profundo) cobrindo área
+             ampla, dá profundidade e "valley" escuro entre os blobs claros.
+             Move devagar e amplo, tipo undertow do espectro. */
+          radial-gradient(ellipse 100% 160% at 50% 50%, rgba(48, 8, 18, 0.62), transparent 72%),
+          linear-gradient(
+            90deg,
+            rgba(180, 30, 60, 0.18) 0%,
+            rgba(220, 220, 230, 0.22) 50%,
+            rgba(180, 30, 60, 0.18) 100%
+          );
+        background-size:
+          200% 220%,
+          200% 220%,
+          200% 220%,
+          220% 240%,
+          220% 240%,
+          240% 260%,
+          280% 300%,
+          100% 100%;
+        background-repeat:
+          no-repeat,
+          no-repeat,
+          no-repeat,
+          no-repeat,
+          no-repeat,
+          no-repeat,
+          no-repeat,
+          repeat;
+        filter: blur(1.1px);
+        animation: hq-banner-liquify 20s ease-in-out infinite;
+      }
+      /* Loop seamless — 0% e 100% têm posições idênticas. 3 partículas
+         seguem paths "snake-like" cruzando o banner; 3 blobs principais
+         fazem arcos amplos em contra-fase; deep red flutua devagar dando
+         profundidade. */
+      @keyframes hq-banner-liquify {
+        0%, 100% {
+          background-position:
+            -10% 30%, 110% 70%,  60% 50%,
+              0% 50%, 100% 50%,  50% 30%,
+             50% 50%,
+              0 0;
+        }
+        20% {
+          background-position:
+             30% 80%,  20% 30%,  85% 20%,
+             30% 20%,  70% 80%,  25% 70%,
+             40% 60%,
+              0 0;
+        }
+        40% {
+          background-position:
+             85% 30%,  40% 75%,  10% 70%,
+             70% 80%,  30% 20%,  80% 50%,
+             60% 40%,
+              0 0;
+        }
+        60% {
+          background-position:
+             20% 70%,  95% 50%,  50% 85%,
+             90% 30%,  10% 70%,  30% 30%,
+             45% 60%,
+              0 0;
+        }
+        80% {
+          background-position:
+             65% 50%,   5% 30%,  30% 30%,
+             30% 70%,  70% 30%,  70% 70%,
+             55% 40%,
+              0 0;
+        }
+      }
+      .hq-banner-live-drift--fade {
+        opacity: 0;
       }
       .hq-banner-live-grain {
         position: absolute !important;
@@ -605,10 +710,131 @@
         background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='bg'><feTurbulence type='fractalNoise' baseFrequency='1.4' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0.55 0 0 0 0  0.65 0 0 0 0  0.75 0 0 0 0  0 0 0 0.55 0'/></filter><rect width='100%25' height='100%25' filter='url(%23bg)'/></svg>");
         mix-blend-mode: soft-light;
         animation: hq-banner-pulse 6s ease-in-out infinite;
+        /* Transition pra fade smooth quando banner pausa — animation é
+           controlada por filter/opacity da própria keyframe, mas a
+           transição entre paused (opacity 0) e live (opacity 1) precisa
+           desta transition explícita. */
+        transition: opacity 1.8s ease;
+      }
+      .hq-banner-live-grain--fade {
+        opacity: 0 !important;
       }
       @media (prefers-reduced-motion: reduce) {
         .hq-banner-live-drift,
         .hq-banner-live-grain {
+          animation: none !important;
+        }
+      }
+
+      /* ─── Banner materialize/dematerialize ─────────────────────────────
+         Cutscene de ~1.1s quando o banner aparece (play → entering) ou some
+         (finalizar/pause → exiting). Composição em duas camadas:
+
+         1) Banner inteiro pulsa em opacity + saturação alta → normal,
+            simulando "pixels" se assentando (classe hq-banner-fill-in/out).
+         2) Overlay sibling com grid de linhas oxblood (.hq-banner-grid-
+            overlay) faz sweep horizontal — entra cobrindo da esquerda pra
+            direita, segura, e fade out (entering); reverso no exiting.
+
+         Cores: oxblood em vez de ice — feedback de "ação importante
+         disparada" diferente do estado live ambient. */
+      /* Banner outer animation — fica HIDDEN durante 0-68% (enquanto a malha
+         está sendo construída pela cutscene SVG sibling), depois fade-in
+         rápido nos últimos 32%. Saturação alta nos primeiros frames pra
+         dar o "snap into existence" coerente com o tema. */
+      .hq-banner-fill-in {
+        animation: hq-banner-fill-in 1300ms cubic-bezier(0.65, 0, 0.35, 1) both;
+      }
+      .hq-banner-fill-out {
+        animation: hq-banner-fill-out 1300ms cubic-bezier(0.65, 0, 0.35, 1) both;
+      }
+      @keyframes hq-banner-fill-in {
+        0%   { opacity: 0;   filter: saturate(2.6) brightness(1.55); transform: translateY(-4px); }
+        68%  { opacity: 0;   filter: saturate(2.6) brightness(1.55); transform: translateY(-4px); }
+        88%  { opacity: 0.6; filter: saturate(1.6) brightness(1.20); transform: translateY(-1px); }
+        100% { opacity: 1;   filter: saturate(1)   brightness(1);    transform: translateY(0); }
+      }
+      @keyframes hq-banner-fill-out {
+        0%   { opacity: 1;   filter: saturate(1)   brightness(1);    transform: translateY(0); }
+        12%  { opacity: 0.6; filter: saturate(1.6) brightness(1.20); transform: translateY(-1px); }
+        32%  { opacity: 0;   filter: saturate(2.6) brightness(1.55); transform: translateY(-4px); }
+        100% { opacity: 0;   filter: saturate(2.6) brightness(1.55); transform: translateY(-4px); }
+      }
+
+      /* ─── Banner grid SVG overlay (cutscene de cubinhos crescendo) ────
+         Renderizado como sibling do banner, position:fixed no mesmo lugar.
+         O SVG inteiro fica visível quase toda a cutscene; opacity desce
+         só no fim (entering) ou sobe só no começo (exiting). */
+      .hq-banner-grid-svg {
+        animation-fill-mode: both;
+        animation-timing-function: linear;
+        animation-duration: 1300ms;
+        mix-blend-mode: screen;
+      }
+      .hq-banner-grid-svg--in {
+        animation-name: hq-banner-grid-svg-in;
+      }
+      .hq-banner-grid-svg--out {
+        animation-name: hq-banner-grid-svg-out;
+      }
+      @keyframes hq-banner-grid-svg-in {
+        0%   { opacity: 1; }
+        72%  { opacity: 1; }
+        100% { opacity: 0; }
+      }
+      @keyframes hq-banner-grid-svg-out {
+        0%   { opacity: 0; }
+        20%  { opacity: 1; }
+        100% { opacity: 1; }
+      }
+
+      /* Cells da malha — cada rect anima individualmente. Cores: fill
+         oxblood-vivid + stroke vermelho mais brilhante (acende as bordas).
+         transform-box: fill-box é OBRIGATÓRIO pra transform-origin: center
+         funcionar em <rect> SVG. */
+      .hq-banner-grid-cell--in,
+      .hq-banner-grid-cell--out {
+        fill: rgba(159, 18, 57, 0.85);
+        stroke: rgba(220, 60, 90, 1);
+        transform-box: fill-box;
+        transform-origin: center;
+        animation-fill-mode: both;
+        animation-timing-function: cubic-bezier(0.34, 1.56, 0.64, 1);
+        animation-duration: 240ms;
+      }
+      .hq-banner-grid-cell--in {
+        transform: scale(0);
+        fill-opacity: 0;
+        stroke-width: 0.3;
+        animation-name: hq-banner-cell-grow;
+      }
+      .hq-banner-grid-cell--out {
+        transform: scale(1);
+        fill-opacity: 0.7;
+        stroke-width: 1;
+        animation-name: hq-banner-cell-shrink;
+      }
+      /* Grow: scale 0 → 1 com overshoot 1.1 (pulse) + stroke 0.3 → 1.6
+         (peak heat) → 1.0 (settle) + fill-opacity 0 → 0.7. As linhas
+         "esquentam" durante o growth. */
+      @keyframes hq-banner-cell-grow {
+        0%   { transform: scale(0);    fill-opacity: 0;   stroke-width: 0.3; }
+        60%  { transform: scale(1.1);  fill-opacity: 0.6; stroke-width: 1.6; }
+        100% { transform: scale(1);    fill-opacity: 0.7; stroke-width: 1.0; }
+      }
+      /* Shrink: mirror — scale 1 → 0 + stroke desativa + fill-opacity 0. */
+      @keyframes hq-banner-cell-shrink {
+        0%   { transform: scale(1);    fill-opacity: 0.7; stroke-width: 1.0; }
+        100% { transform: scale(0);    fill-opacity: 0;   stroke-width: 0.3; }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .hq-banner-fill-in,
+        .hq-banner-fill-out,
+        .hq-banner-grid-svg--in,
+        .hq-banner-grid-svg--out,
+        .hq-banner-grid-cell--in,
+        .hq-banner-grid-cell--out {
           animation: none !important;
         }
       }
@@ -645,6 +871,10 @@
         flex-shrink: 0;
         /* Inset hairline pra dar profundidade "elemento HUD" */
         box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.15);
+        /* Transition pra suavizar troca live↔paused (background muda de
+           oxblood pra success na hora). Animation é prop discreta, não
+           transiciona — mas o background-color sim. */
+        transition: background-color 0.6s ease;
       }
       .hq-pulse-square--success {
         background: var(--color-success);
@@ -654,13 +884,17 @@
           0 0 6px rgba(122, 154, 138, 0.5);
       }
 
-      /* ─── Glass surfaces ─── */
+      /* ─── Glass surfaces ─── cyber CP2077: sem radius soft. Chamfer-bl
+         é aplicado pelos consumers via clip-path inline quando necessário
+         (padrão consistente com o resto do app cyber). Apps cyber usam
+         shapes angulares — radius arredondado é vibe "soft web app" que
+         não combina com a identidade. */
       .hq-glass {
         background: var(--glass-bg);
         backdrop-filter: var(--glass-blur);
         -webkit-backdrop-filter: var(--glass-blur);
         border: 1px solid var(--color-border);
-        border-radius: var(--radius-md);
+        border-radius: 0;
         position: relative;
       }
       .hq-glass-elevated {
@@ -668,7 +902,7 @@
         backdrop-filter: var(--glass-blur-strong);
         -webkit-backdrop-filter: var(--glass-blur-strong);
         border: 1px solid var(--color-border-strong);
-        border-radius: var(--radius-lg);
+        border-radius: 0;
         box-shadow: var(--shadow-md);
         position: relative;
       }
@@ -935,6 +1169,14 @@
           rgba(143, 191, 211, 0.04) 3px
         );
         z-index: 1;
+        opacity: 1;
+        transition: opacity 0.8s ease;
+      }
+      /* Aplicado junto com .hq-scanlines pra fade out smooth quando o
+         banner pausa. Mantém o ::before mounted (não destrói o elemento)
+         só zera opacity — preserva a transition. */
+      .hq-scanlines--paused::before {
+        opacity: 0;
       }
 
       /* Active indicator angular — chevron sólido apontando pra direita,

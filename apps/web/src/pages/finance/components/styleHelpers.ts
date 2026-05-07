@@ -22,37 +22,44 @@ export const ICON_STROKE_HEAVY = 2
 
 // ─── Text styles ────────────────────────────────────────────────────────
 
-/** Label de seção (header de modal/card). Único lugar com uppercase: ajuda
- *  hierarquizar contra o conteúdo. */
+/** Label de seção (header de modal/card) — cyber-mono uppercase ice-light. */
 export function sectionLabel(): React.CSSProperties {
   return {
-    fontSize: 'var(--text-xs)',
-    color: 'var(--color-text-tertiary)',
-    letterSpacing: '0.12em',
+    fontFamily: 'var(--font-mono)',
+    fontSize: 10,
+    fontWeight: 700,
+    color: 'var(--color-ice-light)',
+    letterSpacing: '0.25em',
     textTransform: 'uppercase',
-    fontWeight: 600,
     marginBottom: 'var(--space-3)',
   }
 }
 
-/** Label de campo de form. Sentence-case. */
+/** Label de campo de form — mono uppercase muted com prefixo `//` opcional. */
 export function fieldLabel(): React.CSSProperties {
   return {
     display: 'block',
     marginBottom: 'var(--space-1)',
-    fontSize: 'var(--text-xs)',
-    color: 'var(--color-text-tertiary)',
-    fontWeight: 500,
+    fontFamily: 'var(--font-mono)',
+    fontSize: 9,
+    fontWeight: 700,
+    color: 'var(--color-text-muted)',
+    letterSpacing: '0.22em',
+    textTransform: 'uppercase',
   }
 }
 
-/** Hint embaixo de campo (texto explicativo curto). */
+/** Hint embaixo de campo — mono dim. */
 export function hintText(): React.CSSProperties {
   return {
-    fontSize: 'var(--text-xs)',
+    fontFamily: 'var(--font-mono)',
+    fontSize: 9,
+    fontWeight: 700,
     color: 'var(--color-text-muted)',
+    letterSpacing: '0.15em',
+    textTransform: 'uppercase',
     marginTop: 'var(--space-1)',
-    lineHeight: 1.5,
+    lineHeight: 1.6,
   }
 }
 
@@ -60,15 +67,18 @@ export function hintText(): React.CSSProperties {
 
 export function inputStyle(): React.CSSProperties {
   return {
-    background: 'var(--glass-bg)',
+    background: 'rgba(8, 12, 18, 0.55)',
     border: '1px solid var(--color-border)',
-    borderRadius: 'var(--radius-sm)',
-    padding: 'var(--space-2) var(--space-3)',
-    color: 'var(--color-text-primary)',
-    fontSize: 'var(--text-sm)',
-    fontFamily: 'inherit',
-    backdropFilter: 'var(--glass-blur)',
-    WebkitBackdropFilter: 'var(--glass-blur)',
+    borderRadius: 0,
+    clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 5px), calc(100% - 5px) 100%, 0 100%)',
+    padding: '7px 12px',
+    color: 'var(--color-ice-light)',
+    fontSize: 12,
+    fontFamily: 'var(--font-mono)',
+    fontWeight: 600,
+    letterSpacing: '0.02em',
+    outline: 'none',
+    transition: 'border-color 0.15s, box-shadow 0.15s',
   }
 }
 
@@ -77,37 +87,45 @@ export function inputStyle(): React.CSSProperties {
 /** @deprecated Use <Button variant="primary"> de Primitives — vem com hover/animação. */
 export function primaryButton(): React.CSSProperties {
   return {
-    background: 'linear-gradient(135deg, var(--color-accent-primary), var(--color-accent-secondary))',
-    border: 'none',
+    background: 'rgba(143, 191, 211, 0.14)',
+    border: '1px solid var(--color-ice)',
     cursor: 'pointer',
-    color: 'var(--color-bg-primary)',
-    padding: 'var(--space-2) var(--space-4)',
-    borderRadius: 'var(--radius-sm)',
-    fontSize: 'var(--text-sm)',
-    fontWeight: 600,
+    color: 'var(--color-ice-light)',
+    fontFamily: 'var(--font-mono)',
+    padding: '7px 16px',
+    borderRadius: 0,
+    clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 5px), calc(100% - 5px) 100%, 0 100%)',
+    fontSize: 10,
+    fontWeight: 700,
+    letterSpacing: '0.22em',
+    textTransform: 'uppercase',
     display: 'inline-flex',
     alignItems: 'center',
-    gap: 'var(--space-2)',
-    boxShadow: '0 1px 0 rgba(255, 255, 255, 0.15) inset, var(--shadow-sm)',
+    gap: 6,
+    boxShadow: '0 0 12px rgba(143, 191, 211, 0.25)',
+    transition: 'all 0.15s',
   }
 }
 
 /** @deprecated Use <Button variant="ghost"> de Primitives — vem com hover/animação. */
 export function ghostButton(): React.CSSProperties {
   return {
-    background: 'var(--glass-bg)',
-    backdropFilter: 'var(--glass-blur)',
-    WebkitBackdropFilter: 'var(--glass-blur)',
+    background: 'rgba(8, 12, 18, 0.55)',
     border: '1px solid var(--color-border)',
     cursor: 'pointer',
-    color: 'var(--color-text-secondary)',
-    padding: 'var(--space-2) var(--space-4)',
-    borderRadius: 'var(--radius-sm)',
-    fontSize: 'var(--text-sm)',
-    fontWeight: 500,
+    color: 'var(--color-text-tertiary)',
+    fontFamily: 'var(--font-mono)',
+    padding: '7px 14px',
+    borderRadius: 0,
+    clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 5px), calc(100% - 5px) 100%, 0 100%)',
+    fontSize: 10,
+    fontWeight: 700,
+    letterSpacing: '0.22em',
+    textTransform: 'uppercase',
     display: 'inline-flex',
     alignItems: 'center',
-    gap: 'var(--space-2)',
+    gap: 6,
+    transition: 'all 0.15s',
   }
 }
 
@@ -271,35 +289,46 @@ export function parseBRL(input: string | null | undefined): number | null {
 }
 
 
-// ─── Card styles compartilhados ─────────────────────────────────────────
+// ─── Card styles compartilhados — cyber CP2077 ──────────────────────────
 //
-// Originalmente locais ao VisaoGeralPage; subiram pra cá quando a página
-// "Fixas" passou a reutilizá-los. Mantém visual consistente entre Visão
-// Geral e páginas-irmãs.
+// Card padrão do Hub Finance: chamfer-bl + ice border translúcido + bg dark
+// glass. Border-left customizável pelos consumers (cor da entidade — ex:
+// success pra entrada, oxblood pra dívida, ice pra neutro).
 
 export const cardBase: React.CSSProperties = {
-  background: 'var(--color-bg-secondary)',
-  border: '1px solid var(--color-border)',
-  borderRadius: 4,
-  padding: '16px 18px',
+  background: 'rgba(8, 12, 18, 0.55)',
+  border: '1px solid rgba(143, 191, 211, 0.22)',
+  borderRadius: 0,
+  clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%)',
+  padding: '14px 16px',
 }
 
 export const cardLabel: React.CSSProperties = {
-  fontSize: 10, color: 'var(--color-text-tertiary)',
-  letterSpacing: '0.15em', textTransform: 'uppercase', fontWeight: 600,
-  display: 'block', marginBottom: 2,
+  fontFamily: 'var(--font-mono)',
+  fontSize: 9, fontWeight: 700,
+  color: 'var(--color-text-muted)',
+  letterSpacing: '0.22em',
+  textTransform: 'uppercase',
+  display: 'block', marginBottom: 4,
 }
 
 export const listRow: React.CSSProperties = {
   display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-  gap: 12, padding: '6px 0',
+  gap: 12, padding: '8px 0',
 }
 
 export const listRowTitle: React.CSSProperties = {
-  fontSize: 12, color: 'var(--color-text-primary)',
+  fontFamily: 'var(--font-display)',
+  fontSize: 12, fontWeight: 600,
+  color: 'var(--color-text-primary)',
+  letterSpacing: '0.02em',
   overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
 }
 
 export const listRowSub: React.CSSProperties = {
-  fontSize: 10, color: 'var(--color-text-muted)', marginTop: 2,
+  fontFamily: 'var(--font-mono)',
+  fontSize: 9, fontWeight: 700,
+  color: 'var(--color-text-muted)',
+  letterSpacing: '0.18em', textTransform: 'uppercase',
+  marginTop: 3,
 }

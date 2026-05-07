@@ -14,11 +14,10 @@
  * Doc: docs/hub-finance/PLAN.md
  */
 import { useState } from 'react'
-import { Landmark } from 'lucide-react'
 import { useHubFinance } from './HubFinanceContext'
 import {
   formatBRL,
-  cardLabel, listRow, listRowTitle, listRowSub,
+  listRowTitle, listRowSub,
 } from './components/styleHelpers'
 import { Card } from '../../components/ui/Primitives'
 import { StaggerList, StaggerItem, SkeletonStatCard, SkeletonRow } from '../../components/ui/Motion'
@@ -67,36 +66,52 @@ export function DividasPage() {
           borderBottom: '1px solid var(--color-ice-deep)',
         }}>
           <div style={{
-            display: 'flex', alignItems: 'baseline', gap: 'var(--space-3)',
+            display: 'flex', alignItems: 'center', gap: 'var(--space-3)',
           }}>
-            <Landmark size={12} strokeWidth={1.8} style={{ color: 'var(--color-text-tertiary)' }} />
-            <span style={cardLabel}>Dívidas</span>
-            {ativas.length > 0 && (
+            {/* Tab marker oxblood (debt = warn) + // DEBT.STACK [NN] mono */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <span style={{
-                fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)',
+                width: 3,
+                height: 14,
+                background: 'var(--color-accent-primary)',
+                boxShadow: '0 0 8px rgba(159, 18, 57, 0.55)',
+                flexShrink: 0,
+              }} />
+              <span style={{
                 fontFamily: 'var(--font-mono)',
+                fontSize: 9,
+                color: 'var(--color-text-muted)',
+                letterSpacing: '0.22em',
+                textTransform: 'uppercase',
+                fontWeight: 700,
               }}>
-                {ativas.length} ativa{ativas.length === 1 ? '' : 's'}
+                <span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
+                DEBT.STACK [{ativas.length.toString().padStart(2, '0')}]
               </span>
-            )}
+            </div>
             <div style={{ flex: 1 }} />
             <button onClick={() => setShowManager(true)} style={{
-              background: 'transparent', border: '1px solid var(--color-border)', cursor: 'pointer',
+              background: 'rgba(8, 12, 18, 0.55)', border: '1px solid var(--color-border)', cursor: 'pointer',
               color: 'var(--color-text-tertiary)',
-              fontSize: 'var(--text-xs)',
-              padding: '5px var(--space-3)', borderRadius: 'var(--radius-sm)',
-              fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase',
-              transition: 'color var(--motion-fast) var(--ease-smooth), border-color var(--motion-fast) var(--ease-smooth)',
+              fontFamily: 'var(--font-mono)',
+              fontSize: 9, fontWeight: 700,
+              padding: '5px 12px',
+              letterSpacing: '0.22em', textTransform: 'uppercase',
+              borderRadius: 0,
+              clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 4px), calc(100% - 4px) 100%, 0 100%)',
+              transition: 'all 0.15s',
             }}
             onMouseEnter={e => {
-              e.currentTarget.style.color = 'var(--color-accent-light)'
-              e.currentTarget.style.borderColor = 'var(--color-accent-light)'
+              e.currentTarget.style.color = 'var(--color-ice-light)'
+              e.currentTarget.style.borderColor = 'rgba(143, 191, 211, 0.45)'
+              e.currentTarget.style.boxShadow = '0 0 8px rgba(143, 191, 211, 0.20)'
             }}
             onMouseLeave={e => {
               e.currentTarget.style.color = 'var(--color-text-tertiary)'
               e.currentTarget.style.borderColor = 'var(--color-border)'
+              e.currentTarget.style.boxShadow = 'none'
             }}>
-              gerenciar / nova →
+              GERENCIAR / NOVA →
             </button>
           </div>
         </div>
@@ -104,96 +119,157 @@ export function DividasPage() {
 
         {ativas.length === 0 ? (
           <div style={{
-            padding: '20px 16px',
-            border: '1px dashed var(--color-border)', borderRadius: 4,
-            textAlign: 'center', color: 'var(--color-text-muted)',
-            fontSize: 11, fontStyle: 'italic',
+            padding: '14px 16px',
+            border: '1px dashed rgba(143, 191, 211, 0.30)',
+            clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%)',
+            fontFamily: 'var(--font-mono)',
+            fontSize: 10, fontWeight: 700,
+            color: 'var(--color-text-muted)',
+            letterSpacing: '0.18em', textTransform: 'uppercase',
+            lineHeight: 1.7,
           }}>
-            nenhuma dívida ativa. cadastre faculdade, financiamento ou parcelamento
-            via "gerenciar".
+            <span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
+            NENHUMA DÍVIDA ATIVA · CADASTRE FACULDADE / FINANCIAMENTO VIA GERENCIAR
           </div>
         ) : (
           <>
-            {/* Hero: total devedor + barra de progresso global */}
+            {/* Hero: total devedor + 10-segment progress global */}
             <div style={{
               display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16,
-              marginBottom: 14,
+              alignItems: 'center',
+              marginBottom: 18,
             }}>
               <div>
                 <div style={{
-                  fontSize: 9, color: 'var(--color-text-muted)',
-                  letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 4,
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: 9, fontWeight: 700,
+                  color: 'var(--color-text-muted)',
+                  letterSpacing: '0.22em', textTransform: 'uppercase',
+                  marginBottom: 6,
                 }}>
-                  Total devedor
+                  <span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
+                  DEBT.TOTAL
                 </div>
                 <div className="hq-money" style={{
                   fontSize: 22, fontWeight: 700,
-                  color: 'var(--color-text-primary)',
+                  color: 'var(--color-accent-light)',
                   fontFamily: 'var(--font-mono)',
+                  fontVariantNumeric: 'tabular-nums',
+                  letterSpacing: '-0.02em',
+                  textShadow: '0 0 18px rgba(159, 18, 57, 0.35)',
                 }}>
                   {formatBRL(totalDevedor)}
                 </div>
                 <div style={{
-                  fontSize: 10, color: 'var(--color-text-muted)', marginTop: 2,
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: 9, fontWeight: 700,
+                  color: 'var(--color-text-muted)',
+                  letterSpacing: '0.18em', textTransform: 'uppercase',
+                  marginTop: 6,
                 }}>
-                  de <span className="hq-money">{formatBRL(totalOriginal)}</span> ({progressoGlobal.toFixed(0)}% pago)
+                  DE <span className="hq-money" style={{ color: 'var(--color-text-secondary)' }}>{formatBRL(totalOriginal)}</span> · {progressoGlobal.toFixed(0)}% PAGO
                 </div>
               </div>
 
-              <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
-                <div style={{
-                  height: 6, background: 'var(--color-border)',
-                  borderRadius: 2, overflow: 'hidden',
-                }}>
-                  <div style={{
-                    height: '100%', width: `${progressoGlobal}%`,
-                    background: progressoGlobal >= 75
-                      ? 'var(--color-success)'
-                      : progressoGlobal >= 30
-                        ? 'var(--color-accent-light)'
-                        : 'var(--color-accent-primary)',
-                    transition: 'width 0.3s',
-                  }} />
-                </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <DebtSegmentedProgress value={progressoGlobal} />
               </div>
             </div>
 
-            {/* Lista completa (sem clip — esta é a página dedicada) */}
-            <div style={{
-              fontSize: 9, color: 'var(--color-text-muted)',
-              letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 8,
-            }}>
-              Próximas a quitar
+            {/* Lista completa: tab marker + // PRÓXIMAS.QUITAR [NN] */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+              <span style={{
+                width: 3,
+                height: 12,
+                background: 'var(--color-ice)',
+                boxShadow: '0 0 6px var(--color-ice-glow)',
+                flexShrink: 0,
+              }} />
+              <span style={{
+                fontFamily: 'var(--font-mono)',
+                fontSize: 9, fontWeight: 700,
+                color: 'var(--color-text-muted)',
+                letterSpacing: '0.22em', textTransform: 'uppercase',
+              }}>
+                <span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
+                PRÓXIMAS.QUITAR [{sortedAtivas.length.toString().padStart(2, '0')}]
+              </span>
             </div>
-            <StaggerList style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
-              {sortedAtivas.map((d) => (
+            <StaggerList style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {sortedAtivas.map((d) => {
+                const pct = d.progresso_pct ?? 0
+                // Border-left semantic: ice-deep se quase quitado (>=75%),
+                // accent-light se andou (>=30%), oxblood se longe.
+                const accentColor = pct >= 75
+                  ? 'var(--color-success-light)'
+                  : pct >= 30
+                    ? 'var(--color-accent-light)'
+                    : 'var(--color-accent-primary)'
+                const accentGlow = pct >= 75
+                  ? 'rgba(125, 154, 111, 0.50)'
+                  : pct >= 30
+                    ? 'rgba(159, 18, 57, 0.40)'
+                    : 'rgba(159, 18, 57, 0.55)'
+                return (
                 <StaggerItem key={d.id} layout>
                 <div
-                  className="hq-row-hoverable"
                   style={{
-                    ...listRow,
-                    padding: 'var(--space-2) var(--space-3)',
-                    borderRadius: 'var(--radius-sm)',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    gap: 12,
+                    padding: '10px 14px',
+                    background: 'rgba(8, 12, 18, 0.55)',
+                    border: '1px solid rgba(143, 191, 211, 0.22)',
+                    borderLeft: `2px solid ${accentColor}`,
+                    clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%)',
+                    transition: 'transform 0.18s var(--ease-emphasis), box-shadow 0.18s, border-color 0.18s',
+                  }}
+                  onMouseEnter={e => {
+                    e.currentTarget.style.transform = 'translateX(2px)'
+                    e.currentTarget.style.boxShadow = `0 0 16px ${accentGlow}`
+                  }}
+                  onMouseLeave={e => {
+                    e.currentTarget.style.transform = 'translateX(0)'
+                    e.currentTarget.style.boxShadow = 'none'
                   }}
                 >
-                  <div style={{ minWidth: 0 }}>
-                    <div style={listRowTitle}>{d.descricao}</div>
-                    <div style={listRowSub}>
-                      {d.parcelas_restantes != null
-                        ? `${d.parcelas_restantes} parcela${d.parcelas_restantes === 1 ? '' : 's'} restante${d.parcelas_restantes === 1 ? '' : 's'} · ${d.progresso_pct.toFixed(0)}% pago`
-                        : `${d.progresso_pct.toFixed(0)}% pago`}
+                  <div style={{ minWidth: 0, display: 'flex', alignItems: 'center', gap: 'var(--space-2)', flex: 1 }}>
+                    <span style={{
+                      width: 6, height: 6,
+                      background: accentColor, flexShrink: 0,
+                      boxShadow: `0 0 6px ${accentGlow}`,
+                      opacity: 0.95,
+                    }} />
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <div style={listRowTitle}>{d.descricao}</div>
+                      <div style={{
+                        ...listRowSub,
+                        display: 'flex', alignItems: 'center', gap: 8,
+                      }}>
+                        {d.parcelas_restantes != null && (
+                          <span>{d.parcelas_restantes.toString().padStart(2, '0')} PARC</span>
+                        )}
+                        <span style={{ opacity: 0.4 }}>·</span>
+                        <span>{pct.toFixed(0)}% PG</span>
+                        {/* Mini-progress 6-segment compacto inline */}
+                        <DebtMiniProgress value={pct} accentColor={accentColor} />
+                      </div>
                     </div>
                   </div>
                   <span className="hq-money" style={{
                     fontSize: 'var(--text-sm)', fontWeight: 600,
                     fontFamily: 'var(--font-mono)',
-                    color: 'var(--color-text-primary)',
+                    fontVariantNumeric: 'tabular-nums',
+                    color: 'var(--color-accent-light)',
+                    flexShrink: 0,
                   }}>
                     {formatBRL(d.saldo_devedor)}
                   </span>
                 </div>
                 </StaggerItem>
-              ))}
+                )
+              })}
             </StaggerList>
           </>
         )}
@@ -208,6 +284,65 @@ export function DividasPage() {
           onChanged={refreshAll}
         />
       )}
+    </div>
+  )
+}
+
+// ─── Helpers locais (cyber HUD) ──────────────────────────────────────────
+
+/** Hero progress 10-segment cyber CP2077 — cor gradiente conforme progresso:
+ *  oxblood se longe (<30%), oxblood-light se andou (30-75%), olive-light se
+ *  quase quitado (>=75%). */
+function DebtSegmentedProgress({ value }: { value: number }) {
+  const segments = 10
+  const filled = Math.round((value / 100) * segments)
+  const fillColor = value >= 75
+    ? 'var(--color-success-light)'
+    : value >= 30
+      ? 'var(--color-accent-light)'
+      : 'var(--color-accent-primary)'
+  const fillGlow = value >= 75
+    ? 'rgba(125, 154, 111, 0.40)'
+    : 'rgba(159, 18, 57, 0.40)'
+  return (
+    <div style={{ display: 'flex', gap: 3 }}>
+      {Array.from({ length: segments }).map((_, i) => (
+        <div
+          key={i}
+          style={{
+            flex: 1,
+            height: 8,
+            background: i < filled ? fillColor : 'rgba(143, 191, 211, 0.10)',
+            border: i < filled
+              ? '1px solid transparent'
+              : '1px solid rgba(143, 191, 211, 0.18)',
+            boxShadow: i < filled ? `0 0 6px ${fillGlow}` : 'none',
+            transition: 'background 0.3s, box-shadow 0.3s',
+          }}
+        />
+      ))}
+    </div>
+  )
+}
+
+/** Mini-progress 6-segment compacto — pra inline em row de dívida. */
+function DebtMiniProgress({ value, accentColor }: { value: number; accentColor: string }) {
+  const segments = 6
+  const filled = Math.round((value / 100) * segments)
+  return (
+    <div style={{ display: 'flex', gap: 2, marginLeft: 4 }}>
+      {Array.from({ length: segments }).map((_, i) => (
+        <div
+          key={i}
+          style={{
+            width: 8,
+            height: 4,
+            background: i < filled ? accentColor : 'rgba(143, 191, 211, 0.12)',
+            opacity: i < filled ? 0.85 : 1,
+            transition: 'background 0.3s',
+          }}
+        />
+      ))}
     </div>
   )
 }

@@ -14,8 +14,7 @@
 import { useState } from 'react'
 import { useHubFinance } from './HubFinanceContext'
 import {
-  formatBRL,
-  cardLabel, listRow, listRowTitle, listRowSub,
+  formatBRL, listRowTitle, listRowSub,
 } from './components/styleHelpers'
 import { Card } from '../../components/ui/Primitives'
 import { SkeletonStatCard, SkeletonRow } from '../../components/ui/Motion'
@@ -115,12 +114,16 @@ function CardRecorrenciasFixas({ tipo, bills, status, onManage }: {
   const visibleItems = expanded ? sortedItems : sortedItems.slice(0, 3)
   const hiddenCount = sortedItems.length - visibleItems.length
 
-  const titulo = isReceita ? 'Receitas fixas do mês' : 'Contas fixas do mês'
-  const labelEstimado = 'Estimado'
-  const labelDone = isReceita ? 'Já recebido' : 'Já pago'
-  const labelPendente = isReceita ? 'A receber' : 'Falta'
+  const tagLabel = isReceita ? 'FIXED.IN' : 'FIXED.OUT'
+  const labelEstimado = 'ESTIMADO'
+  const labelDone = isReceita ? 'JÁ RECEBIDO' : 'JÁ PAGO'
+  const labelPendente = isReceita ? 'A RECEBER' : 'FALTA'
   const completedColor = 'var(--color-success-light)'
   const itemUnit = isReceita ? 'receita' : 'conta'
+  // Cor do "accent" semantic da seção: olive pra receita (positivo recorrente),
+  // ice pra despesa (neutro-tactical, oxblood reservado pra atrasos).
+  const sectionAccent = isReceita ? 'var(--color-success-light)' : 'var(--color-ice-light)'
+  const sectionGlow = isReceita ? 'rgba(125, 154, 111, 0.5)' : 'var(--color-ice-glow)'
 
   return (
     <Card padding="none" style={{
@@ -139,35 +142,52 @@ function CardRecorrenciasFixas({ tipo, bills, status, onManage }: {
         borderBottom: '1px solid var(--color-ice-deep)',
       }}>
         <div style={{
-          display: 'flex', alignItems: 'baseline', gap: 'var(--space-3)',
+          display: 'flex', alignItems: 'center', gap: 'var(--space-3)',
         }}>
-          <span style={cardLabel}>{titulo}</span>
-          {ativas.length > 0 && (
+          {/* Tab marker semantic + // LABEL [NN] mono */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span style={{
-              fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)',
+              width: 3,
+              height: 14,
+              background: sectionAccent,
+              boxShadow: `0 0 8px ${sectionGlow}`,
+              flexShrink: 0,
+            }} />
+            <span style={{
               fontFamily: 'var(--font-mono)',
+              fontSize: 9,
+              color: 'var(--color-text-muted)',
+              letterSpacing: '0.22em',
+              textTransform: 'uppercase',
+              fontWeight: 700,
             }}>
-              {ativas.length} ativa{ativas.length === 1 ? '' : 's'}
+              <span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
+              {tagLabel} [{ativas.length.toString().padStart(2, '0')}]
             </span>
-          )}
+          </div>
           <div style={{ flex: 1 }} />
           <button onClick={onManage} style={{
-            background: 'transparent', border: '1px solid var(--color-border)', cursor: 'pointer',
+            background: 'rgba(8, 12, 18, 0.55)', border: '1px solid var(--color-border)', cursor: 'pointer',
             color: 'var(--color-text-tertiary)',
-            fontSize: 'var(--text-xs)',
-            padding: '5px var(--space-3)', borderRadius: 'var(--radius-sm)',
-            fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase',
-            transition: 'color var(--motion-fast) var(--ease-smooth), border-color var(--motion-fast) var(--ease-smooth)',
+            fontFamily: 'var(--font-mono)',
+            fontSize: 9, fontWeight: 700,
+            padding: '5px 12px',
+            letterSpacing: '0.22em', textTransform: 'uppercase',
+            borderRadius: 0,
+            clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 4px), calc(100% - 4px) 100%, 0 100%)',
+            transition: 'all 0.15s',
           }}
           onMouseEnter={e => {
-            e.currentTarget.style.color = 'var(--color-accent-light)'
-            e.currentTarget.style.borderColor = 'var(--color-accent-light)'
+            e.currentTarget.style.color = 'var(--color-ice-light)'
+            e.currentTarget.style.borderColor = 'rgba(143, 191, 211, 0.45)'
+            e.currentTarget.style.boxShadow = '0 0 8px rgba(143, 191, 211, 0.20)'
           }}
           onMouseLeave={e => {
             e.currentTarget.style.color = 'var(--color-text-tertiary)'
             e.currentTarget.style.borderColor = 'var(--color-border)'
+            e.currentTarget.style.boxShadow = 'none'
           }}>
-            gerenciar / nova →
+            GERENCIAR / NOVA →
           </button>
         </div>
       </div>
@@ -175,163 +195,152 @@ function CardRecorrenciasFixas({ tipo, bills, status, onManage }: {
 
       {ativas.length === 0 ? (
         <div style={{
-          padding: '20px 16px',
-          border: '1px dashed var(--color-border)', borderRadius: 4,
-          textAlign: 'center', color: 'var(--color-text-muted)',
-          fontSize: 11, fontStyle: 'italic',
+          padding: '14px 16px',
+          border: '1px dashed rgba(143, 191, 211, 0.30)',
+          clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%)',
+          fontFamily: 'var(--font-mono)',
+          fontSize: 10, fontWeight: 700,
+          color: 'var(--color-text-muted)',
+          letterSpacing: '0.18em', textTransform: 'uppercase',
+          lineHeight: 1.7,
         }}>
+          <span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
           {isReceita
-            ? 'nenhuma receita fixa cadastrada. clique em "gerenciar / nova" pra cadastrar salário, mesada ou contratos.'
-            : 'nenhuma conta fixa cadastrada. clique em "gerenciar / nova" pra cadastrar luz, água, internet, aluguel ou streaming.'}
+            ? 'NENHUMA RECEITA FIXA · CADASTRE SALÁRIO / MESADA / CONTRATOS'
+            : 'NENHUMA CONTA FIXA · CADASTRE LUZ / ÁGUA / INTERNET / ALUGUEL'}
         </div>
       ) : (
         <>
+          {/* Stats grid: cada label cyber-mono `// LABEL` ice prefix */}
           <div style={{
             display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16,
             marginBottom: 14,
           }}>
-            <div>
-              <div style={{
-                fontSize: 9, color: 'var(--color-text-muted)',
-                letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 4,
-              }}>
-                {labelEstimado}
-              </div>
-              <div className="hq-money" style={{
-                fontSize: 18, fontWeight: 700,
-                color: 'var(--color-text-primary)',
-                fontFamily: 'var(--font-mono)',
-                fontVariantNumeric: 'tabular-nums',
-              }}>
-                {formatBRL(totalEstimado)}
-              </div>
-            </div>
-            <div>
-              <div style={{
-                fontSize: 9, color: 'var(--color-text-muted)',
-                letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 4,
-              }}>
-                {labelDone}
-              </div>
-              <div className="hq-money" style={{
-                fontSize: 18, fontWeight: 700,
-                color: completedColor,
-                fontFamily: 'var(--font-mono)',
-                fontVariantNumeric: 'tabular-nums',
-              }}>
-                {formatBRL(totalPago)}
-              </div>
-            </div>
-            <div>
-              <div style={{
-                fontSize: 9, color: 'var(--color-text-muted)',
-                letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 4,
-              }}>
-                {labelPendente}
-              </div>
-              <div className="hq-money" style={{
-                fontSize: 18, fontWeight: 700,
-                color: atrasadas > 0 ? 'var(--color-error)' : 'var(--color-text-primary)',
-                fontFamily: 'var(--font-mono)',
-                fontVariantNumeric: 'tabular-nums',
-              }}>
-                {formatBRL(totalPendente)}
-              </div>
-            </div>
+            <StatCell label={labelEstimado} value={totalEstimado} color="var(--color-text-primary)" />
+            <StatCell label={labelDone} value={totalPago} color={completedColor} />
+            <StatCell
+              label={labelPendente}
+              value={totalPendente}
+              color={atrasadas > 0 ? 'var(--color-accent-light)' : 'var(--color-text-primary)'}
+            />
           </div>
 
-          <div style={{
-            height: 4, background: 'var(--color-border)',
-            borderRadius: 2, overflow: 'hidden', marginBottom: 14,
-          }}>
-            <div style={{
-              height: '100%',
-              width: `${totalEstimado > 0 ? Math.min(100, (totalPago / totalEstimado) * 100) : 0}%`,
-              background: completedColor,
-              transition: 'width 0.3s',
-            }} />
-          </div>
+          {/* Progress 10-segment cyber */}
+          <SegmentedProgress
+            value={totalEstimado > 0 ? Math.min(100, (totalPago / totalEstimado) * 100) : 0}
+            color={completedColor}
+          />
 
+          {/* Status pills com square dots */}
           <div style={{
             display: 'flex', gap: 'var(--space-3)',
-            fontSize: 'var(--text-xs)',
+            fontFamily: 'var(--font-mono)',
+            fontSize: 9, fontWeight: 700,
             color: 'var(--color-text-tertiary)',
+            letterSpacing: '0.18em', textTransform: 'uppercase',
+            marginTop: 'var(--space-3)',
             marginBottom: 'var(--space-3)',
           }}>
             {completedCount > 0 && (
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                 <span style={{
-                  width: 6, height: 6, borderRadius: '50%',
+                  width: 6, height: 6,
                   background: completedColor,
-                  boxShadow: '0 0 6px rgba(122, 154, 138, 0.5)',
+                  boxShadow: '0 0 6px rgba(125, 154, 111, 0.55)',
                 }} />
-                {completedCount} {isReceita
-                  ? `recebida${completedCount === 1 ? '' : 's'}`
-                  : `paga${completedCount === 1 ? '' : 's'}`}
+                {completedCount} {isReceita ? 'RCB' : 'PAGO'}
               </span>
             )}
             {atrasadas > 0 && (
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: 'var(--color-error)' }}>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: 'var(--color-accent-light)' }}>
                 <span style={{
-                  width: 6, height: 6, borderRadius: '50%',
-                  background: 'var(--color-error)',
-                  boxShadow: '0 0 6px rgba(220, 38, 38, 0.5)',
+                  width: 6, height: 6,
+                  background: 'var(--color-accent-primary)',
+                  boxShadow: '0 0 6px rgba(159, 18, 57, 0.55)',
                 }} />
-                {atrasadas} atrasada{atrasadas === 1 ? '' : 's'}
+                {atrasadas} ATRASO
               </span>
             )}
             {pendentes > 0 && (
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                 <span style={{
-                  width: 6, height: 6, borderRadius: '50%',
+                  width: 6, height: 6,
                   background: 'var(--color-text-muted)',
                 }} />
-                {pendentes} pendente{pendentes === 1 ? '' : 's'}
+                {pendentes} PEND
               </span>
             )}
           </div>
 
           {sortedItems.length > 0 && (
-            <div className="hq-stagger" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
+            <div className="hq-stagger" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               {visibleItems.map((item, i) => {
                 const isDone = item.status === completedStatus
-                const dotColor = isDone
-                  ? completedColor
-                  : item.status === 'atrasada'
-                    ? 'var(--color-error)'
-                    : 'var(--color-text-muted)'
+                const isAtrasada = item.status === 'atrasada'
+                // Border-left semantic: oxblood pra atrasada (alerta), olive pra
+                // completa, ice-deep pra pendente normal.
+                const accentColor = isAtrasada
+                  ? 'var(--color-accent-primary)'
+                  : isDone
+                    ? completedColor
+                    : 'var(--color-ice-deep)'
+                const dotGlow = isAtrasada
+                  ? 'rgba(159, 18, 57, 0.55)'
+                  : isDone
+                    ? 'rgba(125, 154, 111, 0.55)'
+                    : 'var(--color-ice-glow)'
                 return (
                   <div
                     key={item.bill_id}
-                    className="hq-row-hoverable hq-animate-fade-up"
+                    className="hq-animate-fade-up"
                     style={{
-                      ...listRow,
-                      padding: 'var(--space-2) var(--space-3)',
-                      borderRadius: 'var(--radius-sm)',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      gap: 12,
+                      padding: '10px 14px',
+                      background: 'rgba(8, 12, 18, 0.55)',
+                      border: '1px solid rgba(143, 191, 211, 0.22)',
+                      borderLeft: `2px solid ${accentColor}`,
+                      clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%)',
                       ['--stagger-i' as any]: i,
+                      opacity: isDone ? 0.75 : 1,
+                      transition: 'transform 0.18s var(--ease-emphasis), box-shadow 0.18s, border-color 0.18s, opacity 0.18s',
+                    }}
+                    onMouseEnter={e => {
+                      e.currentTarget.style.transform = 'translateX(2px)'
+                      e.currentTarget.style.opacity = '1'
+                      e.currentTarget.style.boxShadow = isAtrasada
+                        ? '0 0 14px rgba(159, 18, 57, 0.18)'
+                        : isDone
+                          ? '0 0 14px rgba(125, 154, 111, 0.16)'
+                          : '0 0 14px rgba(143, 191, 211, 0.10)'
+                    }}
+                    onMouseLeave={e => {
+                      e.currentTarget.style.transform = 'translateX(0)'
+                      e.currentTarget.style.opacity = isDone ? '0.75' : '1'
+                      e.currentTarget.style.boxShadow = 'none'
                     }}
                   >
                     <div style={{ minWidth: 0, display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+                      {/* Square dot semantic com glow */}
                       <span
                         title={item.status}
                         style={{
-                          width: 7, height: 7, borderRadius: '50%',
-                          background: dotColor, flexShrink: 0,
-                          boxShadow: item.status === 'atrasada'
-                            ? '0 0 6px rgba(220, 38, 38, 0.5)'
-                            : isDone
-                              ? '0 0 6px rgba(122, 154, 138, 0.5)'
-                              : 'none',
+                          width: 6, height: 6,
+                          background: accentColor, flexShrink: 0,
+                          boxShadow: `0 0 6px ${dotGlow}`,
+                          opacity: 0.95,
                         }}
                       />
                       <div style={{ minWidth: 0 }}>
                         <div style={listRowTitle}>{item.descricao}</div>
                         <div style={listRowSub}>
                           {isDone && item.data_pagamento
-                            ? `${isReceita ? 'recebida' : 'paga'} em ${item.data_pagamento.split('-').reverse().slice(0, 2).join('/')}`
+                            ? `${isReceita ? 'RCB' : 'PG'} · ${item.data_pagamento.split('-').reverse().slice(0, 2).join('/')}`
                             : item.dia_vencimento
-                              ? `${isReceita ? 'cai dia' : 'vence dia'} ${item.dia_vencimento}`
-                              : 'sem dia fixo'}
+                              ? `${isReceita ? 'CAI' : 'VC'} DIA ${item.dia_vencimento}`
+                              : 'SEM DIA FIXO'}
                         </div>
                       </div>
                     </div>
@@ -339,9 +348,11 @@ function CardRecorrenciasFixas({ tipo, bills, status, onManage }: {
                       fontSize: 'var(--text-sm)', fontWeight: 600,
                       fontFamily: 'var(--font-mono)',
                       fontVariantNumeric: 'tabular-nums',
-                      color: isDone
-                        ? 'var(--color-text-primary)'
-                        : 'var(--color-text-secondary)',
+                      color: isAtrasada
+                        ? 'var(--color-accent-light)'
+                        : isDone
+                          ? completedColor
+                          : 'var(--color-text-secondary)',
                     }}>
                       {formatBRL(item.valor_pago ?? item.valor_estimado)}
                     </span>
@@ -353,30 +364,33 @@ function CardRecorrenciasFixas({ tipo, bills, status, onManage }: {
                   type="button"
                   onClick={() => setExpanded(v => !v)}
                   style={{
-                    background: 'none',
-                    border: 'none',
+                    background: 'rgba(8, 12, 18, 0.55)',
+                    border: '1px solid var(--color-border)',
                     cursor: 'pointer',
-                    fontSize: 'var(--text-xs)',
-                    fontFamily: 'var(--font-body)',
-                    color: 'var(--color-text-tertiary)',
-                    padding: 'var(--space-2)',
-                    marginTop: 'var(--space-1)',
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: 9, fontWeight: 700,
+                    color: 'var(--color-text-muted)',
+                    letterSpacing: '0.22em', textTransform: 'uppercase',
+                    padding: '7px 12px',
+                    marginTop: 6,
                     textAlign: 'center',
-                    borderRadius: 'var(--radius-sm)',
-                    transition: 'color var(--motion-fast) var(--ease-smooth), background var(--motion-fast) var(--ease-smooth)',
+                    clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 4px), calc(100% - 4px) 100%, 0 100%)',
+                    transition: 'all 0.15s',
                   }}
                   onMouseEnter={e => {
-                    e.currentTarget.style.color = 'var(--color-text-primary)'
-                    e.currentTarget.style.background = 'var(--glass-bg-hover)'
+                    e.currentTarget.style.color = 'var(--color-ice-light)'
+                    e.currentTarget.style.borderColor = 'rgba(143, 191, 211, 0.45)'
+                    e.currentTarget.style.boxShadow = '0 0 8px rgba(143, 191, 211, 0.20)'
                   }}
                   onMouseLeave={e => {
-                    e.currentTarget.style.color = 'var(--color-text-tertiary)'
-                    e.currentTarget.style.background = 'transparent'
+                    e.currentTarget.style.color = 'var(--color-text-muted)'
+                    e.currentTarget.style.borderColor = 'var(--color-border)'
+                    e.currentTarget.style.boxShadow = 'none'
                   }}
                 >
                   {expanded
-                    ? '↑ ver menos'
-                    : `↓ ver mais ${hiddenCount} ${itemUnit}${hiddenCount === 1 ? '' : 's'}`}
+                    ? '↑ VER MENOS'
+                    : `↓ VER MAIS · ${hiddenCount.toString().padStart(2, '0')} ${(itemUnit + (hiddenCount === 1 ? '' : 's')).toUpperCase()}`}
                 </button>
               )}
             </div>
@@ -385,5 +399,62 @@ function CardRecorrenciasFixas({ tipo, bills, status, onManage }: {
       )}
       </div>
     </Card>
+  )
+}
+
+// ─── Helpers locais (cyber HUD) ──────────────────────────────────────────
+
+function StatCell({ label, value, color }: { label: string; value: number; color: string }) {
+  return (
+    <div>
+      <div style={{
+        fontFamily: 'var(--font-mono)',
+        fontSize: 9, fontWeight: 700,
+        color: 'var(--color-text-muted)',
+        letterSpacing: '0.22em',
+        textTransform: 'uppercase',
+        marginBottom: 6,
+      }}>
+        <span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
+        {label}
+      </div>
+      <div className="hq-money" style={{
+        fontSize: 18, fontWeight: 700,
+        color,
+        fontFamily: 'var(--font-mono)',
+        fontVariantNumeric: 'tabular-nums',
+        letterSpacing: '-0.01em',
+      }}>
+        {formatBRL(value)}
+      </div>
+    </div>
+  )
+}
+
+/** Progress bar 10-segment cyber CP2077 — bloquinhos preenchidos
+ *  proporcional ao valor. Sem radius, gap entre blocos. */
+function SegmentedProgress({ value, color }: { value: number; color: string }) {
+  const segments = 10
+  const filled = Math.round((value / 100) * segments)
+  return (
+    <div style={{ display: 'flex', gap: 3, marginBottom: 4 }}>
+      {Array.from({ length: segments }).map((_, i) => (
+        <div
+          key={i}
+          style={{
+            flex: 1,
+            height: 6,
+            background: i < filled ? color : 'rgba(143, 191, 211, 0.10)',
+            border: i < filled
+              ? '1px solid transparent'
+              : '1px solid rgba(143, 191, 211, 0.18)',
+            boxShadow: i < filled
+              ? '0 0 6px rgba(125, 154, 111, 0.35)'
+              : 'none',
+            transition: 'background 0.3s, box-shadow 0.3s',
+          }}
+        />
+      ))}
+    </div>
   )
 }

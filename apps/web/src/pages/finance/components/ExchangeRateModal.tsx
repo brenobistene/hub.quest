@@ -13,6 +13,7 @@ import {
   modalShell, modalHairline, modalHeader, modalBody,
   formatMoney, parseBRL, sanitizeMoneyInput,
 } from './styleHelpers'
+import { alertDialog } from '../../../lib/dialog'
 
 export function ExchangeRateModal({ account, onClose, onSaved }: {
   account: FinAccount
@@ -32,7 +33,7 @@ export function ExchangeRateModal({ account, onClose, onSaved }: {
       setCotacao(String(r.rate).replace('.', ','))
     } catch (err) {
       reportApiError('ExchangeRateModal.fetchRate', err)
-      alert('Não consegui buscar online (rede bloqueada ou API offline). Cadastra manualmente.')
+      alertDialog({ title: 'Cotação offline', message: 'Não consegui buscar online (rede bloqueada ou API offline). Cadastra manualmente.', variant: 'warning' })
     } finally {
       setFetchingRate(false)
     }
@@ -44,7 +45,7 @@ export function ExchangeRateModal({ account, onClose, onSaved }: {
     if (cotacao.trim()) {
       const parsed = parseBRL(cotacao)
       if (parsed == null || parsed <= 0) {
-        alert('Cotação inválida — use número positivo ou deixe em branco pra remover.')
+        alertDialog({ title: 'Cotação inválida', message: 'Use número positivo ou deixe em branco pra remover.', variant: 'warning' })
         return
       }
       cotacaoNum = parsed
@@ -55,7 +56,7 @@ export function ExchangeRateModal({ account, onClose, onSaved }: {
       onSaved()
     } catch (err) {
       reportApiError('ExchangeRateModal.submit', err)
-      alert('Erro ao salvar — veja o console.')
+      alertDialog({ title: 'Erro', message: 'Erro ao salvar — veja o console.', variant: 'danger' })
       setBusy(false)
     }
   }

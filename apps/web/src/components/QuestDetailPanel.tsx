@@ -23,6 +23,7 @@ import {
   modalOverlay as sharedModalOverlay,
   modalShell, modalHairline, modalHeader, modalBody,
 } from '../pages/finance/components/styleHelpers'
+import { confirmDialog, alertDialog } from '../lib/dialog'
 
 type Deliverable = {
   id: string
@@ -215,12 +216,22 @@ export function QuestDetailPanel({
       })
       .catch((err: any) => {
         console.error('Erro ao criar quest:', err)
-        alert(err?.message ?? 'Erro ao criar quest')
+        alertDialog({
+          title: 'Erro',
+          message: err?.message ?? 'Erro ao criar quest',
+          variant: 'danger',
+        })
       })
   }
 
-  function removeSubtask(id: string) {
-    if (!window.confirm('Deletar esta quest?')) return
+  async function removeSubtask(id: string) {
+    const ok = await confirmDialog({
+      title: 'Deletar quest',
+      message: 'Deletar esta quest?\nA ação é irreversível.',
+      confirmLabel: 'DELETAR',
+      danger: true,
+    })
+    if (!ok) return
     deleteQuest(id)
       .then(() => {
         setSubtasks(s => s.filter(st => st.id !== id))
@@ -269,13 +280,23 @@ export function QuestDetailPanel({
       .catch(() => setDeliverables(prev))
   }
 
-  function handleDeleteDeliverable(id: string) {
-    if (!window.confirm('Deletar este entregável?')) return
+  async function handleDeleteDeliverable(id: string) {
+    const ok = await confirmDialog({
+      title: 'Deletar entregável',
+      message: 'Deletar este entregável?\nA ação é irreversível.',
+      confirmLabel: 'DELETAR',
+      danger: true,
+    })
+    if (!ok) return
     deleteDeliverable(id)
       .then(() => setDeliverables(prev => prev.filter(d => d.id !== id)))
       .catch((err: any) => {
         // 409 quando ainda tem quests amarradas
-        alert(err?.detail ?? err?.message ?? 'Erro ao deletar entregável')
+        alertDialog({
+          title: 'Erro',
+          message: err?.detail ?? err?.message ?? 'Erro ao deletar entregável',
+          variant: 'danger',
+        })
       })
   }
 
@@ -431,21 +452,34 @@ export function QuestDetailPanel({
         borderBottom: '1px solid var(--color-divider)',
       }}>
       <button onClick={onClose} style={{
-        background: 'none', border: '1px solid transparent', cursor: 'pointer',
-        color: 'var(--color-text-tertiary)', fontSize: 10, marginBottom: 20,
-        textTransform: 'uppercase', letterSpacing: '0.1em',
-        transition: 'all 0.2s', padding: '6px 8px', borderRadius: 4,
+        background: 'rgba(8, 12, 18, 0.55)',
+        border: '1px solid var(--color-border)',
+        cursor: 'pointer',
+        color: 'var(--color-text-tertiary)',
+        fontSize: 9, fontWeight: 700,
+        marginBottom: 18,
+        textTransform: 'uppercase', letterSpacing: '0.22em',
+        transition: 'all 0.15s',
+        padding: '6px 12px',
+        borderRadius: 0,
+        clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 5px), calc(100% - 5px) 100%, 0 100%)',
+        fontFamily: 'var(--font-mono)',
+        display: 'inline-flex', alignItems: 'center', gap: 6,
       }}
         onMouseEnter={e => {
-          e.currentTarget.style.color = 'var(--color-accent-light)'
-          e.currentTarget.style.borderColor = 'var(--color-border)'
+          e.currentTarget.style.color = 'var(--color-ice-light)'
+          e.currentTarget.style.borderColor = 'rgba(143, 191, 211, 0.45)'
+          e.currentTarget.style.background = 'rgba(143, 191, 211, 0.10)'
+          e.currentTarget.style.boxShadow = '0 0 12px rgba(143, 191, 211, 0.18)'
         }}
         onMouseLeave={e => {
           e.currentTarget.style.color = 'var(--color-text-tertiary)'
-          e.currentTarget.style.borderColor = 'transparent'
+          e.currentTarget.style.borderColor = 'var(--color-border)'
+          e.currentTarget.style.background = 'rgba(8, 12, 18, 0.55)'
+          e.currentTarget.style.boxShadow = 'none'
         }}
       >
-        ✕ fechar
+        ← VOLTAR
       </button>
 
       <div style={{ marginBottom: 0 }}>
@@ -456,70 +490,86 @@ export function QuestDetailPanel({
         />
         {(totalEstimatedMin > 0 || totalExecutedMin > 0 || deliverables.length > 0) && (
           <div style={{
-            display: 'flex', alignItems: 'center', gap: 18, flexWrap: 'wrap',
-            marginTop: 10,
-            fontSize: 11, fontFamily: 'var(--font-mono)',
+            display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap',
+            marginTop: 12,
+            fontSize: 10, fontFamily: 'var(--font-mono)',
+            fontWeight: 700,
             color: 'var(--color-text-tertiary)',
+            letterSpacing: '0.18em', textTransform: 'uppercase',
           }}>
             {totalEstimatedMin > 0 && (
               <span>
-                <span style={{ fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--color-text-muted)', marginRight: 6 }}>previsto</span>
-                {fmtMin(totalEstimatedMin)}
+                <span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
+                <span style={{ color: 'var(--color-text-muted)', marginRight: 6 }}>EST</span>
+                <span style={{ color: 'var(--color-ice-light)' }}>{fmtMin(totalEstimatedMin)}</span>
               </span>
             )}
             {totalExecutedMin > 0 && (
               <span>
-                <span style={{ fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--color-text-muted)', marginRight: 6 }}>executado</span>
+                <span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
+                <span style={{ color: 'var(--color-text-muted)', marginRight: 6 }}>EXEC</span>
                 <span style={{
                   color: totalEstimatedMin > 0 && totalExecutedMin > totalEstimatedMin
-                    ? 'var(--color-accent-primary)'
+                    ? 'var(--color-accent-vivid)'
                     : 'var(--color-text-secondary)',
                 }}>
                   {fmtMin(totalExecutedMin)}
                 </span>
-                {totalEstimatedMin > 0 && ` · ${totalProgressPct}%`}
+                {totalEstimatedMin > 0 && (
+                  <span style={{ color: 'var(--color-text-muted)' }}> · {totalProgressPct}%</span>
+                )}
               </span>
             )}
             {deliverables.length > 0 && (
               <span>
-                <span style={{ fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--color-text-muted)', marginRight: 6 }}>entregáveis</span>
-                {completedDeliverables}/{deliverables.length}
+                <span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
+                <span style={{ color: 'var(--color-text-muted)', marginRight: 6 }}>DELV</span>
+                <span style={{ color: 'var(--color-text-secondary)' }}>{completedDeliverables}/{deliverables.length}</span>
               </span>
             )}
             {subtasks.length > 0 && (
               <span>
-                <span style={{ fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--color-text-muted)', marginRight: 6 }}>quests</span>
-                {subtasks.filter(q => q.status === 'done').length}/{subtasks.length}
+                <span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
+                <span style={{ color: 'var(--color-text-muted)', marginRight: 6 }}>QST</span>
+                <span style={{ color: 'var(--color-text-secondary)' }}>{subtasks.filter(q => q.status === 'done').length}/{subtasks.length}</span>
               </span>
             )}
           </div>
         )}
 
         {deliverables.length > 0 && (
-          <div style={{ marginTop: 12, maxWidth: 520 }}>
-            <div style={{
-              height: 4, borderRadius: 2,
-              background: 'var(--color-bg-tertiary)',
-              overflow: 'hidden', position: 'relative',
-            }}>
-              <div style={{
-                height: '100%',
-                width: `${Math.min(100, totalProgressPct)}%`,
-                background: totalProgressPct >= 100
+          <div style={{ marginTop: 14, maxWidth: 520, display: 'flex', alignItems: 'center', gap: 10 }}>
+            {/* 10-segment cyber progress bar */}
+            <div style={{ flex: 1, display: 'flex', gap: 1 }}>
+              {Array.from({ length: 10 }).map((_, i) => {
+                const filled = (totalProgressPct / 10) > i
+                const overflow = totalEstimatedMin > 0 && totalExecutedMin > totalEstimatedMin
+                const segColor = totalProgressPct >= 100
                   ? 'var(--color-success)'
-                  : 'var(--color-accent-light)',
-                transition: 'width 0.3s ease-out',
-              }} />
-              {totalEstimatedMin > 0 && totalExecutedMin > totalEstimatedMin && (
-                <div
-                  title="Tempo executado passou do previsto"
-                  style={{
-                    position: 'absolute', top: 0, right: 0, bottom: 0,
-                    width: 2, background: 'var(--color-accent-primary)',
-                  }}
-                />
-              )}
+                  : overflow
+                    ? 'var(--color-accent-vivid)'
+                    : 'var(--color-ice-light)'
+                return (
+                  <div
+                    key={i}
+                    style={{
+                      flex: 1, height: 4,
+                      background: filled ? segColor : 'rgba(255, 255, 255, 0.06)',
+                      boxShadow: filled ? `0 0 4px ${totalProgressPct >= 100 ? 'var(--color-success)' : overflow ? 'var(--color-accent-vivid)' : 'var(--color-ice)'}` : 'none',
+                    }}
+                  />
+                )
+              })}
             </div>
+            <span style={{
+              fontFamily: 'var(--font-mono)',
+              fontSize: 9, fontWeight: 700,
+              color: totalProgressPct >= 100 ? 'var(--color-success-light)' : 'var(--color-text-secondary)',
+              letterSpacing: '0.15em',
+              minWidth: 40, textAlign: 'right',
+            }}>
+              {totalProgressPct}%
+            </span>
           </div>
         )}
       </div>
@@ -540,20 +590,26 @@ export function QuestDetailPanel({
 
       {/* Meta row: área · deadline · prioridade · finalizar/cancelar/reabrir. */}
       <div style={{
-        display: 'flex', gap: 18, alignItems: 'center', flexWrap: 'wrap',
-        marginBottom: 28, paddingBottom: 16, borderBottom: '1px solid var(--color-divider)',
+        display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap',
+        marginBottom: 28, paddingBottom: 16, borderBottom: '1px solid var(--color-ice-deep)',
       }}>
           <span style={{
-            fontSize: 10, color: 'var(--color-text-tertiary)',
-            letterSpacing: '0.15em', textTransform: 'uppercase', fontWeight: 700,
+            fontFamily: 'var(--font-mono)',
+            fontSize: 9, fontWeight: 700,
+            color: 'var(--color-ice-light)',
+            letterSpacing: '0.22em', textTransform: 'uppercase',
           }}>
+            <span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
             {project.area_slug}
           </span>
 
-          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}>
-            <span style={{ fontSize: 9, color: 'var(--color-text-muted)', letterSpacing: '0.12em', textTransform: 'uppercase', fontWeight: 700 }}>
-              deadline
-            </span>
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+            <span style={{
+              fontFamily: 'var(--font-mono)',
+              fontSize: 9, fontWeight: 700,
+              color: 'var(--color-text-muted)',
+              letterSpacing: '0.22em', textTransform: 'uppercase',
+            }}>DL</span>
             <input
               type="date"
               autoComplete="off"
@@ -564,23 +620,36 @@ export function QuestDetailPanel({
                 }
               }}
               style={{
-                background: 'transparent', border: 'none',
-                borderBottom: '1px solid transparent',
-                color: 'var(--color-text-primary)', fontSize: 12, padding: '4px 2px',
-                outline: 'none', colorScheme: 'dark', fontFamily: 'var(--font-mono)',
-                transition: 'border-color 0.15s',
+                background: 'rgba(8, 12, 18, 0.55)',
+                border: '1px solid var(--color-border)',
+                color: 'var(--color-ice-light)',
+                fontSize: 11, padding: '5px 9px',
+                outline: 'none', colorScheme: 'dark',
+                fontFamily: 'var(--font-mono)',
+                fontWeight: 700,
+                letterSpacing: '0.05em',
+                borderRadius: 0,
+                clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 4px), calc(100% - 4px) 100%, 0 100%)',
+                transition: 'all 0.15s',
               } as any}
-              onMouseEnter={e => (e.currentTarget.style.borderBottomColor = 'var(--color-border)')}
-              onMouseLeave={e => { if (document.activeElement !== e.currentTarget) e.currentTarget.style.borderBottomColor = 'transparent' }}
-              onFocus={e => (e.currentTarget.style.borderBottomColor = 'var(--color-accent-light)')}
-              onBlur={e => (e.currentTarget.style.borderBottomColor = 'transparent')}
+              onFocus={e => {
+                e.currentTarget.style.borderColor = 'var(--color-ice)'
+                e.currentTarget.style.boxShadow = '0 0 10px rgba(143, 191, 211, 0.30)'
+              }}
+              onBlur={e => {
+                e.currentTarget.style.borderColor = 'var(--color-border)'
+                e.currentTarget.style.boxShadow = 'none'
+              }}
             />
           </label>
 
-          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}>
-            <span style={{ fontSize: 9, color: 'var(--color-text-muted)', letterSpacing: '0.12em', textTransform: 'uppercase', fontWeight: 700 }}>
-              prioridade
-            </span>
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+            <span style={{
+              fontFamily: 'var(--font-mono)',
+              fontSize: 9, fontWeight: 700,
+              color: 'var(--color-text-muted)',
+              letterSpacing: '0.22em', textTransform: 'uppercase',
+            }}>PRIO</span>
             <PrioritySelect
               value={project.priority || 'medium'}
               onChange={v => onProjectUpdate(project.id, { priority: v })}
@@ -591,119 +660,174 @@ export function QuestDetailPanel({
             {project.status !== 'done' && project.status !== 'cancelled' ? (
               <>
                 <button
-                  onClick={() => {
-                    if (window.confirm('Marcar este projeto como finalizado?')) {
-                      // Seta completed_at localmente pro filtro "hoje" pegar
-                      // imediatamente, antes do refetch do backend.
+                  onClick={async () => {
+                    const ok = await confirmDialog({
+                      title: 'Finalizar projeto',
+                      message: 'Marcar este projeto como finalizado?',
+                      confirmLabel: 'FINALIZAR',
+                      variant: 'success',
+                    })
+                    if (ok) {
                       onProjectUpdate(project.id, { status: 'done', completed_at: new Date().toISOString() })
                     }
                   }}
                   style={{
-                    background: 'transparent',
-                    border: '1px solid var(--color-accent-primary)',
+                    background: 'rgba(94, 122, 82, 0.14)',
+                    border: '1px solid var(--color-success)',
                     cursor: 'pointer',
-                    color: 'var(--color-accent-primary)',
-                    padding: '6px 12px', fontSize: 10, fontWeight: 700,
-                    borderRadius: 3, letterSpacing: '0.1em', textTransform: 'uppercase',
+                    color: 'var(--color-success-light)',
+                    fontFamily: 'var(--font-mono)',
+                    padding: '6px 12px', fontSize: 9, fontWeight: 700,
+                    letterSpacing: '0.22em', textTransform: 'uppercase',
                     display: 'inline-flex', alignItems: 'center', gap: 6,
+                    borderRadius: 0,
+                    clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 5px), calc(100% - 5px) 100%, 0 100%)',
+                    boxShadow: '0 0 10px rgba(94, 122, 82, 0.25)',
                     transition: 'all 0.15s',
                   }}
                   onMouseEnter={e => {
-                    e.currentTarget.style.background = 'var(--color-accent-primary)'
-                    e.currentTarget.style.color = 'var(--color-bg-primary)'
+                    e.currentTarget.style.background = 'rgba(94, 122, 82, 0.22)'
+                    e.currentTarget.style.boxShadow = '0 0 16px rgba(94, 122, 82, 0.50)'
                   }}
                   onMouseLeave={e => {
-                    e.currentTarget.style.background = 'transparent'
-                    e.currentTarget.style.color = 'var(--color-accent-primary)'
+                    e.currentTarget.style.background = 'rgba(94, 122, 82, 0.14)'
+                    e.currentTarget.style.boxShadow = '0 0 10px rgba(94, 122, 82, 0.25)'
                   }}
                 >
                   <CheckCircle2 size={11} strokeWidth={2.2} />
-                  Finalizar
+                  FINALIZAR
                 </button>
                 <button
-                  onClick={() => {
-                    if (window.confirm('Cancelar este projeto? Ele sai dos painéis de acompanhamento, mas fica no histórico.')) {
+                  onClick={async () => {
+                    const ok = await confirmDialog({
+                      title: 'Cancelar projeto',
+                      message: 'Cancelar este projeto?\nEle sai dos painéis de acompanhamento, mas fica no histórico.',
+                      confirmLabel: 'CANCELAR',
+                      danger: true,
+                    })
+                    if (ok) {
                       onProjectUpdate(project.id, { status: 'cancelled', completed_at: new Date().toISOString() })
                     }
                   }}
                   title="Cancelar projeto"
                   style={{
-                    background: 'none', border: 'none', cursor: 'pointer',
-                    color: 'var(--color-text-muted)',
-                    padding: '4px 6px', fontSize: 9, fontWeight: 500,
-                    letterSpacing: '0.08em', textTransform: 'uppercase',
-                    transition: 'color 0.15s',
+                    background: 'rgba(8, 12, 18, 0.55)',
+                    border: '1px solid var(--color-border)',
+                    cursor: 'pointer',
+                    color: 'var(--color-text-tertiary)',
+                    fontFamily: 'var(--font-mono)',
+                    padding: '6px 10px', fontSize: 9, fontWeight: 700,
+                    letterSpacing: '0.22em', textTransform: 'uppercase',
+                    borderRadius: 0,
+                    clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 4px), calc(100% - 4px) 100%, 0 100%)',
+                    transition: 'all 0.15s',
                   }}
-                  onMouseEnter={e => (e.currentTarget.style.color = 'var(--color-accent-light)')}
-                  onMouseLeave={e => (e.currentTarget.style.color = 'var(--color-text-muted)')}
+                  onMouseEnter={e => {
+                    e.currentTarget.style.color = 'var(--color-accent-light)'
+                    e.currentTarget.style.borderColor = 'rgba(159, 18, 57, 0.45)'
+                  }}
+                  onMouseLeave={e => {
+                    e.currentTarget.style.color = 'var(--color-text-tertiary)'
+                    e.currentTarget.style.borderColor = 'var(--color-border)'
+                  }}
                 >
-                  cancelar
+                  CANCELAR
                 </button>
               </>
             ) : project.status === 'done' ? (
               <div style={{
                 display: 'inline-flex', alignItems: 'center', gap: 8,
-                padding: '6px 10px', borderRadius: 3,
+                padding: '6px 12px',
                 border: '1px solid var(--color-success)',
-                background: 'rgba(90, 122, 106, 0.08)',
+                background: 'rgba(94, 122, 82, 0.14)',
+                borderRadius: 0,
+                clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 5px), calc(100% - 5px) 100%, 0 100%)',
+                boxShadow: '0 0 10px rgba(94, 122, 82, 0.20)',
               }}>
-                <CheckCircle2 size={11} strokeWidth={2.2} color="var(--color-success)" />
-                <span style={{ fontSize: 10, color: 'var(--color-success)', textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 700 }}>
-                  Finalizado
+                <CheckCircle2 size={11} strokeWidth={2.2} color="var(--color-success-light)" />
+                <span style={{
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: 9, color: 'var(--color-success-light)',
+                  textTransform: 'uppercase', letterSpacing: '0.22em', fontWeight: 700,
+                }}>
+                  FINALIZADO
                   {project.completed_at && (
-                    <span style={{ color: 'var(--color-text-tertiary)', letterSpacing: '0.05em', marginLeft: 6, fontWeight: 400 }}>
+                    <span style={{ color: 'var(--color-text-muted)', letterSpacing: '0.08em', marginLeft: 6, fontWeight: 700 }}>
                       · {parseIsoAsUtc(project.completed_at).toLocaleDateString('pt-BR')}
                     </span>
                   )}
                 </span>
                 <button
-                  onClick={() => {
-                    if (window.confirm('Reabrir este projeto? Ele volta para "em andamento".')) {
+                  onClick={async () => {
+                    const ok = await confirmDialog({
+                      title: 'Reabrir projeto',
+                      message: 'Reabrir este projeto?\nEle volta para "em andamento".',
+                      confirmLabel: 'REABRIR',
+                    })
+                    if (ok) {
                       onProjectUpdate(project.id, { status: 'doing', completed_at: null })
                     }
                   }}
                   style={{
                     background: 'none', border: 'none', cursor: 'pointer',
-                    color: 'var(--color-text-tertiary)', fontSize: 10,
-                    padding: '0 4px', textTransform: 'uppercase', letterSpacing: '0.08em',
+                    color: 'var(--color-text-tertiary)',
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: 9, fontWeight: 700,
+                    padding: '0 4px', textTransform: 'uppercase', letterSpacing: '0.22em',
+                    transition: 'color 0.15s',
                   }}
-                  onMouseEnter={e => (e.currentTarget.style.color = 'var(--color-accent-light)')}
+                  onMouseEnter={e => (e.currentTarget.style.color = 'var(--color-ice-light)')}
                   onMouseLeave={e => (e.currentTarget.style.color = 'var(--color-text-tertiary)')}
                 >
-                  Reabrir
+                  REABRIR
                 </button>
               </div>
             ) : (
               <div style={{
                 display: 'inline-flex', alignItems: 'center', gap: 8,
-                padding: '6px 10px', borderRadius: 3,
-                border: '1px solid var(--color-text-tertiary)',
-                background: 'var(--color-bg-tertiary)',
+                padding: '6px 12px',
+                border: '1px solid var(--color-accent-primary)',
+                background: 'rgba(159, 18, 57, 0.10)',
+                borderRadius: 0,
+                clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 5px), calc(100% - 5px) 100%, 0 100%)',
+                boxShadow: '0 0 10px rgba(159, 18, 57, 0.18)',
               }}>
-                <XCircle size={11} strokeWidth={2.2} color="var(--color-text-tertiary)" />
-                <span style={{ fontSize: 10, color: 'var(--color-text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 700 }}>
-                  Cancelado
+                <XCircle size={11} strokeWidth={2.2} color="var(--color-accent-light)" />
+                <span style={{
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: 9, color: 'var(--color-accent-light)',
+                  textTransform: 'uppercase', letterSpacing: '0.22em', fontWeight: 700,
+                }}>
+                  CANCELADO
                   {project.completed_at && (
-                    <span style={{ color: 'var(--color-text-muted)', letterSpacing: '0.05em', marginLeft: 6, fontWeight: 400 }}>
+                    <span style={{ color: 'var(--color-text-muted)', letterSpacing: '0.08em', marginLeft: 6, fontWeight: 700 }}>
                       · {parseIsoAsUtc(project.completed_at).toLocaleDateString('pt-BR')}
                     </span>
                   )}
                 </span>
                 <button
-                  onClick={() => {
-                    if (window.confirm('Reabrir este projeto? Ele volta para "em andamento".')) {
+                  onClick={async () => {
+                    const ok = await confirmDialog({
+                      title: 'Reabrir projeto',
+                      message: 'Reabrir este projeto?\nEle volta para "em andamento".',
+                      confirmLabel: 'REABRIR',
+                    })
+                    if (ok) {
                       onProjectUpdate(project.id, { status: 'doing', completed_at: null })
                     }
                   }}
                   style={{
                     background: 'none', border: 'none', cursor: 'pointer',
-                    color: 'var(--color-text-tertiary)', fontSize: 10,
-                    padding: '0 4px', textTransform: 'uppercase', letterSpacing: '0.08em',
+                    color: 'var(--color-text-tertiary)',
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: 9, fontWeight: 700,
+                    padding: '0 4px', textTransform: 'uppercase', letterSpacing: '0.22em',
+                    transition: 'color 0.15s',
                   }}
-                  onMouseEnter={e => (e.currentTarget.style.color = 'var(--color-accent-light)')}
+                  onMouseEnter={e => (e.currentTarget.style.color = 'var(--color-ice-light)')}
                   onMouseLeave={e => (e.currentTarget.style.color = 'var(--color-text-tertiary)')}
                 >
-                  Reabrir
+                  REABRIR
                 </button>
               </div>
             )}
@@ -713,54 +837,111 @@ export function QuestDetailPanel({
       <div style={{ marginTop: 12 }}>
         <div style={{
           marginBottom: 14, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
+          paddingBottom: 8,
+          borderBottom: '1px solid var(--color-ice-deep)',
         }}>
-          <Label>entregáveis{deliverables.length > 0 && ` (${deliverables.length})`}</Label>
+          <div style={{
+            fontFamily: 'var(--font-mono)',
+            fontSize: 10, fontWeight: 700,
+            color: 'var(--color-ice-light)',
+            letterSpacing: '0.25em', textTransform: 'uppercase',
+            display: 'flex', alignItems: 'center', gap: 8,
+          }}>
+            <div
+              aria-hidden="true"
+              style={{
+                width: 3, height: 14,
+                background: 'var(--color-ice)',
+                boxShadow: '0 0 8px var(--color-ice-glow)',
+              }}
+            />
+            <span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
+            DELIVERABLES
+            {deliverables.length > 0 && (
+              <span style={{ color: 'var(--color-text-muted)', fontWeight: 700 }}>
+                [{deliverables.length.toString().padStart(2, '0')}]
+              </span>
+            )}
+          </div>
           {!creatingDeliverable && (
             <button
               onClick={() => setCreatingDeliverable(true)}
               style={{
-                background: 'none', border: '1px solid var(--color-border)', cursor: 'pointer',
-                color: 'var(--color-text-tertiary)', fontSize: 10,
-                padding: '5px 12px', borderRadius: 3,
-                letterSpacing: '0.1em', textTransform: 'uppercase', fontWeight: 600,
+                background: 'rgba(143, 191, 211, 0.10)',
+                border: '1px solid rgba(143, 191, 211, 0.45)',
+                cursor: 'pointer',
+                color: 'var(--color-ice-light)',
+                fontFamily: 'var(--font-mono)',
+                fontSize: 9, fontWeight: 700,
+                padding: '6px 12px',
+                letterSpacing: '0.22em', textTransform: 'uppercase',
+                borderRadius: 0,
+                clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 5px), calc(100% - 5px) 100%, 0 100%)',
+                boxShadow: '0 0 10px rgba(143, 191, 211, 0.18)',
                 transition: 'all 0.15s',
               }}
               onMouseEnter={e => {
-                e.currentTarget.style.color = 'var(--color-accent-light)'
-                e.currentTarget.style.borderColor = 'var(--color-accent-light)'
+                e.currentTarget.style.background = 'rgba(143, 191, 211, 0.18)'
+                e.currentTarget.style.boxShadow = '0 0 16px rgba(143, 191, 211, 0.32)'
               }}
               onMouseLeave={e => {
-                e.currentTarget.style.color = 'var(--color-text-tertiary)'
-                e.currentTarget.style.borderColor = 'var(--color-border)'
+                e.currentTarget.style.background = 'rgba(143, 191, 211, 0.10)'
+                e.currentTarget.style.boxShadow = '0 0 10px rgba(143, 191, 211, 0.18)'
               }}
             >
-              + criar entregável
+              + NOVO ENTREGÁVEL
             </button>
           )}
         </div>
 
-        {/* Novo entregável: título + deadline + criar */}
+        {/* Novo entregável: container chamferado com label // NEW.DELIV */}
         {creatingDeliverable && (
         <div style={{
-          display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap',
-          marginBottom: 18, paddingBottom: 10, borderBottom: '1px solid var(--color-divider)',
+          display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap',
+          marginBottom: 18,
+          padding: '12px 14px',
+          background: 'rgba(8, 12, 18, 0.55)',
+          border: '1px solid var(--color-ice-deep)',
+          clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%)',
         }}>
+          <span style={{
+            fontFamily: 'var(--font-mono)',
+            fontSize: 9, fontWeight: 700,
+            color: 'var(--color-ice-light)',
+            letterSpacing: '0.22em', textTransform: 'uppercase',
+            flexShrink: 0,
+          }}>
+            <span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
+            NEW.DELIV
+          </span>
           <input
             type="text"
             autoComplete="off"
+            autoFocus
             value={newDeliverableTitle}
             onChange={e => setNewDeliverableTitle(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter') addDeliverable() }}
-            placeholder="Novo entregável…"
+            onKeyDown={e => {
+              if (e.key === 'Enter') addDeliverable()
+              if (e.key === 'Escape') {
+                setCreatingDeliverable(false)
+                setNewDeliverableTitle('')
+                setNewDeliverableDeadline('')
+              }
+            }}
+            placeholder="título do entregável…"
             style={{
               flex: '1 1 180px', minWidth: 160,
               background: 'transparent', border: 'none',
-              borderBottom: '1px solid var(--color-border)',
-              color: 'var(--color-text-primary)', padding: '6px 2px', fontSize: 13,
+              borderBottom: '1px solid var(--color-ice-deep)',
+              color: 'var(--color-ice-light)',
+              fontFamily: 'var(--font-display)',
+              fontWeight: 600,
+              padding: '5px 2px', fontSize: 13,
+              letterSpacing: '0.02em',
               outline: 'none', transition: 'border-color 0.15s',
             }}
-            onFocus={e => (e.currentTarget.style.borderBottomColor = 'var(--color-accent-primary)')}
-            onBlur={e => (e.currentTarget.style.borderBottomColor = 'var(--color-border)')}
+            onFocus={e => (e.currentTarget.style.borderBottomColor = 'var(--color-ice)')}
+            onBlur={e => (e.currentTarget.style.borderBottomColor = 'var(--color-ice-deep)')}
           />
           <input
             type="date"
@@ -771,30 +952,45 @@ export function QuestDetailPanel({
             }}
             title="Deadline"
             style={{
-              background: 'transparent', border: 'none',
-              borderBottom: '1px solid var(--color-border)',
-              color: 'var(--color-text-primary)', padding: '6px 2px', fontSize: 12,
-              outline: 'none', colorScheme: 'dark',
+              background: 'rgba(8, 12, 18, 0.55)',
+              border: '1px solid var(--color-border)',
+              color: 'var(--color-ice-light)',
               fontFamily: 'var(--font-mono)',
-              transition: 'border-color 0.15s',
+              fontWeight: 700,
+              padding: '5px 9px', fontSize: 11,
+              letterSpacing: '0.05em',
+              outline: 'none', colorScheme: 'dark',
+              borderRadius: 0,
+              clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 4px), calc(100% - 4px) 100%, 0 100%)',
+              transition: 'all 0.15s',
             } as any}
-            onFocus={e => (e.currentTarget.style.borderBottomColor = 'var(--color-accent-light)')}
-            onBlur={e => (e.currentTarget.style.borderBottomColor = 'var(--color-border)')}
+            onFocus={e => {
+              e.currentTarget.style.borderColor = 'var(--color-ice)'
+              e.currentTarget.style.boxShadow = '0 0 10px rgba(143, 191, 211, 0.30)'
+            }}
+            onBlur={e => {
+              e.currentTarget.style.borderColor = 'var(--color-border)'
+              e.currentTarget.style.boxShadow = 'none'
+            }}
           />
           <button
             onClick={addDeliverable}
             disabled={!newDeliverableTitle.trim()}
             style={{
-              background: newDeliverableTitle.trim() ? 'var(--color-accent-primary)' : 'var(--color-bg-tertiary)',
-              color: newDeliverableTitle.trim() ? 'var(--color-bg-primary)' : 'var(--color-text-muted)',
-              border: 'none',
+              background: newDeliverableTitle.trim() ? 'rgba(143, 191, 211, 0.14)' : 'rgba(8, 12, 18, 0.55)',
+              border: `1px solid ${newDeliverableTitle.trim() ? 'var(--color-ice)' : 'var(--color-border)'}`,
+              color: newDeliverableTitle.trim() ? 'var(--color-ice-light)' : 'var(--color-text-muted)',
               cursor: newDeliverableTitle.trim() ? 'pointer' : 'not-allowed',
-              padding: '8px 14px', fontSize: 11, fontWeight: 700,
-              borderRadius: 4, letterSpacing: '0.08em', textTransform: 'uppercase',
+              fontFamily: 'var(--font-mono)',
+              padding: '6px 14px', fontSize: 9, fontWeight: 700,
+              letterSpacing: '0.22em', textTransform: 'uppercase',
+              borderRadius: 0,
+              clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 5px), calc(100% - 5px) 100%, 0 100%)',
+              boxShadow: newDeliverableTitle.trim() ? '0 0 10px rgba(143, 191, 211, 0.25)' : 'none',
               transition: 'all 0.15s',
             }}
           >
-            + novo
+            ✓ CRIAR
           </button>
           <button
             onClick={() => {
@@ -804,8 +1000,23 @@ export function QuestDetailPanel({
             }}
             title="Cancelar"
             style={{
-              background: 'none', border: 'none', cursor: 'pointer',
-              color: 'var(--color-text-tertiary)', fontSize: 14, padding: '4px 8px',
+              background: 'rgba(8, 12, 18, 0.55)',
+              border: '1px solid var(--color-border)',
+              cursor: 'pointer',
+              color: 'var(--color-text-tertiary)',
+              width: 28, height: 28, borderRadius: 0,
+              clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 4px), calc(100% - 4px) 100%, 0 100%)',
+              fontSize: 12,
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              transition: 'all 0.15s',
+            }}
+            onMouseEnter={e => {
+              e.currentTarget.style.color = 'var(--color-accent-light)'
+              e.currentTarget.style.borderColor = 'rgba(159, 18, 57, 0.45)'
+            }}
+            onMouseLeave={e => {
+              e.currentTarget.style.color = 'var(--color-text-tertiary)'
+              e.currentTarget.style.borderColor = 'var(--color-border)'
             }}
           >
             ✕
@@ -849,20 +1060,36 @@ export function QuestDetailPanel({
               : 'var(--color-success)'
             const deadlineOverdue = !!d.deadline && !d.done && d.deadline < todayYmd
 
+            const accentColor = d.done ? 'var(--color-success)' : 'var(--color-ice-light)'
+            const accentRgb = d.done ? '94, 122, 82' : '143, 191, 211'
             return (
               <div
                 key={d.id}
                 onDragOver={(e) => handleDragOver(e, d.id)}
                 onDrop={() => handleDrop(d.id)}
                 style={{
-                  background: 'var(--color-bg-secondary)',
-                  border: `1px solid ${d.done ? 'var(--color-success)' : 'var(--color-border)'}`,
-                  borderLeft: `3px solid ${d.done ? 'var(--color-success)' : 'var(--color-accent-light)'}`,
-                  borderRadius: 4,
+                  position: 'relative',
+                  background: 'rgba(8, 12, 18, 0.55)',
+                  border: `1px solid ${dragOverId === d.id ? 'var(--color-accent-primary)' : 'rgba(143, 191, 211, 0.22)'}`,
+                  borderLeft: `2px solid ${accentColor}`,
+                  borderRadius: 0,
+                  clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%)',
                   padding: '12px 14px',
                   opacity: draggedId === d.id ? 0.45 : (d.done ? 0.75 : 1),
-                  borderTop: dragOverId === d.id ? '2px solid var(--color-accent-primary)' : '1px solid transparent',
-                  transition: 'opacity 0.15s, border-color 0.15s, border-top 0.15s',
+                  boxShadow: dragOverId === d.id ? `0 0 16px rgba(${accentRgb}, 0.30)` : 'none',
+                  transition: 'opacity 0.15s, border-color 0.15s, box-shadow 0.15s, transform 0.15s',
+                }}
+                onMouseEnter={(e) => {
+                  if (d.done || draggedId === d.id) return
+                  e.currentTarget.style.borderColor = 'rgba(143, 191, 211, 0.45)'
+                  e.currentTarget.style.boxShadow = `0 0 12px rgba(${accentRgb}, 0.20)`
+                  e.currentTarget.style.transform = 'translateX(2px)'
+                }}
+                onMouseLeave={(e) => {
+                  if (draggedId === d.id) return
+                  e.currentTarget.style.borderColor = 'rgba(143, 191, 211, 0.22)'
+                  e.currentTarget.style.boxShadow = 'none'
+                  e.currentTarget.style.transform = 'translateX(0)'
                 }}
               >
                 {/* Header do card */}
@@ -874,22 +1101,25 @@ export function QuestDetailPanel({
                       onDragEnd={handleDragEnd}
                       style={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}
                     >
-                      <GripVertical size={14} style={{ color: 'var(--color-text-muted)', cursor: 'grab', opacity: 0.5 }} />
+                      <GripVertical size={14} style={{ color: 'var(--color-ice-light)', cursor: 'grab', opacity: 0.55 }} />
                     </div>
                   )}
                   <button
                     onClick={() => toggleDeliverableDone(d.id)}
                     title={d.done ? 'Desmarcar como feito' : 'Marcar como feito'}
                     style={{
-                      width: 18, height: 18, borderRadius: 3, flexShrink: 0,
-                      border: `2px solid ${d.done ? 'var(--color-success)' : 'var(--color-text-tertiary)'}`,
-                      background: d.done ? 'var(--color-success)' : 'transparent',
+                      width: 18, height: 18, flexShrink: 0,
+                      border: `1.5px solid ${d.done ? 'var(--color-success)' : 'var(--color-ice)'}`,
+                      background: d.done ? 'rgba(94, 122, 82, 0.55)' : 'transparent',
                       cursor: 'pointer', padding: 0,
+                      borderRadius: 0,
+                      clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 4px), calc(100% - 4px) 100%, 0 100%)',
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
                       transition: 'all 0.15s',
+                      boxShadow: d.done ? '0 0 8px rgba(94, 122, 82, 0.50)' : '0 0 6px rgba(143, 191, 211, 0.18)',
                     }}
                   >
-                    {d.done && <CheckCircle2 size={12} color="var(--color-bg-primary)" strokeWidth={3} />}
+                    {d.done && <CheckCircle2 size={11} color="var(--color-success-light)" strokeWidth={3} />}
                   </button>
 
                   <div style={{ flex: 1, minWidth: 0 }}>
@@ -897,11 +1127,19 @@ export function QuestDetailPanel({
                       value={d.title}
                       onSave={(v) => patchDeliverable(d.id, { title: v })}
                       style={{
-                        color: 'var(--color-text-primary)', fontSize: 13, fontWeight: 600,
+                        color: 'var(--color-text-primary)',
+                        fontFamily: 'var(--font-display)',
+                        fontSize: 14, fontWeight: 600,
+                        letterSpacing: '0.02em',
+                        textTransform: 'uppercase',
                         textDecoration: d.done ? 'line-through' : 'none',
                       }}
                     />
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginTop: 5, flexWrap: 'wrap', fontSize: 10, fontFamily: 'var(--font-mono)' }}>
+                    <div style={{
+                      display: 'flex', alignItems: 'center', gap: 12, marginTop: 6, flexWrap: 'wrap',
+                      fontSize: 9, fontFamily: 'var(--font-mono)', fontWeight: 700,
+                      letterSpacing: '0.18em', textTransform: 'uppercase',
+                    }}>
                       {/* Deadline — display por padrão, input ao clicar. */}
                       {editingField === `${d.id}:deadline` ? (
                         <input
@@ -919,12 +1157,17 @@ export function QuestDetailPanel({
                             if (e.key === 'Enter' || e.key === 'Escape') (e.currentTarget as HTMLInputElement).blur()
                           }}
                           style={{
-                            background: 'var(--color-bg-primary)',
-                            border: '1px solid var(--color-accent-light)',
-                            color: 'var(--color-text-primary)',
-                            fontSize: 10, padding: '2px 5px', borderRadius: 2, outline: 'none',
+                            background: 'rgba(8, 12, 18, 0.85)',
+                            border: '1px solid var(--color-ice)',
+                            color: 'var(--color-ice-light)',
+                            fontSize: 10, padding: '3px 6px', outline: 'none',
                             fontFamily: 'var(--font-mono)',
+                            fontWeight: 700,
+                            letterSpacing: '0.05em',
                             colorScheme: 'dark',
+                            borderRadius: 0,
+                            clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 3px), calc(100% - 3px) 100%, 0 100%)',
+                            boxShadow: '0 0 8px rgba(143, 191, 211, 0.25)',
                           } as any}
                         />
                       ) : (
@@ -933,45 +1176,48 @@ export function QuestDetailPanel({
                           style={{
                             background: 'none', border: 'none', cursor: 'pointer',
                             color: d.deadline
-                              ? (deadlineOverdue ? 'var(--color-accent-light)' : 'var(--color-text-secondary)')
+                              ? (deadlineOverdue ? 'var(--color-accent-light)' : 'var(--color-text-tertiary)')
                               : 'var(--color-text-muted)',
-                            fontSize: 10, padding: '2px 0', fontFamily: 'var(--font-mono)',
-                            fontStyle: d.deadline ? 'normal' : 'italic',
+                            fontSize: 9, fontFamily: 'var(--font-mono)',
+                            fontWeight: 700,
+                            letterSpacing: '0.18em', textTransform: 'uppercase',
+                            padding: 0,
                           }}
-                          onMouseEnter={e => (e.currentTarget.style.color = 'var(--color-accent-light)')}
+                          onMouseEnter={e => (e.currentTarget.style.color = 'var(--color-ice-light)')}
                           onMouseLeave={e => {
                             e.currentTarget.style.color = d.deadline
-                              ? (deadlineOverdue ? 'var(--color-accent-light)' : 'var(--color-text-secondary)')
+                              ? (deadlineOverdue ? 'var(--color-accent-light)' : 'var(--color-text-tertiary)')
                               : 'var(--color-text-muted)'
                           }}
                         >
-                          {d.deadline ? formatDateBR(d.deadline) : '+ prazo'}
-                          {deadlineOverdue && <span style={{ marginLeft: 4 }}>· atrasado</span>}
+                          <span style={{ color: 'var(--color-text-muted)', marginRight: 4 }}>DL</span>
+                          {d.deadline ? formatDateBR(d.deadline) : '+ ADD'}
+                          {deadlineOverdue && <span style={{ marginLeft: 4, color: 'var(--color-accent-vivid)' }}>· ATRASADO</span>}
                         </button>
                       )}
 
                       {/* Previsto — calculado dinamicamente a partir das quests filhas (read-only) */}
                       {estimated > 0 && (
-                        <span style={{
-                          color: 'var(--color-text-secondary)', fontSize: 10,
-                          fontFamily: 'var(--font-mono)',
-                        }}>
-                          ~{fmtMin(estimated)} previsto
+                        <span style={{ color: 'var(--color-text-tertiary)' }}>
+                          <span style={{ color: 'var(--color-text-muted)', marginRight: 4 }}>EST</span>
+                          {fmtMin(estimated)}
                         </span>
                       )}
 
                       {/* Executado (read-only) */}
                       {executed > 0 && (
                         <span style={{
-                          color: over ? 'var(--color-accent-primary)' : 'var(--color-text-secondary)',
+                          color: over ? 'var(--color-accent-vivid)' : 'var(--color-text-tertiary)',
                         }}>
-                          {fmtMin(executed)} feitos
-                          {over && ` (+${fmtMin(executed - estimated)})`}
+                          <span style={{ color: 'var(--color-text-muted)', marginRight: 4 }}>EXEC</span>
+                          {fmtMin(executed)}
+                          {over && ` +${fmtMin(executed - estimated)}`}
                         </span>
                       )}
 
                       <span style={{ color: 'var(--color-text-tertiary)' }}>
-                        {doneQuests.length}/{delivQuests.length} quests
+                        <span style={{ color: 'var(--color-text-muted)', marginRight: 4 }}>QST</span>
+                        {doneQuests.length}/{delivQuests.length}
                       </span>
                     </div>
                   </div>
@@ -980,21 +1226,65 @@ export function QuestDetailPanel({
                     onClick={() => toggleDelivCollapsed(d.id)}
                     title={collapsed ? 'Mostrar quests' : 'Ocultar quests'}
                     style={{
-                      background: 'none', border: 'none', cursor: 'pointer',
-                      color: 'var(--color-text-tertiary)', fontSize: 11, padding: '2px 6px',
+                      background: 'rgba(143, 191, 211, 0.06)',
+                      border: '1px solid rgba(143, 191, 211, 0.18)',
+                      cursor: 'pointer',
+                      color: 'var(--color-ice-light)',
+                      fontSize: 10, padding: '4px 8px',
+                      borderRadius: 0,
+                      clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 3px), calc(100% - 3px) 100%, 0 100%)',
+                      transition: 'all 0.15s',
+                    }}
+                    onMouseEnter={e => {
+                      e.currentTarget.style.background = 'rgba(143, 191, 211, 0.14)'
+                      e.currentTarget.style.borderColor = 'rgba(143, 191, 211, 0.45)'
+                    }}
+                    onMouseLeave={e => {
+                      e.currentTarget.style.background = 'rgba(143, 191, 211, 0.06)'
+                      e.currentTarget.style.borderColor = 'rgba(143, 191, 211, 0.18)'
                     }}
                   >
                     {collapsed ? '▶' : '▼'}
                   </button>
                 </div>
 
-                {/* Progress bar executado/previsto */}
+                {/* 10-segment progress bar */}
                 {(estimated > 0 || d.done) && (
-                  <div style={{ marginTop: 8, height: 3, background: 'var(--color-border)', borderRadius: 2, overflow: 'hidden' }}>
-                    <div style={{
-                      height: '100%', width: `${pct}%`, background: barColor,
-                      transition: 'width 0.3s',
-                    }} />
+                  <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <div style={{ flex: 1, display: 'flex', gap: 1 }}>
+                      {Array.from({ length: 10 }).map((_, i) => {
+                        const filled = (pct / 10) > i
+                        const segColor = pct >= 100
+                          ? 'var(--color-success)'
+                          : over
+                            ? 'var(--color-accent-vivid)'
+                            : 'var(--color-ice-light)'
+                        const segGlow = pct >= 100
+                          ? 'var(--color-success)'
+                          : over
+                            ? 'var(--color-accent-vivid)'
+                            : 'var(--color-ice)'
+                        return (
+                          <div
+                            key={i}
+                            style={{
+                              flex: 1, height: 3,
+                              background: filled ? segColor : 'rgba(255, 255, 255, 0.06)',
+                              boxShadow: filled ? `0 0 4px ${segGlow}` : 'none',
+                            }}
+                          />
+                        )
+                      })}
+                    </div>
+                    <span style={{
+                      fontFamily: 'var(--font-mono)',
+                      fontSize: 9, fontWeight: 700,
+                      color: pct >= 100 ? 'var(--color-success-light)' : 'var(--color-text-tertiary)',
+                      letterSpacing: '0.12em',
+                      minWidth: 32, textAlign: 'right',
+                    }}>
+                      {pct}%
+                    </span>
                   </div>
                 )}
 
@@ -1004,71 +1294,96 @@ export function QuestDetailPanel({
                     {[...activeQuests, ...doneQuests].map(q => {
                       const sec = questDurationSec(q.id)
                       const expanded = expandedQuestIds.has(q.id)
+                      const qIsDone = q.status === 'done'
                       return (
                         <div
                           key={q.id}
                           onDragOver={(e) => handleQuestDragOver(e, q.id)}
                           onDrop={() => handleQuestDrop(q.id, d.id)}
                           style={{
-                            background: 'var(--color-bg-tertiary)',
-                            border: '1px solid var(--color-border)',
-                            borderRadius: 3,
+                            background: 'rgba(8, 12, 18, 0.55)',
+                            border: `1px solid ${dragOverQuestId === q.id ? 'var(--color-accent-primary)' : 'rgba(143, 191, 211, 0.18)'}`,
+                            borderLeft: `2px solid ${qIsDone ? 'var(--color-success)' : 'rgba(143, 191, 211, 0.55)'}`,
+                            borderRadius: 0,
+                            clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%)',
                             padding: '8px 10px',
-                            opacity: draggedQuestId === q.id ? 0.45 : (q.status === 'done' ? 0.65 : 1),
-                            borderTop: dragOverQuestId === q.id ? '2px solid var(--color-accent-primary)' : '1px solid transparent',
-                            transition: 'opacity 0.15s, border-top 0.15s',
-                          }}>
+                            opacity: draggedQuestId === q.id ? 0.45 : (qIsDone ? 0.7 : 1),
+                            boxShadow: dragOverQuestId === q.id ? '0 0 12px rgba(159, 18, 57, 0.30)' : 'none',
+                            transition: 'opacity 0.15s, border-color 0.15s, box-shadow 0.15s, transform 0.15s',
+                          }}
+                          onMouseEnter={(e) => {
+                            if (qIsDone || draggedQuestId === q.id) return
+                            e.currentTarget.style.borderColor = 'rgba(143, 191, 211, 0.40)'
+                            e.currentTarget.style.boxShadow = '0 0 8px rgba(143, 191, 211, 0.15)'
+                          }}
+                          onMouseLeave={(e) => {
+                            if (draggedQuestId === q.id) return
+                            e.currentTarget.style.borderColor = 'rgba(143, 191, 211, 0.18)'
+                            e.currentTarget.style.boxShadow = 'none'
+                          }}
+                        >
                           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                            {q.status !== 'done' && (
+                            {!qIsDone && (
                               <div
                                 draggable={true}
                                 onDragStart={() => handleQuestDragStart(q.id)}
                                 onDragEnd={handleQuestDragEnd}
                                 style={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}
                               >
-                                <GripVertical size={12} style={{ color: 'var(--color-text-muted)', cursor: 'grab', opacity: 0.5 }} />
+                                <GripVertical size={12} style={{ color: 'var(--color-ice-light)', cursor: 'grab', opacity: 0.45 }} />
                               </div>
                             )}
                             <button
                               onClick={() => toggleQuestDone(q)}
-                              title={q.status === 'done' ? 'Reabrir quest' : 'Marcar como feita'}
+                              title={qIsDone ? 'Reabrir quest' : 'Marcar como feita'}
                               style={{
                                 width: 14, height: 14, flexShrink: 0, padding: 0,
-                                background: q.status === 'done' ? 'var(--color-success)' : 'transparent',
-                                border: `1.5px solid ${q.status === 'done' ? 'var(--color-success)' : 'var(--color-text-tertiary)'}`,
-                                borderRadius: '50%', cursor: 'pointer',
+                                background: qIsDone ? 'rgba(94, 122, 82, 0.55)' : 'transparent',
+                                border: `1.5px solid ${qIsDone ? 'var(--color-success)' : 'var(--color-ice)'}`,
+                                borderRadius: 0,
+                                clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 3px), calc(100% - 3px) 100%, 0 100%)',
+                                cursor: 'pointer',
                                 display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                boxShadow: qIsDone ? '0 0 6px rgba(94, 122, 82, 0.45)' : '0 0 4px rgba(143, 191, 211, 0.18)',
+                                transition: 'all 0.15s',
                               }}
                             >
-                              {q.status === 'done' && <CheckCircle2 size={9} color="var(--color-bg-primary)" strokeWidth={2.5} />}
+                              {qIsDone && <CheckCircle2 size={9} color="var(--color-success-light)" strokeWidth={2.5} />}
                             </button>
                             <InlineText
                               value={q.title}
                               onSave={v => handleUpdate(q.id, { title: v })}
                               style={{
-                                flex: 1, minWidth: 0, fontSize: 12,
-                                color: q.status === 'done' ? 'var(--color-text-tertiary)' : 'var(--color-text-primary)',
-                                textDecoration: q.status === 'done' ? 'line-through' : 'none',
+                                flex: 1, minWidth: 0,
+                                fontFamily: 'var(--font-display)',
+                                fontSize: 12, fontWeight: 600,
+                                letterSpacing: '0.02em',
+                                color: qIsDone ? 'var(--color-text-tertiary)' : 'var(--color-text-primary)',
+                                textDecoration: qIsDone ? 'line-through' : 'none',
                               }}
                             />
                             {q.estimated_minutes != null && q.estimated_minutes > 0 && (
                               <span
                                 title="Tempo estimado"
                                 style={{
-                                  fontSize: 10, color: 'var(--color-text-tertiary)',
                                   fontFamily: 'var(--font-mono)',
+                                  fontSize: 9, fontWeight: 700,
+                                  color: 'var(--color-text-tertiary)',
+                                  letterSpacing: '0.18em', textTransform: 'uppercase',
                                 }}
                               >
-                                ~{fmtMin(q.estimated_minutes)}
+                                <span style={{ color: 'var(--color-text-muted)', marginRight: 3 }}>EST</span>
+                                {fmtMin(q.estimated_minutes)}
                               </span>
                             )}
                             {sec > 0 && (
                               <span
                                 title="Tempo real gasto (sessões)"
                                 style={{
-                                  fontSize: 10,
-                                  color: q.status === 'done' ? 'var(--color-success)' : 'var(--color-text-secondary)',
                                   fontFamily: 'var(--font-mono)',
+                                  fontSize: 9, fontWeight: 700,
+                                  color: qIsDone ? 'var(--color-success-light)' : 'var(--color-ice-light)',
+                                  letterSpacing: '0.05em',
                                 }}
                               >
                                 {formatHMS(sec)}
@@ -1078,8 +1393,22 @@ export function QuestDetailPanel({
                               onClick={() => toggleQuestExpanded(q.id)}
                               title={expanded ? 'Ocultar detalhes' : 'Mostrar detalhes'}
                               style={{
-                                background: 'none', border: 'none', cursor: 'pointer',
-                                color: 'var(--color-text-tertiary)', fontSize: 10, padding: '2px 4px',
+                                background: 'rgba(143, 191, 211, 0.06)',
+                                border: '1px solid rgba(143, 191, 211, 0.15)',
+                                cursor: 'pointer',
+                                color: 'var(--color-ice-light)',
+                                fontSize: 9, padding: '3px 6px',
+                                borderRadius: 0,
+                                clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 3px), calc(100% - 3px) 100%, 0 100%)',
+                                transition: 'all 0.15s',
+                              }}
+                              onMouseEnter={e => {
+                                e.currentTarget.style.background = 'rgba(143, 191, 211, 0.14)'
+                                e.currentTarget.style.borderColor = 'rgba(143, 191, 211, 0.40)'
+                              }}
+                              onMouseLeave={e => {
+                                e.currentTarget.style.background = 'rgba(143, 191, 211, 0.06)'
+                                e.currentTarget.style.borderColor = 'rgba(143, 191, 211, 0.15)'
                               }}
                             >
                               {expanded ? '▼' : '▶'}
@@ -1087,9 +1416,22 @@ export function QuestDetailPanel({
                           </div>
 
                           {expanded && (
-                            <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--color-border)', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                            <div style={{
+                              marginTop: 10, paddingTop: 10,
+                              borderTop: '1px solid rgba(143, 191, 211, 0.18)',
+                              display: 'flex', flexDirection: 'column', gap: 10,
+                            }}>
                               <div>
-                                <span style={{ fontSize: 9, color: 'var(--color-text-muted)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 4, display: 'block' }}>Descrição:</span>
+                                <span style={{
+                                  fontFamily: 'var(--font-mono)',
+                                  fontSize: 9, fontWeight: 700,
+                                  color: 'var(--color-ice-light)',
+                                  letterSpacing: '0.22em', textTransform: 'uppercase',
+                                  marginBottom: 6, display: 'block',
+                                }}>
+                                  <span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
+                                  DESCRIPTION
+                                </span>
                                 <BlockEditor
                                   value={descriptionDraft[q.id] ?? q.description ?? ''}
                                   onChange={v => setDescriptionDraft(prev => ({ ...prev, [q.id]: v }))}
@@ -1098,15 +1440,34 @@ export function QuestDetailPanel({
                                 />
                               </div>
                               <div>
-                                <span style={{ fontSize: 9, color: 'var(--color-text-muted)', letterSpacing: '0.1em', textTransform: 'uppercase', marginRight: 6 }}>Próximo passo:</span>
+                                <span style={{
+                                  fontFamily: 'var(--font-mono)',
+                                  fontSize: 9, fontWeight: 700,
+                                  color: 'var(--color-ice-light)',
+                                  letterSpacing: '0.22em', textTransform: 'uppercase',
+                                  marginRight: 8,
+                                }}>
+                                  <span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
+                                  NEXT
+                                </span>
                                 <InlineText
                                   value={q.next_action ?? ''}
                                   onSave={v => handleUpdate(q.id, { next_action: v || null })}
-                                  style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}
+                                  style={{
+                                    fontSize: 11,
+                                    fontFamily: 'var(--font-mono)',
+                                    color: 'var(--color-text-secondary)',
+                                    letterSpacing: '0.05em',
+                                  }}
                                 />
                               </div>
                               <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                                <span style={{ fontSize: 9, color: 'var(--color-text-muted)', letterSpacing: '0.1em', textTransform: 'uppercase' }}>Estimativa:</span>
+                                <span style={{
+                                  fontFamily: 'var(--font-mono)',
+                                  fontSize: 9, fontWeight: 700,
+                                  color: 'var(--color-text-muted)',
+                                  letterSpacing: '0.22em', textTransform: 'uppercase',
+                                }}>EST</span>
                                 <input
                                   type="text"
                                   autoComplete="off"
@@ -1118,44 +1479,66 @@ export function QuestDetailPanel({
                                     if (next !== (q.estimated_minutes ?? null)) {
                                       handleUpdate(q.id, { estimated_minutes: next })
                                     }
-                                    e.currentTarget.style.borderBottomColor = 'var(--color-border)'
+                                    e.currentTarget.style.borderColor = 'var(--color-border)'
+                                    e.currentTarget.style.boxShadow = 'none'
                                   }}
                                   onKeyDown={e => { if (e.key === 'Enter') (e.currentTarget as HTMLInputElement).blur() }}
                                   style={{
-                                    width: 70, background: 'transparent',
-                                    border: 'none',
-                                    borderBottom: '1px solid var(--color-border)',
-                                    color: 'var(--color-text-primary)',
-                                    fontSize: 11, padding: '4px 2px', outline: 'none',
+                                    width: 70,
+                                    background: 'rgba(8, 12, 18, 0.55)',
+                                    border: '1px solid var(--color-border)',
+                                    color: 'var(--color-ice-light)',
                                     fontFamily: 'var(--font-mono)',
-                                    transition: 'border-color 0.15s',
+                                    fontWeight: 700,
+                                    fontSize: 11, padding: '4px 8px',
+                                    outline: 'none',
+                                    letterSpacing: '0.05em',
+                                    borderRadius: 0,
+                                    clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 3px), calc(100% - 3px) 100%, 0 100%)',
+                                    transition: 'all 0.15s',
                                   }}
-                                  onFocus={e => (e.currentTarget.style.borderBottomColor = 'var(--color-accent-light)')}
+                                  onFocus={e => {
+                                    e.currentTarget.style.borderColor = 'var(--color-ice)'
+                                    e.currentTarget.style.boxShadow = '0 0 8px rgba(143, 191, 211, 0.25)'
+                                  }}
                                 />
                               </div>
                               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                                <span style={{ fontSize: 9, color: 'var(--color-text-muted)', letterSpacing: '0.1em', textTransform: 'uppercase' }}>Status:</span>
+                                <span style={{
+                                  fontFamily: 'var(--font-mono)',
+                                  fontSize: 9, fontWeight: 700,
+                                  color: 'var(--color-text-muted)',
+                                  letterSpacing: '0.22em', textTransform: 'uppercase',
+                                }}>STATUS</span>
                                 <StatusDropdown status={q.status} onChange={s => handleUpdate(q.id, { status: s })} />
                                 <button
                                   onClick={() => removeSubtask(q.id)}
                                   style={{
                                     marginLeft: 'auto',
-                                    background: 'none', border: '1px solid var(--color-border)',
-                                    color: 'var(--color-text-tertiary)', cursor: 'pointer',
-                                    fontSize: 10, padding: '4px 8px', borderRadius: 3,
-                                    letterSpacing: '0.08em', textTransform: 'uppercase',
+                                    background: 'rgba(8, 12, 18, 0.55)',
+                                    border: '1px solid var(--color-border)',
+                                    color: 'var(--color-text-tertiary)',
+                                    cursor: 'pointer',
+                                    fontFamily: 'var(--font-mono)',
+                                    fontSize: 9, fontWeight: 700,
+                                    padding: '4px 10px',
+                                    letterSpacing: '0.22em', textTransform: 'uppercase',
+                                    borderRadius: 0,
+                                    clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 3px), calc(100% - 3px) 100%, 0 100%)',
                                     transition: 'all 0.15s',
                                   }}
                                   onMouseEnter={e => {
                                     e.currentTarget.style.color = 'var(--color-accent-light)'
-                                    e.currentTarget.style.borderColor = 'var(--color-accent-light)'
+                                    e.currentTarget.style.borderColor = 'rgba(159, 18, 57, 0.45)'
+                                    e.currentTarget.style.boxShadow = '0 0 8px rgba(159, 18, 57, 0.18)'
                                   }}
                                   onMouseLeave={e => {
                                     e.currentTarget.style.color = 'var(--color-text-tertiary)'
                                     e.currentTarget.style.borderColor = 'var(--color-border)'
+                                    e.currentTarget.style.boxShadow = 'none'
                                   }}
                                 >
-                                  deletar
+                                  DELETAR
                                 </button>
                               </div>
                             </div>
@@ -1166,31 +1549,40 @@ export function QuestDetailPanel({
 
                     {/* Input de nova quest scoped ao deliverable: título + tempo estimado */}
                     <div style={{
-                      display: 'flex', gap: 10, marginTop: 6, paddingTop: 8,
-                      borderTop: '1px dashed var(--color-divider)',
+                      display: 'flex', gap: 10, marginTop: 8, paddingTop: 10,
+                      borderTop: '1px dashed rgba(143, 191, 211, 0.22)',
                       alignItems: 'center',
                     }}>
                       <span style={{
-                        fontSize: 14, color: 'var(--color-text-muted)',
-                        lineHeight: 1, paddingBottom: 2,
-                      }}>+</span>
+                        fontFamily: 'var(--font-mono)',
+                        fontSize: 9, fontWeight: 700,
+                        color: 'var(--color-text-muted)',
+                        letterSpacing: '0.22em', textTransform: 'uppercase',
+                        flexShrink: 0,
+                      }}>
+                        <span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
+                        NEW.QST
+                      </span>
                       <input
                         type="text"
                         autoComplete="off"
                         value={newQuestByDeliv[d.id] ?? ''}
                         onChange={e => setNewQuestByDeliv(prev => ({ ...prev, [d.id]: e.target.value }))}
                         onKeyDown={e => { if (e.key === 'Enter') addQuestToDeliverable(d.id) }}
-                        placeholder="Nova quest neste entregável…"
+                        placeholder="título…"
                         style={{
                           flex: 1, background: 'transparent',
                           border: 'none',
-                          borderBottom: '1px solid transparent',
-                          color: 'var(--color-text-primary)',
-                          padding: '4px 2px', fontSize: 12,
+                          borderBottom: '1px solid var(--color-ice-deep)',
+                          color: 'var(--color-ice-light)',
+                          fontFamily: 'var(--font-display)',
+                          fontWeight: 600,
+                          padding: '5px 2px', fontSize: 12,
+                          letterSpacing: '0.02em',
                           outline: 'none', transition: 'border-color 0.15s',
                         }}
-                        onFocus={e => (e.currentTarget.style.borderBottomColor = 'var(--color-accent-light)')}
-                        onBlur={e => (e.currentTarget.style.borderBottomColor = 'transparent')}
+                        onFocus={e => (e.currentTarget.style.borderBottomColor = 'var(--color-ice)')}
+                        onBlur={e => (e.currentTarget.style.borderBottomColor = 'var(--color-ice-deep)')}
                       />
                       <input
                         type="text"
@@ -1203,29 +1595,35 @@ export function QuestDetailPanel({
                         style={{
                           width: 60, background: 'transparent',
                           border: 'none',
-                          borderBottom: '1px solid transparent',
-                          color: 'var(--color-text-primary)',
-                          padding: '4px 2px', fontSize: 11,
+                          borderBottom: '1px solid var(--color-ice-deep)',
+                          color: 'var(--color-ice-light)',
+                          padding: '5px 2px', fontSize: 11, fontWeight: 700,
                           outline: 'none',
                           fontFamily: 'var(--font-mono)',
+                          letterSpacing: '0.05em',
                           transition: 'border-color 0.15s',
                         }}
-                        onFocus={e => (e.currentTarget.style.borderBottomColor = 'var(--color-accent-light)')}
-                        onBlur={e => (e.currentTarget.style.borderBottomColor = 'transparent')}
+                        onFocus={e => (e.currentTarget.style.borderBottomColor = 'var(--color-ice)')}
+                        onBlur={e => (e.currentTarget.style.borderBottomColor = 'var(--color-ice-deep)')}
                       />
                       <button
                         onClick={() => addQuestToDeliverable(d.id)}
                         disabled={!(newQuestByDeliv[d.id] ?? '').trim()}
                         style={{
-                          background: (newQuestByDeliv[d.id] ?? '').trim() ? 'var(--color-accent-light)' : 'var(--color-bg-tertiary)',
-                          color: (newQuestByDeliv[d.id] ?? '').trim() ? 'var(--color-bg-primary)' : 'var(--color-text-muted)',
-                          border: 'none',
+                          background: (newQuestByDeliv[d.id] ?? '').trim() ? 'rgba(143, 191, 211, 0.14)' : 'rgba(8, 12, 18, 0.55)',
+                          border: `1px solid ${(newQuestByDeliv[d.id] ?? '').trim() ? 'var(--color-ice)' : 'var(--color-border)'}`,
+                          color: (newQuestByDeliv[d.id] ?? '').trim() ? 'var(--color-ice-light)' : 'var(--color-text-muted)',
                           cursor: (newQuestByDeliv[d.id] ?? '').trim() ? 'pointer' : 'not-allowed',
-                          padding: '6px 12px', fontSize: 11, fontWeight: 700,
-                          borderRadius: 3,
+                          fontFamily: 'var(--font-mono)',
+                          padding: '5px 12px', fontSize: 9, fontWeight: 700,
+                          letterSpacing: '0.22em', textTransform: 'uppercase',
+                          borderRadius: 0,
+                          clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 4px), calc(100% - 4px) 100%, 0 100%)',
+                          boxShadow: (newQuestByDeliv[d.id] ?? '').trim() ? '0 0 8px rgba(143, 191, 211, 0.20)' : 'none',
+                          transition: 'all 0.15s',
                         }}
                       >
-                        +
+                        + ADD
                       </button>
                     </div>
 
@@ -1234,17 +1632,19 @@ export function QuestDetailPanel({
                       <button
                         onClick={() => handleDeleteDeliverable(d.id)}
                         style={{
-                          alignSelf: 'flex-start', marginTop: 6,
+                          alignSelf: 'flex-start', marginTop: 8,
                           background: 'none', border: 'none',
                           color: 'var(--color-text-muted)', cursor: 'pointer',
-                          fontSize: 10, letterSpacing: '0.08em', textTransform: 'uppercase',
+                          fontFamily: 'var(--font-mono)',
+                          fontSize: 9, fontWeight: 700,
+                          letterSpacing: '0.22em', textTransform: 'uppercase',
                           padding: '4px 0',
                           transition: 'color 0.15s',
                         }}
                         onMouseEnter={e => (e.currentTarget.style.color = 'var(--color-accent-light)')}
                         onMouseLeave={e => (e.currentTarget.style.color = 'var(--color-text-muted)')}
                       >
-                        deletar entregável
+                        ✕ DELETAR ENTREGÁVEL
                       </button>
                     )}
                   </div>
@@ -1299,6 +1699,21 @@ function FinanceBlock({ project, totalExecutedMin, onUpdateValor, onUpdateClient
   const [editingParcela, setEditingParcela] = useState<FinParcela | null | 'new'>(null)
   const [showTemplateModal, setShowTemplateModal] = useState(false)
   const [parcelaActionsBusy, setParcelaActionsBusy] = useState(false)
+  // Toggle de colapsar/expandir o bloco inteiro. Persiste por projeto via
+  // localStorage — usuário que sempre quer fechado num projeto não precisa
+  // re-clicar a cada navegação. Default: expandido.
+  const [collapsed, setCollapsed] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(`hq-finance-collapsed-${project.id}`) === '1'
+    } catch { return false }
+  })
+  function toggleCollapsed() {
+    setCollapsed(prev => {
+      const next = !prev
+      try { localStorage.setItem(`hq-finance-collapsed-${project.id}`, next ? '1' : '0') } catch {}
+      return next
+    })
+  }
 
   // Carrega parcelas + clientes + média histórica no mount.
   useEffect(() => {
@@ -1370,28 +1785,112 @@ function FinanceBlock({ project, totalExecutedMin, onUpdateValor, onUpdateClient
       setShowTemplateModal(false)
     } catch (err: any) {
       reportApiError('applyTemplate', err)
-      alert(err?.message ?? 'Erro ao aplicar template — veja o console.')
+      alertDialog({
+        title: 'Erro',
+        message: err?.message ?? 'Erro ao aplicar template — veja o console.',
+        variant: 'danger',
+      })
     } finally {
       setParcelaActionsBusy(false)
     }
   }
 
+  // Resumo compacto pro estado colapsado — preview rápido sem precisar
+  // expandir. Mostra valor acordado + recebido + a receber.
+  const totalRecebidoForSummary = parcelas
+    .filter(p => p.status === 'recebido')
+    .reduce((s, p) => s + p.valor, 0)
+  const aReceberForSummary = (project.valor_acordado ?? 0) - totalRecebidoForSummary
+  const formatBRLLocal = (v: number) => new Intl.NumberFormat('pt-BR', {
+    style: 'currency', currency: 'BRL', minimumFractionDigits: 2,
+  }).format(v)
+
   return (
     <div style={{
-      marginBottom: 24, padding: '14px 16px',
-      background: 'var(--color-bg-secondary)',
-      border: '1px solid var(--color-border)',
-      borderLeft: '3px solid var(--color-accent-light)',
-      borderRadius: 4,
+      marginBottom: 24, padding: collapsed ? '12px 16px' : '14px 16px',
+      background: 'rgba(8, 12, 18, 0.55)',
+      border: '1px solid rgba(143, 191, 211, 0.22)',
+      borderLeft: '2px solid var(--color-ice-light)',
+      borderRadius: 0,
+      clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%)',
+      transition: 'padding var(--motion-fast) var(--ease-smooth)',
     }}>
-      <div style={{
-        fontSize: 9, color: 'var(--color-text-tertiary)',
-        letterSpacing: '0.2em', textTransform: 'uppercase', fontWeight: 700,
-        marginBottom: 12,
-      }}>
-        financeiro
+      <div
+        onClick={toggleCollapsed}
+        title={collapsed ? 'Expandir Finance' : 'Colapsar Finance'}
+        style={{
+          fontFamily: 'var(--font-mono)',
+          fontSize: 10, fontWeight: 700,
+          color: 'var(--color-ice-light)',
+          letterSpacing: '0.25em', textTransform: 'uppercase',
+          marginBottom: collapsed ? 0 : 14,
+          display: 'flex', alignItems: 'center', gap: 8,
+          paddingBottom: collapsed ? 0 : 8,
+          borderBottom: collapsed ? 'none' : '1px solid var(--color-ice-deep)',
+          cursor: 'pointer',
+          userSelect: 'none',
+          transition: 'margin-bottom var(--motion-fast) var(--ease-smooth), padding-bottom var(--motion-fast) var(--ease-smooth)',
+        }}
+      >
+        <div
+          aria-hidden="true"
+          style={{
+            width: 3, height: 14,
+            background: 'var(--color-ice)',
+            boxShadow: '0 0 8px var(--color-ice-glow)',
+          }}
+        />
+        <span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
+        FINANCE
+        {/* Resumo inline quando colapsado — preview do valor + status */}
+        {collapsed && project.valor_acordado != null && (
+          <span style={{
+            color: 'var(--color-text-tertiary)',
+            fontWeight: 700, marginLeft: 10,
+            display: 'inline-flex', alignItems: 'center', gap: 8,
+            letterSpacing: '0.18em',
+          }}>
+            <span style={{ color: 'var(--color-text-muted)' }}>·</span>
+            <span style={{ color: 'var(--color-ice-light)' }}>{formatBRLLocal(project.valor_acordado)}</span>
+            {parcelas.length > 0 && (
+              <>
+                <span style={{ color: 'var(--color-text-muted)' }}>·</span>
+                <span style={{ color: 'var(--color-success-light)' }}>
+                  {formatBRLLocal(totalRecebidoForSummary)} RCV
+                </span>
+                {aReceberForSummary > 0 && (
+                  <>
+                    <span style={{ color: 'var(--color-text-muted)' }}>·</span>
+                    <span style={{ color: 'var(--color-text-tertiary)' }}>
+                      {formatBRLLocal(aReceberForSummary)} PEND
+                    </span>
+                  </>
+                )}
+              </>
+            )}
+          </span>
+        )}
+        {/* Chevron toggle no canto direito */}
+        <span
+          aria-hidden="true"
+          style={{
+            marginLeft: 'auto',
+            color: 'var(--color-ice-light)',
+            background: 'rgba(143, 191, 211, 0.06)',
+            border: '1px solid rgba(143, 191, 211, 0.18)',
+            padding: '3px 8px',
+            fontSize: 10,
+            borderRadius: 0,
+            clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 3px), calc(100% - 3px) 100%, 0 100%)',
+            transition: 'all 0.15s',
+          }}
+        >
+          {collapsed ? '▶' : '▼'}
+        </span>
       </div>
 
+      {!collapsed && (
+      <>
       {/* Linha 1: valor acordado / tempo / R$/hora estimado / R$/hora real */}
       <div style={{
         display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 16,
@@ -1416,12 +1915,17 @@ function FinanceBlock({ project, totalExecutedMin, onUpdateValor, onUpdateClient
               placeholder="ex: 2000"
               style={{
                 width: '100%', maxWidth: 140,
-                background: 'var(--color-bg-primary)',
-                border: '1px solid var(--color-accent-light)',
-                borderRadius: 3, padding: '6px 8px',
-                color: 'var(--color-text-primary)',
-                fontSize: 14, fontWeight: 600,
+                background: 'rgba(8, 12, 18, 0.85)',
+                border: '1px solid var(--color-ice)',
+                borderRadius: 0,
+                clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 4px), calc(100% - 4px) 100%, 0 100%)',
+                padding: '7px 10px',
+                color: 'var(--color-ice-light)',
+                fontSize: 14, fontWeight: 700,
                 fontFamily: 'var(--font-mono)',
+                letterSpacing: '0.05em',
+                outline: 'none',
+                boxShadow: '0 0 10px rgba(143, 191, 211, 0.30)',
               }}
             />
           ) : (
@@ -1493,34 +1997,37 @@ function FinanceBlock({ project, totalExecutedMin, onUpdateValor, onUpdateClient
         const tipo = hourlyRateReal != null ? 'real' : 'estimado'
         return (
           <div style={{
-            marginTop: 10, padding: '8px 12px',
-            background: 'var(--color-bg-primary)',
-            border: '1px solid var(--color-border)',
-            borderRadius: 3,
+            marginTop: 12, padding: '8px 14px',
+            background: 'rgba(8, 12, 18, 0.55)',
+            border: '1px solid rgba(143, 191, 211, 0.18)',
+            borderRadius: 0,
+            clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%)',
             display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
-            fontSize: 11, color: 'var(--color-text-secondary)',
+            fontSize: 10, fontFamily: 'var(--font-mono)', fontWeight: 700,
+            color: 'var(--color-text-tertiary)',
+            letterSpacing: '0.18em', textTransform: 'uppercase',
           }}>
             <span>
-              esse projeto ({tipo}): <strong style={{
-                fontFamily: 'var(--font-mono)',
-                color: 'var(--color-text-primary)',
-              }}>{formatBRL(projetoRate)}/h</strong>
+              <span style={{ color: 'var(--color-text-muted)', marginRight: 5 }}>{tipo}</span>
+              <span style={{ color: 'var(--color-ice-light)' }}>{formatBRL(projetoRate)}/h</span>
             </span>
-            <span style={{ color: 'var(--color-text-muted)' }}>vs</span>
+            <span style={{ color: 'var(--color-text-muted)' }}>VS</span>
             <span>
-              sua média {tipo}: <strong style={{
-                fontFamily: 'var(--font-mono)',
-                color: 'var(--color-text-primary)',
-              }}>{formatBRL(mediaRate)}/h</strong>
+              <span style={{ color: 'var(--color-text-muted)', marginRight: 5 }}>MED</span>
+              <span style={{ color: 'var(--color-text-secondary)' }}>{formatBRL(mediaRate)}/h</span>
             </span>
             <span style={{
-              fontSize: 10, fontWeight: 700,
-              padding: '3px 8px', borderRadius: 3,
-              letterSpacing: '0.1em', textTransform: 'uppercase',
-              color: acimaMedia ? 'var(--color-success)' : 'var(--color-accent-primary)',
+              fontSize: 9, fontWeight: 700,
+              padding: '3px 9px',
+              borderRadius: 0,
+              clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 3px), calc(100% - 3px) 100%, 0 100%)',
+              letterSpacing: '0.22em', textTransform: 'uppercase',
+              color: acimaMedia ? 'var(--color-success-light)' : 'var(--color-accent-light)',
               border: `1px solid ${acimaMedia ? 'var(--color-success)' : 'var(--color-accent-primary)'}`,
+              background: acimaMedia ? 'rgba(94, 122, 82, 0.14)' : 'rgba(159, 18, 57, 0.14)',
+              boxShadow: acimaMedia ? '0 0 8px rgba(94, 122, 82, 0.25)' : '0 0 8px rgba(159, 18, 57, 0.25)',
             }}>
-              {acimaMedia ? '↑' : '↓'} {formatBRL(Math.abs(diff))}/h {acimaMedia ? 'acima' : 'abaixo'}
+              {acimaMedia ? '↑' : '↓'} {formatBRL(Math.abs(diff))}/H {acimaMedia ? 'ACIMA' : 'ABAIXO'}
             </span>
           </div>
         )
@@ -1528,24 +2035,42 @@ function FinanceBlock({ project, totalExecutedMin, onUpdateValor, onUpdateClient
 
       {/* Cliente — habilita auto-vínculo de receita por CPF/CNPJ */}
       <div style={{
-        marginTop: 12, paddingTop: 12,
-        borderTop: '1px solid var(--color-border)',
-        display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap',
+        marginTop: 14, paddingTop: 12,
+        borderTop: '1px solid var(--color-ice-deep)',
+        display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
       }}>
-        <div style={fieldLabelMini()}>cliente</div>
+        <span style={fieldLabelMini()}>
+          <span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
+          CLIENTE
+        </span>
         <select
           value={project.cliente_id ?? ''}
           onChange={e => onUpdateCliente(e.target.value || null)}
           style={{
-            background: 'var(--color-bg-primary)',
+            background: 'rgba(8, 12, 18, 0.55)',
             border: '1px solid var(--color-border)',
-            borderRadius: 3, padding: '6px 10px',
-            color: 'var(--color-text-primary)',
-            fontSize: 12, fontFamily: 'inherit',
+            borderRadius: 0,
+            clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 5px), calc(100% - 5px) 100%, 0 100%)',
+            padding: '6px 12px',
+            color: 'var(--color-ice-light)',
+            fontFamily: 'var(--font-mono)',
+            fontWeight: 700,
+            fontSize: 11,
+            letterSpacing: '0.05em',
             minWidth: 200,
+            outline: 'none',
+            transition: 'all 0.15s',
+          }}
+          onFocus={e => {
+            e.currentTarget.style.borderColor = 'var(--color-ice)'
+            e.currentTarget.style.boxShadow = '0 0 10px rgba(143, 191, 211, 0.30)'
+          }}
+          onBlur={e => {
+            e.currentTarget.style.borderColor = 'var(--color-border)'
+            e.currentTarget.style.boxShadow = 'none'
           }}
         >
-          <option value="">— sem cliente —</option>
+          <option value="">— SEM CLIENTE —</option>
           {clients.map(c => (
             <option key={c.id} value={c.id}>
               {c.nome}{c.cpf_cnpj ? ` (${c.cpf_cnpj})` : ''}
@@ -1554,16 +2079,24 @@ function FinanceBlock({ project, totalExecutedMin, onUpdateValor, onUpdateClient
         </select>
         {selectedClient?.cpf_cnpj && (
           <span style={{
-            fontSize: 10, color: 'var(--color-text-muted)', fontStyle: 'italic',
+            fontFamily: 'var(--font-mono)',
+            fontSize: 9, fontWeight: 700,
+            color: 'var(--color-success-light)',
+            letterSpacing: '0.18em', textTransform: 'uppercase',
           }}>
-            auto-vínculo ativo via CPF/CNPJ
+            <span style={{ color: 'var(--color-success)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
+            AUTO-LINK ATIVO
           </span>
         )}
         {selectedClient && !selectedClient.cpf_cnpj && (
           <span style={{
-            fontSize: 10, color: 'var(--color-warning)', fontStyle: 'italic',
+            fontFamily: 'var(--font-mono)',
+            fontSize: 9, fontWeight: 700,
+            color: 'var(--color-warning-light)',
+            letterSpacing: '0.18em', textTransform: 'uppercase',
           }}>
-            cliente sem CPF/CNPJ — auto-vínculo desativado
+            <span style={{ color: 'var(--color-warning)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
+            SEM CPF/CNPJ
           </span>
         )}
       </div>
@@ -1571,60 +2104,80 @@ function FinanceBlock({ project, totalExecutedMin, onUpdateValor, onUpdateClient
       {/* Sub-resumo: recebido / a receber */}
       {valor != null && parcelas.length > 0 && (
         <div style={{
-          marginTop: 12, paddingTop: 12,
-          borderTop: '1px solid var(--color-border)',
-          display: 'flex', gap: 18, fontSize: 11, color: 'var(--color-text-secondary)',
-          flexWrap: 'wrap',
+          marginTop: 14, paddingTop: 12,
+          borderTop: '1px solid var(--color-ice-deep)',
+          display: 'flex', gap: 16, flexWrap: 'wrap',
+          fontSize: 10, fontFamily: 'var(--font-mono)', fontWeight: 700,
+          letterSpacing: '0.18em', textTransform: 'uppercase',
         }}>
           <span>
-            <strong style={{ color: 'var(--color-success)', fontFamily: 'var(--font-mono)' }}>
-              {formatBRL(totalRecebido)}
-            </strong>
-            <span style={{ color: 'var(--color-text-muted)' }}> recebido</span>
+            <span style={{ color: 'var(--color-text-muted)', marginRight: 5 }}>//RCV</span>
+            <span style={{ color: 'var(--color-success-light)' }}>{formatBRL(totalRecebido)}</span>
           </span>
           <span>
-            <strong style={{ color: 'var(--color-accent-light)', fontFamily: 'var(--font-mono)' }}>
-              {formatBRL(Math.max(0, aReceber))}
-            </strong>
-            <span style={{ color: 'var(--color-text-muted)' }}> a receber</span>
+            <span style={{ color: 'var(--color-text-muted)', marginRight: 5 }}>//PEND</span>
+            <span style={{ color: 'var(--color-ice-light)' }}>{formatBRL(Math.max(0, aReceber))}</span>
           </span>
         </div>
       )}
 
       {/* Seção de parcelas */}
       {valor != null && (
-        <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--color-border)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-            <div style={fieldLabelMini()}>parcelas esperadas</div>
+        <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--color-ice-deep)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+            <span style={fieldLabelMini()}>
+              <span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
+              PARCELAS ESPERADAS
+            </span>
             <div style={{ flex: 1 }} />
             <button
               onClick={() => setShowTemplateModal(true)}
               disabled={parcelaActionsBusy}
               style={ghostButtonMini()}
+              onMouseEnter={e => {
+                e.currentTarget.style.color = 'var(--color-ice-light)'
+                e.currentTarget.style.borderColor = 'rgba(143, 191, 211, 0.45)'
+              }}
+              onMouseLeave={e => {
+                e.currentTarget.style.color = 'var(--color-text-tertiary)'
+                e.currentTarget.style.borderColor = 'var(--color-border)'
+              }}
             >
-              {project.forma_pagamento_template ? 'reaplicar template' : 'aplicar template'}
+              {project.forma_pagamento_template ? '↻ TEMPLATE' : '+ TEMPLATE'}
             </button>
             <button
               onClick={() => setEditingParcela('new')}
               disabled={parcelaActionsBusy}
               style={ghostButtonMini()}
+              onMouseEnter={e => {
+                e.currentTarget.style.color = 'var(--color-ice-light)'
+                e.currentTarget.style.borderColor = 'rgba(143, 191, 211, 0.45)'
+              }}
+              onMouseLeave={e => {
+                e.currentTarget.style.color = 'var(--color-text-tertiary)'
+                e.currentTarget.style.borderColor = 'var(--color-border)'
+              }}
             >
-              + nova parcela
+              + NOVA PARCELA
             </button>
           </div>
 
           {parcelas.length === 0 ? (
             <div style={{
-              fontSize: 11, color: 'var(--color-text-muted)', fontStyle: 'italic',
-              padding: '12px 14px',
-              border: '1px dashed var(--color-border)', borderRadius: 3,
+              fontFamily: 'var(--font-mono)',
+              fontSize: 10, fontWeight: 700,
+              color: 'var(--color-text-muted)',
+              letterSpacing: '0.18em', textTransform: 'uppercase',
+              padding: '14px 16px',
+              border: '1px dashed rgba(143, 191, 211, 0.30)',
+              clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%)',
+              lineHeight: 1.6,
             }}>
-              nenhuma parcela cadastrada. use "aplicar template" pra gerar
-              automaticamente (50/50, parcelado, etc) ou "+ nova parcela" pra
-              criar uma manual.
+              <span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
+              NENHUMA PARCELA REGISTRADA · USE TEMPLATE OU + NOVA
             </div>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
               {parcelas.map(p => (
                 <ParcelaRow
                   key={p.id}
@@ -1635,6 +2188,8 @@ function FinanceBlock({ project, totalExecutedMin, onUpdateValor, onUpdateClient
             </div>
           )}
         </div>
+      )}
+      </>
       )}
 
       {editingParcela && (
@@ -1661,9 +2216,9 @@ function FinanceBlock({ project, totalExecutedMin, onUpdateValor, onUpdateClient
 // ─── Parcela row + modais ─────────────────────────────────────────────────
 
 const PARCELA_STATUS_META: Record<FinParcela['status'], { label: string; color: string }> = {
-  pendente:   { label: 'PENDENTE',  color: 'var(--color-text-tertiary)' },
-  recebido:   { label: 'RECEBIDO',  color: 'var(--color-success)' },
-  atrasado:   { label: 'ATRASADO',  color: 'var(--color-accent-primary)' },
+  pendente:   { label: 'PENDENTE',  color: 'var(--color-ice-light)' },
+  recebido:   { label: 'RECEBIDO',  color: 'var(--color-success-light)' },
+  atrasado:   { label: 'ATRASADO',  color: 'var(--color-accent-light)' },
   cancelada:  { label: 'CANCELADA', color: 'var(--color-text-muted)' },
 }
 
@@ -1680,44 +2235,80 @@ function ParcelaRow({ parcela, onEdit }: { parcela: FinParcela; onEdit: () => vo
   return (
     <div style={{
       display: 'grid', gridTemplateColumns: '36px 1fr 100px 90px auto', gap: 10,
-      alignItems: 'center', padding: '8px 10px',
-      background: 'var(--color-bg-primary)',
-      border: '1px solid var(--color-border)',
-      borderLeft: `3px solid ${meta.color}`,
-      borderRadius: 3,
-    }}>
+      alignItems: 'center', padding: '8px 12px',
+      background: 'rgba(8, 12, 18, 0.55)',
+      border: '1px solid rgba(143, 191, 211, 0.18)',
+      borderLeft: `2px solid ${meta.color}`,
+      borderRadius: 0,
+      clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 7px), calc(100% - 7px) 100%, 0 100%)',
+      transition: 'border-color 0.15s, box-shadow 0.15s, transform 0.15s',
+    }}
+      onMouseEnter={e => {
+        e.currentTarget.style.borderColor = 'rgba(143, 191, 211, 0.40)'
+        e.currentTarget.style.boxShadow = '0 0 10px rgba(143, 191, 211, 0.15)'
+        e.currentTarget.style.transform = 'translateX(2px)'
+      }}
+      onMouseLeave={e => {
+        e.currentTarget.style.borderColor = 'rgba(143, 191, 211, 0.18)'
+        e.currentTarget.style.boxShadow = 'none'
+        e.currentTarget.style.transform = 'translateX(0)'
+      }}
+    >
       <span style={{
-        fontSize: 11, fontWeight: 700, color: 'var(--color-text-tertiary)',
         fontFamily: 'var(--font-mono)',
+        fontSize: 10, fontWeight: 700,
+        color: 'var(--color-text-muted)',
+        letterSpacing: '0.15em',
       }}>
-        #{parcela.numero}
+        #{parcela.numero.toString().padStart(2, '0')}
       </span>
       <span style={{
-        fontSize: 13, fontWeight: 600,
-        color: 'var(--color-text-primary)',
         fontFamily: 'var(--font-mono)',
+        fontSize: 13, fontWeight: 700,
+        color: 'var(--color-ice-light)',
+        letterSpacing: '0.05em',
       }}>
         {formatBRL(parcela.valor)}
       </span>
-      <span style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>
+      <span style={{
+        fontFamily: 'var(--font-mono)',
+        fontSize: 10, fontWeight: 700,
+        color: 'var(--color-text-tertiary)',
+        letterSpacing: '0.05em',
+      }}>
         {formatDate(parcela.data_prevista)}
       </span>
       <span style={{
-        fontSize: 9, fontWeight: 700, color: meta.color,
-        letterSpacing: '0.12em',
+        fontFamily: 'var(--font-mono)',
+        fontSize: 9, fontWeight: 700,
+        color: meta.color,
+        letterSpacing: '0.22em',
       }}>
+        <span style={{ color: meta.color, opacity: 0.85, marginRight: 3, letterSpacing: 0 }}>//</span>
         {meta.label}
       </span>
       <button
         onClick={onEdit}
         title="editar parcela"
         style={{
-          background: 'none', border: 'none', cursor: 'pointer',
-          color: 'var(--color-text-tertiary)', padding: 4,
+          background: 'rgba(143, 191, 211, 0.06)',
+          border: '1px solid rgba(143, 191, 211, 0.18)',
+          cursor: 'pointer',
+          color: 'var(--color-ice-light)',
+          padding: '4px 6px',
+          borderRadius: 0,
+          clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 3px), calc(100% - 3px) 100%, 0 100%)',
           display: 'inline-flex', alignItems: 'center',
+          transition: 'all 0.15s',
         }}
-        onMouseEnter={e => { e.currentTarget.style.color = 'var(--color-accent-light)' }}
-        onMouseLeave={e => { e.currentTarget.style.color = 'var(--color-text-tertiary)' }}
+        onMouseEnter={e => {
+          e.currentTarget.style.background = 'rgba(143, 191, 211, 0.14)'
+          e.currentTarget.style.borderColor = 'rgba(143, 191, 211, 0.45)'
+        }}
+        onMouseLeave={e => {
+          e.currentTarget.style.background = 'rgba(143, 191, 211, 0.06)'
+          e.currentTarget.style.borderColor = 'rgba(143, 191, 211, 0.18)'
+        }}
       >
         <Pencil size={11} strokeWidth={1.8} />
       </button>
@@ -1742,7 +2333,14 @@ function ParcelaModal({ parcela, projectId, onClose, onSaved, onDeleted }: {
   async function submit(e: React.FormEvent) {
     e.preventDefault()
     const v = parseFloat(valor.replace(',', '.'))
-    if (isNaN(v) || v <= 0) { alert('Valor inválido (> 0).'); return }
+    if (isNaN(v) || v <= 0) {
+      await alertDialog({
+        title: 'Valor inválido',
+        message: 'Valor da parcela deve ser maior que zero.',
+        variant: 'warning',
+      })
+      return
+    }
     setBusy(true)
     try {
       if (isNew) {
@@ -1765,24 +2363,35 @@ function ParcelaModal({ parcela, projectId, onClose, onSaved, onDeleted }: {
       onSaved()
     } catch (err: any) {
       reportApiError('ParcelaModal.submit', err)
-      alert(err?.message ?? 'Erro ao salvar — veja o console.')
+      alertDialog({
+        title: 'Erro',
+        message: err?.message ?? 'Erro ao salvar — veja o console.',
+        variant: 'danger',
+      })
       setBusy(false)
     }
   }
 
   async function handleDelete() {
     if (!parcela) return
-    if (!window.confirm(
-      `Deletar parcela #${parcela.numero}? Transação vinculada (se existir) ` +
-      `continua existindo, mas perde o vínculo.`
-    )) return
+    const ok = await confirmDialog({
+      title: `Deletar parcela #${parcela.numero.toString().padStart(2, '0')}`,
+      message: 'Deletar esta parcela?\nTransação vinculada (se existir) continua existindo, mas perde o vínculo.',
+      confirmLabel: 'DELETAR',
+      danger: true,
+    })
+    if (!ok) return
     setBusy(true)
     try {
       await deleteFinParcela(parcela.id)
       onDeleted()
     } catch (err) {
       reportApiError('ParcelaModal.delete', err)
-      alert('Erro ao deletar — veja o console.')
+      alertDialog({
+        title: 'Erro',
+        message: 'Erro ao deletar — veja o console.',
+        variant: 'danger',
+      })
       setBusy(false)
     }
   }
@@ -1796,74 +2405,135 @@ function ParcelaModal({ parcela, projectId, onClose, onSaved, onDeleted }: {
         <div style={modalHairline} />
         <div style={modalHeader()}>
           <div style={{ ...modalLabel(), marginBottom: 0 }}>
-            {isNew ? 'Nova parcela' : `Editar parcela #${parcela!.numero}`}
+            <span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
+            {isNew ? 'NEW.PARCELA' : `EDIT.PARCELA #${parcela!.numero.toString().padStart(2, '0')}`}
           </div>
         </div>
         <div style={modalBody()}>
-        <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
             <div>
-              <label style={modalFieldLabel()}>Valor</label>
+              <label style={modalFieldLabel()}>
+                <span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
+                VALOR
+              </label>
               <input
                 autoFocus
                 type="text" inputMode="decimal" placeholder="ex: 1000,00"
                 value={valor} onChange={e => setValor(e.target.value)}
-                style={{ ...modalInput(), fontFamily: 'var(--font-mono)' }}
+                style={modalInput()}
+                onFocus={e => {
+                  e.currentTarget.style.borderColor = 'var(--color-ice)'
+                  e.currentTarget.style.boxShadow = '0 0 10px rgba(143, 191, 211, 0.30)'
+                }}
+                onBlur={e => {
+                  e.currentTarget.style.borderColor = 'var(--color-border)'
+                  e.currentTarget.style.boxShadow = 'none'
+                }}
               />
             </div>
             <div>
-              <label style={modalFieldLabel()}>Data prevista (opcional)</label>
+              <label style={modalFieldLabel()}>
+                <span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
+                DATA PREVISTA
+              </label>
               <input
                 type="date"
                 value={dataPrevista} onChange={e => setDataPrevista(e.target.value)}
-                style={modalInput()}
+                style={{ ...modalInput(), colorScheme: 'dark' } as any}
+                onFocus={e => {
+                  e.currentTarget.style.borderColor = 'var(--color-ice)'
+                  e.currentTarget.style.boxShadow = '0 0 10px rgba(143, 191, 211, 0.30)'
+                }}
+                onBlur={e => {
+                  e.currentTarget.style.borderColor = 'var(--color-border)'
+                  e.currentTarget.style.boxShadow = 'none'
+                }}
               />
             </div>
           </div>
           {!isNew && (
             <div>
-              <label style={modalFieldLabel()}>Status</label>
+              <label style={modalFieldLabel()}>
+                <span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
+                STATUS
+              </label>
               <select
                 value={status}
                 onChange={e => setStatus(e.target.value as FinParcela['status'])}
                 style={modalInput()}
+                onFocus={e => {
+                  e.currentTarget.style.borderColor = 'var(--color-ice)'
+                  e.currentTarget.style.boxShadow = '0 0 10px rgba(143, 191, 211, 0.30)'
+                }}
+                onBlur={e => {
+                  e.currentTarget.style.borderColor = 'var(--color-border)'
+                  e.currentTarget.style.boxShadow = 'none'
+                }}
               >
-                <option value="pendente">pendente</option>
-                <option value="recebido">recebido</option>
-                <option value="atrasado">atrasado</option>
-                <option value="cancelada">cancelada</option>
+                <option value="pendente">PENDENTE</option>
+                <option value="recebido">RECEBIDO</option>
+                <option value="atrasado">ATRASADO</option>
+                <option value="cancelada">CANCELADA</option>
               </select>
               <div style={{
-                fontSize: 9, color: 'var(--color-text-muted)', marginTop: 4, fontStyle: 'italic',
+                fontFamily: 'var(--font-mono)',
+                fontSize: 9, fontWeight: 700,
+                color: 'var(--color-text-muted)',
+                marginTop: 6,
+                letterSpacing: '0.15em', textTransform: 'uppercase',
+                lineHeight: 1.6,
               }}>
-                normalmente o status é automático: vincular transação na lista
-                vira "recebido". Mude manualmente só pra "cancelada" ou "atrasado".
+                <span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
+                NORMALMENTE AUTO · MANUAL SÓ PRA "CANCELADA" / "ATRASADO"
               </div>
             </div>
           )}
           <div>
-            <label style={modalFieldLabel()}>Observação (opcional)</label>
+            <label style={modalFieldLabel()}>
+              <span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
+              OBSERVAÇÃO
+            </label>
             <input
               type="text" placeholder="ex: condicional à entrega da v1"
               value={observacao} onChange={e => setObservacao(e.target.value)}
               style={modalInput()}
+              onFocus={e => {
+                e.currentTarget.style.borderColor = 'var(--color-ice)'
+                e.currentTarget.style.boxShadow = '0 0 10px rgba(143, 191, 211, 0.30)'
+              }}
+              onBlur={e => {
+                e.currentTarget.style.borderColor = 'var(--color-border)'
+                e.currentTarget.style.boxShadow = 'none'
+              }}
             />
           </div>
           <div style={{ display: 'flex', gap: 8, justifyContent: 'space-between', marginTop: 8 }}>
             {!isNew ? (
               <button type="button" onClick={handleDelete} disabled={busy} style={{
                 ...modalGhost(),
-                color: 'var(--color-accent-primary)',
+                color: 'var(--color-accent-light)',
                 borderColor: 'var(--color-accent-primary)',
-              }}>
-                <Trash2 size={11} strokeWidth={1.8} style={{ marginRight: 4 }} />
-                deletar
+                background: 'rgba(159, 18, 57, 0.10)',
+                boxShadow: '0 0 10px rgba(159, 18, 57, 0.18)',
+              }}
+                onMouseEnter={e => {
+                  e.currentTarget.style.background = 'rgba(159, 18, 57, 0.18)'
+                  e.currentTarget.style.boxShadow = '0 0 16px rgba(159, 18, 57, 0.30)'
+                }}
+                onMouseLeave={e => {
+                  e.currentTarget.style.background = 'rgba(159, 18, 57, 0.10)'
+                  e.currentTarget.style.boxShadow = '0 0 10px rgba(159, 18, 57, 0.18)'
+                }}
+              >
+                <Trash2 size={11} strokeWidth={1.8} style={{ marginRight: 6 }} />
+                DELETAR
               </button>
             ) : <div />}
             <div style={{ display: 'flex', gap: 8 }}>
-              <button type="button" onClick={onClose} style={modalGhost()}>cancelar</button>
+              <button type="button" onClick={onClose} style={modalGhost()}>CANCELAR</button>
               <button type="submit" disabled={busy} style={modalPrimary()}>
-                {busy ? 'salvando…' : (isNew ? 'criar' : 'salvar')}
+                {busy ? 'SALVANDO…' : (isNew ? '✓ CRIAR' : '✓ SALVAR')}
               </button>
             </div>
           </div>
@@ -1902,71 +2572,119 @@ function TemplateModal({ currentTemplate, onClose, onApply }: {
       }}>
         <div style={modalHairline} />
         <div style={modalHeader()}>
-          <div style={{ ...modalLabel(), marginBottom: 0 }}>Aplicar template de parcelas</div>
+          <div style={{ ...modalLabel(), marginBottom: 0 }}>
+            <span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
+            APPLY.TEMPLATE
+          </div>
         </div>
         <div style={modalBody()}>
         <div style={{
-          fontSize: 11, color: 'var(--color-text-muted)', marginBottom: 14, lineHeight: 1.5,
+          fontFamily: 'var(--font-mono)',
+          fontSize: 10, fontWeight: 700,
+          color: 'var(--color-text-muted)',
+          letterSpacing: '0.18em', textTransform: 'uppercase',
+          marginBottom: 16,
+          lineHeight: 1.7,
         }}>
-          Apaga todas as parcelas <em>pendentes</em> existentes e cria novas a
-          partir do valor acordado do projeto. Parcelas <strong>já recebidas</strong> são
-          preservadas.
+          <span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
+          APAGA PARCELAS PENDENTES E CRIA NOVAS · RECEBIDAS PRESERVADAS
         </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 14 }}>
-          {TEMPLATES.map(t => (
-            <label key={t.value} style={{
-              display: 'flex', alignItems: 'flex-start', gap: 8,
-              padding: '8px 10px', cursor: 'pointer',
-              border: `1px solid ${template === t.value ? 'var(--color-accent-light)' : 'var(--color-border)'}`,
-              background: template === t.value ? 'rgba(157, 108, 255, 0.05)' : 'var(--color-bg-secondary)',
-              borderRadius: 3,
-            }}>
-              <input
-                type="radio"
-                name="template"
-                value={t.value}
-                checked={template === t.value}
-                onChange={() => setTemplate(t.value)}
-                style={{ marginTop: 2, accentColor: 'var(--color-accent-light)' }}
-              />
-              <div>
-                <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-primary)' }}>
-                  {t.label}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 16 }}>
+          {TEMPLATES.map(t => {
+            const selected = template === t.value
+            return (
+              <label
+                key={t.value}
+                style={{
+                  display: 'flex', alignItems: 'flex-start', gap: 10,
+                  padding: '9px 12px', cursor: 'pointer',
+                  background: selected ? 'rgba(143, 191, 211, 0.10)' : 'rgba(8, 12, 18, 0.55)',
+                  border: `1px solid ${selected ? 'var(--color-ice)' : 'rgba(143, 191, 211, 0.18)'}`,
+                  borderLeft: `2px solid ${selected ? 'var(--color-ice-light)' : 'rgba(143, 191, 211, 0.30)'}`,
+                  borderRadius: 0,
+                  clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 7px), calc(100% - 7px) 100%, 0 100%)',
+                  boxShadow: selected ? '0 0 10px rgba(143, 191, 211, 0.20)' : 'none',
+                  transition: 'all 0.15s',
+                }}
+              >
+                <input
+                  type="radio"
+                  name="template"
+                  value={t.value}
+                  checked={selected}
+                  onChange={() => setTemplate(t.value)}
+                  style={{ marginTop: 2, accentColor: 'var(--color-ice)' }}
+                />
+                <div>
+                  <div style={{
+                    fontFamily: 'var(--font-display)',
+                    fontSize: 12, fontWeight: 600,
+                    color: selected ? 'var(--color-ice-light)' : 'var(--color-text-primary)',
+                    letterSpacing: '0.02em',
+                    textTransform: 'uppercase',
+                  }}>
+                    {t.label}
+                  </div>
+                  <div style={{
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: 9, fontWeight: 700,
+                    color: 'var(--color-text-muted)',
+                    letterSpacing: '0.18em', textTransform: 'uppercase',
+                    marginTop: 3,
+                  }}>
+                    {t.desc}
+                  </div>
                 </div>
-                <div style={{ fontSize: 10, color: 'var(--color-text-muted)' }}>
-                  {t.desc}
-                </div>
-              </div>
-            </label>
-          ))}
+              </label>
+            )
+          })}
         </div>
 
-        <div style={{ marginBottom: 14 }}>
-          <label style={modalFieldLabel()}>Data da 1ª parcela (opcional)</label>
+        <div style={{ marginBottom: 16 }}>
+          <label style={modalFieldLabel()}>
+            <span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
+            DATA DA 1ª PARCELA (OPCIONAL)
+          </label>
           <input
             type="date"
             value={dataInicio} onChange={e => setDataInicio(e.target.value)}
-            style={modalInput()}
+            style={{ ...modalInput(), colorScheme: 'dark' } as any}
+            onFocus={e => {
+              e.currentTarget.style.borderColor = 'var(--color-ice)'
+              e.currentTarget.style.boxShadow = '0 0 10px rgba(143, 191, 211, 0.30)'
+            }}
+            onBlur={e => {
+              e.currentTarget.style.borderColor = 'var(--color-border)'
+              e.currentTarget.style.boxShadow = 'none'
+            }}
           />
           <div style={{
-            fontSize: 9, color: 'var(--color-text-muted)', marginTop: 4, fontStyle: 'italic',
+            fontFamily: 'var(--font-mono)',
+            fontSize: 9, fontWeight: 700,
+            color: 'var(--color-text-muted)',
+            marginTop: 6,
+            letterSpacing: '0.15em', textTransform: 'uppercase',
           }}>
-            se preencher, parcelas seguintes ficam mensais a partir dessa data.
+            <span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
+            PARCELAS SEGUINTES SERÃO MENSAIS A PARTIR DESSA DATA
           </div>
         </div>
 
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-          <button onClick={onClose} style={modalGhost()}>cancelar</button>
+          <button onClick={onClose} style={modalGhost()}>CANCELAR</button>
           {!confirming ? (
-            <button onClick={() => setConfirming(true)} style={modalPrimary()}>aplicar</button>
+            <button onClick={() => setConfirming(true)} style={modalPrimary()}>APLICAR</button>
           ) : (
             <button onClick={tryApply} style={{
               ...modalPrimary(),
-              background: 'var(--color-accent-primary)',
+              background: 'rgba(159, 18, 57, 0.16)',
+              border: '1px solid var(--color-accent-primary)',
+              color: 'var(--color-accent-light)',
+              boxShadow: '0 0 12px rgba(159, 18, 57, 0.30)',
             }}>
               <CheckCircle size={11} strokeWidth={2} style={{ marginRight: 4 }} />
-              confirmar (apaga pendentes)
+              CONFIRMAR · APAGA PENDENTES
             </button>
           )}
         </div>
@@ -1977,73 +2695,102 @@ function TemplateModal({ currentTemplate, onClose, onApply }: {
 }
 
 // ─── Style helpers (modais + bloco financeiro) ───────────────────────────
+// Todos cyber-mono uppercase com chamfer-bl + ice borders + glow no focus.
 
 function fieldLabelMini(): React.CSSProperties {
   return {
-    fontSize: 9, color: 'var(--color-text-muted)',
-    letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 4,
-    fontWeight: 600,
+    fontFamily: 'var(--font-mono)',
+    fontSize: 9, fontWeight: 700,
+    color: 'var(--color-text-muted)',
+    letterSpacing: '0.22em', textTransform: 'uppercase',
+    marginBottom: 5,
   }
 }
 
 function ghostButtonMini(): React.CSSProperties {
   return {
-    background: 'none',
-    border: '1px solid var(--color-border)', cursor: 'pointer',
+    background: 'rgba(8, 12, 18, 0.55)',
+    border: '1px solid var(--color-border)',
+    cursor: 'pointer',
     color: 'var(--color-text-tertiary)',
-    padding: '5px 10px', borderRadius: 3,
-    fontSize: 9, fontWeight: 600,
-    letterSpacing: '0.08em', textTransform: 'uppercase',
+    fontFamily: 'var(--font-mono)',
+    padding: '5px 10px',
+    borderRadius: 0,
+    clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 4px), calc(100% - 4px) 100%, 0 100%)',
+    fontSize: 9, fontWeight: 700,
+    letterSpacing: '0.22em', textTransform: 'uppercase',
+    transition: 'all 0.15s',
   }
 }
 
 function modalLabel(): React.CSSProperties {
   return {
-    fontSize: 10, color: 'var(--color-text-tertiary)',
-    letterSpacing: '0.2em', textTransform: 'uppercase', fontWeight: 600,
+    fontFamily: 'var(--font-mono)',
+    fontSize: 10, fontWeight: 700,
+    color: 'var(--color-ice-light)',
+    letterSpacing: '0.25em', textTransform: 'uppercase',
     marginBottom: 16,
   }
 }
 
 function modalFieldLabel(): React.CSSProperties {
   return {
-    display: 'block', marginBottom: 4,
-    fontSize: 9, color: 'var(--color-text-tertiary)',
-    letterSpacing: '0.1em', textTransform: 'uppercase', fontWeight: 600,
+    display: 'block', marginBottom: 5,
+    fontFamily: 'var(--font-mono)',
+    fontSize: 9, fontWeight: 700,
+    color: 'var(--color-text-muted)',
+    letterSpacing: '0.22em', textTransform: 'uppercase',
   }
 }
 
 function modalInput(): React.CSSProperties {
   return {
     width: '100%', boxSizing: 'border-box',
-    background: 'var(--color-bg-secondary)',
+    background: 'rgba(8, 12, 18, 0.55)',
     border: '1px solid var(--color-border)',
-    borderRadius: 3, padding: '8px 10px',
-    color: 'var(--color-text-primary)',
-    fontSize: 12, fontFamily: 'inherit',
+    borderRadius: 0,
+    clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 5px), calc(100% - 5px) 100%, 0 100%)',
+    padding: '8px 12px',
+    color: 'var(--color-ice-light)',
+    fontSize: 12, fontFamily: 'var(--font-mono)',
+    fontWeight: 600,
+    letterSpacing: '0.02em',
+    outline: 'none',
+    transition: 'border-color 0.15s, box-shadow 0.15s',
   }
 }
 
 function modalPrimary(): React.CSSProperties {
   return {
-    background: 'var(--color-accent-primary)',
-    border: 'none', cursor: 'pointer',
-    color: 'var(--color-bg-primary)',
-    padding: '8px 14px', borderRadius: 3,
-    fontSize: 11, fontWeight: 700,
-    letterSpacing: '0.1em', textTransform: 'uppercase',
-    display: 'inline-flex', alignItems: 'center',
+    background: 'rgba(143, 191, 211, 0.14)',
+    border: '1px solid var(--color-ice)',
+    cursor: 'pointer',
+    color: 'var(--color-ice-light)',
+    fontFamily: 'var(--font-mono)',
+    padding: '7px 16px',
+    borderRadius: 0,
+    clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 5px), calc(100% - 5px) 100%, 0 100%)',
+    fontSize: 10, fontWeight: 700,
+    letterSpacing: '0.22em', textTransform: 'uppercase',
+    display: 'inline-flex', alignItems: 'center', gap: 6,
+    boxShadow: '0 0 12px rgba(143, 191, 211, 0.25)',
+    transition: 'all 0.15s',
   }
 }
 
 function modalGhost(): React.CSSProperties {
   return {
-    background: 'none',
-    border: '1px solid var(--color-border)', cursor: 'pointer',
+    background: 'rgba(8, 12, 18, 0.55)',
+    border: '1px solid var(--color-border)',
+    cursor: 'pointer',
     color: 'var(--color-text-tertiary)',
-    padding: '8px 14px', borderRadius: 3,
-    fontSize: 11, fontWeight: 600,
-    letterSpacing: '0.1em', textTransform: 'uppercase',
+    fontFamily: 'var(--font-mono)',
+    padding: '7px 14px',
+    borderRadius: 0,
+    clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 5px), calc(100% - 5px) 100%, 0 100%)',
+    fontSize: 10, fontWeight: 700,
+    letterSpacing: '0.22em', textTransform: 'uppercase',
     display: 'inline-flex', alignItems: 'center',
+    transition: 'all 0.15s',
   }
 }

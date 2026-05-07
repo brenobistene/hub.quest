@@ -34,16 +34,24 @@ export function InlineText({ value, onSave, style }: {
         if (e.key === 'Escape') { setDraft(value); setEditing(false) }
       }}
       style={{
-        background: 'transparent', border: 'none', borderBottom: '1px solid var(--color-text-tertiary)',
+        background: 'rgba(8, 12, 18, 0.45)', border: 'none',
+        borderBottom: '1px solid var(--color-ice)',
         color: 'inherit', fontSize: 'inherit', fontWeight: 'inherit',
-        outline: 'none', width: '100%', padding: '1px 0', ...style,
+        outline: 'none', width: '100%', padding: '2px 4px',
+        boxShadow: '0 1px 6px rgba(143, 191, 211, 0.20)',
+        transition: 'border-color 0.15s, box-shadow 0.15s',
+        ...style,
       }}
     />
   )
 
   return (
-    <span onClick={() => setEditing(true)} style={{ cursor: 'text', ...style }}>
-      {value || <span style={{ color: 'var(--color-border)' }}>—</span>}
+    <span
+      onClick={() => setEditing(true)}
+      style={{ cursor: 'text', ...style }}
+      title="clicar pra editar"
+    >
+      {value || <span style={{ color: 'var(--color-text-muted)', fontStyle: 'italic', opacity: 0.6 }}>—</span>}
     </span>
   )
 }

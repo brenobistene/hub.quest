@@ -11,6 +11,7 @@ import {
   formatBRL, formatDate, parseBRL, sanitizeMoneyInput,
   modalShell, modalHairline, modalHeader, modalBody,
 } from './styleHelpers'
+import { alertDialog } from '../../../lib/dialog'
 
 export function TransactionEditModal({ tx, accounts, categories, debts, invoices, onClose, onSaved }: {
   tx: FinTransaction
@@ -74,9 +75,9 @@ export function TransactionEditModal({ tx, accounts, categories, debts, invoices
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
-    if (!descricao.trim()) { alert('Descrição é obrigatória.'); return }
+    if (!descricao.trim()) { alertDialog({ title: 'Descrição obrigatória', message: 'Descrição é obrigatória.', variant: 'warning' }); return }
     const valorNum = parseBRL(valor)
-    if (valorNum == null || valorNum === 0) { alert('Valor inválido.'); return }
+    if (valorNum == null || valorNum === 0) { alertDialog({ title: 'Valor inválido', message: 'Valor inválido.', variant: 'warning' }); return }
     setBusy(true)
     try {
       await updateFinTransaction(tx.id, {
@@ -95,7 +96,7 @@ export function TransactionEditModal({ tx, accounts, categories, debts, invoices
       onSaved()
     } catch (err) {
       reportApiError('TransactionEditModal.submit', err)
-      alert('Erro ao salvar — veja o console.')
+      alertDialog({ title: 'Erro', message: 'Erro ao salvar — veja o console.', variant: 'danger' })
       setBusy(false)
     }
   }

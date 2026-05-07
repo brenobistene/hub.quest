@@ -3,6 +3,7 @@ import { X } from 'lucide-react'
 import type { Profile } from '../types'
 import { updateProfile } from '../api'
 import { ModalFrame, IconButton, Button } from './ui/Primitives'
+import { alertDialog } from '../lib/dialog'
 
 /**
  * Modal reached from the Dashboard profile block. Edits name, role and
@@ -27,8 +28,8 @@ export function ProfileEditModal({ profile, onClose, onSave }: {
   function handleFilePick(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0]
     if (!f) return
-    if (!f.type.startsWith('image/')) { alert('Selecione uma imagem.'); return }
-    if (f.size > 2 * 1024 * 1024) { alert('Imagem grande demais (máx 2 MB).'); return }
+    if (!f.type.startsWith('image/')) { alertDialog({ title: 'Arquivo inválido', message: 'Selecione uma imagem.', variant: 'warning' }); return }
+    if (f.size > 2 * 1024 * 1024) { alertDialog({ title: 'Arquivo grande', message: 'Imagem grande demais (máx 2 MB).', variant: 'warning' }); return }
     const reader = new FileReader()
     reader.onload = () => {
       const result = reader.result
@@ -44,7 +45,7 @@ export function ProfileEditModal({ profile, onClose, onSave }: {
       onSave(updated)
       onClose()
     } catch {
-      alert('Erro ao salvar perfil')
+      alertDialog({ title: 'Erro', message: 'Erro ao salvar perfil', variant: 'danger' })
     } finally {
       setSaving(false)
     }

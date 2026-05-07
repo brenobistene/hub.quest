@@ -12,6 +12,7 @@ import {
 } from './styleHelpers'
 import { BackfillConfirmModal } from './BackfillConfirmModal'
 import { parseTxDescricao } from './parseTxDescricao'
+import { alertDialog } from '../../../lib/dialog'
 
 export function CategorizeModal({ tx, categories, debts, accounts, onClose, onSaved }: {
   tx: FinTransaction
@@ -64,7 +65,7 @@ export function CategorizeModal({ tx, categories, debts, accounts, onClose, onSa
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
-    if (!categoriaId) { alert('Escolha uma categoria.'); return }
+    if (!categoriaId) { alertDialog({ title: 'Categoria obrigatória', message: 'Escolha uma categoria.', variant: 'warning' }); return }
     setBusy(true)
     try {
       const patch: Partial<FinTransaction> = { categoria_id: categoriaId }
@@ -101,7 +102,7 @@ export function CategorizeModal({ tx, categories, debts, accounts, onClose, onSa
       onSaved()
     } catch (err) {
       reportApiError('CategorizeModal.submit', err)
-      alert('Erro ao salvar — veja o console.')
+      alertDialog({ title: 'Erro', message: 'Erro ao salvar — veja o console.', variant: 'danger' })
       setBusy(false)
     }
   }

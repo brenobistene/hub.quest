@@ -1,9 +1,8 @@
 import { useState } from 'react'
 import type { DayPeriods } from '../utils/dayPeriods'
 import { DEFAULT_DAY_PERIODS, saveDayPeriods, minutesToHHMM, hhmmToMinutes } from '../utils/dayPeriods'
-import { Label } from './ui/Label'
 import {
-  modalOverlay, modalShell, modalHairline, modalHeader, modalBody,
+  modalOverlay, modalShell, modalHeader, modalBody,
 } from '../pages/finance/components/styleHelpers'
 
 /**
@@ -48,19 +47,56 @@ export function DayPeriodsEditModal({ value, onClose, onSave }: {
 
   const field = (label: string, val: string, setVal: (v: string) => void) => (
     <div>
-      <div style={{ fontSize: 10, color: 'var(--color-text-tertiary)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 4 }}>{label}</div>
+      <div style={{
+        fontFamily: 'var(--font-mono)',
+        fontSize: 9, color: 'var(--color-text-muted)',
+        letterSpacing: '0.22em', textTransform: 'uppercase', fontWeight: 700,
+        marginBottom: 6,
+      }}>
+        <span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
+        {label}
+      </div>
       <input
         type="time"
         value={val}
         onChange={e => setVal(e.target.value)}
+        onFocus={e => {
+          e.currentTarget.style.borderColor = 'rgba(143, 191, 211, 0.55)'
+          e.currentTarget.style.boxShadow = '0 0 12px rgba(143, 191, 211, 0.20)'
+        }}
+        onBlur={e => {
+          e.currentTarget.style.borderColor = 'var(--color-border)'
+          e.currentTarget.style.boxShadow = 'none'
+        }}
         style={{
-          width: '100%', background: 'var(--color-bg-primary)', border: '1px solid var(--color-border)',
-          color: 'var(--color-text-primary)', fontSize: 13, padding: '8px 10px', borderRadius: 3,
-          outline: 'none', boxSizing: 'border-box', colorScheme: 'dark', fontFamily: 'monospace',
+          width: '100%',
+          background: 'rgba(8, 12, 18, 0.55)',
+          border: '1px solid var(--color-border)',
+          color: 'var(--color-ice-light)',
+          fontFamily: 'var(--font-mono)',
+          fontSize: 14, fontWeight: 700,
+          letterSpacing: '0.04em',
+          padding: '8px 12px',
+          borderRadius: 0,
+          clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%)',
+          outline: 'none', boxSizing: 'border-box', colorScheme: 'dark',
+          transition: 'border-color var(--motion-fast) var(--ease-smooth), box-shadow var(--motion-fast) var(--ease-smooth)',
         } as any}
       />
     </div>
   )
+
+  // Estilos cyber compartilhados pros botões do footer
+  const cyberBtnBase = {
+    cursor: 'pointer',
+    fontFamily: 'var(--font-mono)',
+    fontSize: 10, fontWeight: 700,
+    padding: '8px 16px',
+    letterSpacing: '0.22em', textTransform: 'uppercase' as const,
+    borderRadius: 0,
+    clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%)',
+    transition: 'all 0.15s',
+  }
 
   return (
     <div onClick={onClose} style={{ ...modalOverlay(), zIndex: 1000 }}>
@@ -68,15 +104,64 @@ export function DayPeriodsEditModal({ value, onClose, onSave }: {
         onClick={e => e.stopPropagation()}
         style={{ ...modalShell(), minWidth: 380 }}
       >
-        <div style={modalHairline} />
+        {/* Hairline ice elétrica no topo (substitui modalHairline antigo) */}
+        <div className="hq-hairline-ice" />
         <div style={modalHeader()}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Label>períodos do dia</Label>
-            <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-tertiary)', fontSize: 14, padding: '2px 8px' }}>✕</button>
+            <span style={{
+              fontFamily: 'var(--font-mono)',
+              fontSize: 11, fontWeight: 700,
+              color: 'var(--color-ice-light)',
+              letterSpacing: '0.28em', textTransform: 'uppercase',
+              display: 'inline-flex', alignItems: 'center', gap: 8,
+            }}>
+              <div
+                aria-hidden="true"
+                style={{
+                  width: 8, height: 8,
+                  background: 'var(--color-ice)',
+                  boxShadow: '0 0 8px var(--color-ice-glow)',
+                }}
+              />
+              <span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
+              PERIODS.CONFIG
+            </span>
+            <button
+              onClick={onClose}
+              style={{
+                background: 'rgba(8, 12, 18, 0.55)',
+                border: '1px solid var(--color-border)',
+                cursor: 'pointer',
+                color: 'var(--color-text-tertiary)',
+                width: 28, height: 28, borderRadius: 0,
+                clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 5px), calc(100% - 5px) 100%, 0 100%)',
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: 12,
+                transition: 'all var(--motion-fast) var(--ease-smooth)',
+              }}
+              onMouseEnter={e => {
+                e.currentTarget.style.color = 'var(--color-ice-light)'
+                e.currentTarget.style.borderColor = 'rgba(143, 191, 211, 0.45)'
+                e.currentTarget.style.background = 'rgba(143, 191, 211, 0.10)'
+              }}
+              onMouseLeave={e => {
+                e.currentTarget.style.color = 'var(--color-text-tertiary)'
+                e.currentTarget.style.borderColor = 'var(--color-border)'
+                e.currentTarget.style.background = 'rgba(8, 12, 18, 0.55)'
+              }}
+            >
+              ✕
+            </button>
           </div>
         </div>
-        <div style={{ ...modalBody(), display: 'flex', flexDirection: 'column', gap: 14 }}>
-        <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>
+        <div style={{ ...modalBody(), display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div style={{
+          fontFamily: 'var(--font-mono)',
+          fontSize: 9, fontWeight: 600,
+          color: 'var(--color-text-muted)',
+          letterSpacing: '0.15em', textTransform: 'uppercase',
+          lineHeight: 1.6,
+        }}>
           Define onde cada período começa. A noite sempre termina à meia-noite (24:00).
         </div>
 
@@ -85,41 +170,84 @@ export function DayPeriodsEditModal({ value, onClose, onSave }: {
         {field('noite começa às', evening, setEvening)}
 
         {error && (
-          <div style={{ fontSize: 11, color: 'var(--color-accent-light)' }}>{error}</div>
+          <div style={{
+            fontFamily: 'var(--font-mono)',
+            fontSize: 10, fontWeight: 700,
+            color: 'var(--color-accent-light)',
+            letterSpacing: '0.18em', textTransform: 'uppercase',
+            padding: '8px 12px',
+            background: 'rgba(159, 18, 57, 0.08)',
+            border: '1px solid rgba(159, 18, 57, 0.45)',
+            clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%)',
+          }}>
+            <span style={{ color: 'var(--color-accent-primary)', opacity: 0.85, marginRight: 6, letterSpacing: 0 }}>//</span>
+            {error}
+          </div>
         )}
 
         <div style={{ display: 'flex', gap: 8, justifyContent: 'space-between', marginTop: 4 }}>
           <button
             onClick={handleReset}
             style={{
-              background: 'none', border: '1px solid var(--color-border)', cursor: 'pointer',
-              color: 'var(--color-text-tertiary)', fontSize: 10, padding: '8px 12px', borderRadius: 3,
-              letterSpacing: '0.1em', textTransform: 'uppercase',
+              ...cyberBtnBase,
+              background: 'rgba(8, 12, 18, 0.55)',
+              border: '1px solid var(--color-border)',
+              color: 'var(--color-text-tertiary)',
+            }}
+            onMouseEnter={e => {
+              e.currentTarget.style.color = 'var(--color-ice-light)'
+              e.currentTarget.style.borderColor = 'rgba(143, 191, 211, 0.45)'
+              e.currentTarget.style.background = 'rgba(143, 191, 211, 0.10)'
+            }}
+            onMouseLeave={e => {
+              e.currentTarget.style.color = 'var(--color-text-tertiary)'
+              e.currentTarget.style.borderColor = 'var(--color-border)'
+              e.currentTarget.style.background = 'rgba(8, 12, 18, 0.55)'
             }}
           >
-            Restaurar padrão
+            ↻ RESTAURAR
           </button>
           <div style={{ display: 'flex', gap: 8 }}>
             <button
               onClick={onClose}
               style={{
-                background: 'none', border: '1px solid var(--color-border)', cursor: 'pointer',
-                color: 'var(--color-text-tertiary)', fontSize: 11, padding: '8px 14px', borderRadius: 3,
-                letterSpacing: '0.1em', textTransform: 'uppercase',
+                ...cyberBtnBase,
+                background: 'rgba(8, 12, 18, 0.55)',
+                border: '1px solid var(--color-border)',
+                color: 'var(--color-text-tertiary)',
+              }}
+              onMouseEnter={e => {
+                e.currentTarget.style.color = 'var(--color-ice-light)'
+                e.currentTarget.style.borderColor = 'rgba(143, 191, 211, 0.45)'
+                e.currentTarget.style.background = 'rgba(143, 191, 211, 0.10)'
+              }}
+              onMouseLeave={e => {
+                e.currentTarget.style.color = 'var(--color-text-tertiary)'
+                e.currentTarget.style.borderColor = 'var(--color-border)'
+                e.currentTarget.style.background = 'rgba(8, 12, 18, 0.55)'
               }}
             >
-              Cancelar
+              CANCELAR
             </button>
             <button
               onClick={handleSave}
               style={{
-                background: 'var(--color-accent-primary)', color: 'var(--color-bg-primary)',
-                border: 'none', cursor: 'pointer',
-                fontSize: 11, padding: '8px 16px', borderRadius: 3, fontWeight: 700,
-                letterSpacing: '0.1em', textTransform: 'uppercase',
+                ...cyberBtnBase,
+                background: 'rgba(143, 191, 211, 0.14)',
+                border: '1px solid var(--color-ice)',
+                color: 'var(--color-ice-light)',
+                boxShadow: '0 0 14px rgba(143, 191, 211, 0.30)',
+              }}
+              onMouseEnter={e => {
+                e.currentTarget.style.background = 'rgba(143, 191, 211, 0.22)'
+                e.currentTarget.style.boxShadow = '0 0 20px rgba(143, 191, 211, 0.50)'
+              }}
+              onMouseLeave={e => {
+                e.currentTarget.style.background = 'rgba(143, 191, 211, 0.14)'
+                e.currentTarget.style.boxShadow = '0 0 14px rgba(143, 191, 211, 0.30)'
               }}
             >
-              Salvar
+              ✓ SALVAR
             </button>
           </div>
         </div>

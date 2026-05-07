@@ -9,6 +9,7 @@ import {
   sectionLabel, fieldLabel, inputStyle, primaryButton, ghostButton, modalOverlay,
   modalShell, modalHairline, modalHeader, modalBody,
 } from './styleHelpers'
+import { confirmDialog, alertDialog } from '../../../lib/dialog'
 
 /**
  * Modal de gerenciamento de clientes — abre via botão "gerenciar" no card
@@ -170,7 +171,7 @@ function ClientFormModal({ client, onClose, onSaved, onDeleted }: {
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
-    if (!nome.trim()) { alert('Nome é obrigatório.'); return }
+    if (!nome.trim()) { alertDialog({ title: 'Nome obrigatório', message: 'Nome é obrigatório.', variant: 'warning' }); return }
     setBusy(true)
     try {
       const body = {
@@ -183,24 +184,27 @@ function ClientFormModal({ client, onClose, onSaved, onDeleted }: {
       onSaved()
     } catch (err) {
       reportApiError('ClientFormModal.submit', err)
-      alert('Erro ao salvar — veja o console.')
+      alertDialog({ title: 'Erro', message: 'Erro ao salvar — veja o console.', variant: 'danger' })
       setBusy(false)
     }
   }
 
   async function handleDelete() {
     if (!client) return
-    if (!window.confirm(
-      `Deletar cliente "${client.nome}"? Projetos vinculados continuam ` +
-      `existindo, mas perdem o vínculo com cliente (e o auto-vínculo de receita).`
-    )) return
+    const ok = await confirmDialog({
+      title: 'Deletar cliente',
+      message: `Deletar cliente "${client.nome}"?\nProjetos vinculados continuam existindo, mas perdem o vínculo com cliente (e o auto-vínculo de receita).`,
+      confirmLabel: 'DELETAR',
+      danger: true,
+    })
+    if (!ok) return
     setBusy(true)
     try {
       await deleteFinClient(client.id)
       onDeleted()
     } catch (err) {
       reportApiError('ClientFormModal.delete', err)
-      alert('Erro ao deletar — veja o console.')
+      alertDialog({ title: 'Erro', message: 'Erro ao deletar — veja o console.', variant: 'danger' })
       setBusy(false)
     }
   }

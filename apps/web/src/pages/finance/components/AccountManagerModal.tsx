@@ -28,6 +28,7 @@ import {
 import { EmptyState, IconButton } from '../../../components/ui/Primitives'
 import { ExchangeRateModal } from './ExchangeRateModal'
 import { ReconciliationModal } from './ReconciliationModal'
+import { confirmDialog, alertDialog } from '../../../lib/dialog'
 
 export function AccountManagerModal({ accounts, onClose, onChanged }: {
   accounts: FinAccount[]
@@ -65,7 +66,7 @@ export function AccountManagerModal({ accounts, onClose, onChanged }: {
       onChanged()
     } catch (err) {
       reportApiError('AccountManagerModal.reorder', err)
-      alert('Erro ao reordenar — veja o console.')
+      alertDialog({ title: 'Erro', message: 'Erro ao reordenar — veja o console.', variant: 'danger' })
     }
   }
 
@@ -84,7 +85,13 @@ export function AccountManagerModal({ accounts, onClose, onChanged }: {
         lines.push('\nNenhuma transação/fatura vinculada.')
       }
       lines.push('\nEssa ação não pode ser desfeita.')
-      if (!window.confirm(lines.join('\n'))) {
+      const ok = await confirmDialog({
+        title: 'Deletar carteira',
+        message: lines.join('\n'),
+        confirmLabel: 'DELETAR',
+        danger: true,
+      })
+      if (!ok) {
         setBusy(false)
         return
       }
@@ -92,7 +99,7 @@ export function AccountManagerModal({ accounts, onClose, onChanged }: {
       onChanged()
     } catch (err) {
       reportApiError('AccountManagerModal.delete', err)
-      alert('Erro ao deletar — veja o console.')
+      alertDialog({ title: 'Erro', message: 'Erro ao deletar — veja o console.', variant: 'danger' })
     } finally {
       setBusy(false)
     }
@@ -295,7 +302,7 @@ function AccountEditModal({ account, onClose, onSaved }: {
       onSaved()
     } catch (err) {
       reportApiError('AccountEditModal.submit', err)
-      alert('Erro ao salvar — veja o console.')
+      alertDialog({ title: 'Erro', message: 'Erro ao salvar — veja o console.', variant: 'danger' })
       setBusy(false)
     }
   }

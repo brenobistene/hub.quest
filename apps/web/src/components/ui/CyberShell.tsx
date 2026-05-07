@@ -412,11 +412,15 @@ export function DataReadoutFrame({
   meta,
   infoTooltip,
   children,
+  compact = false,
 }: {
   title: string
   meta?: ReactNode
   infoTooltip?: string
   children: ReactNode
+  /** Reduz padding e cortes — usar em frames que ficam dentro de páginas
+   *  já densas (ex: SCHEDULE.LIVE no /dia). */
+  compact?: boolean
 }) {
   return (
     <div
@@ -431,13 +435,15 @@ export function DataReadoutFrame({
         `,
         padding: 0,
         color: 'var(--color-ice)',
-        clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 18px), calc(100% - 18px) 100%, 0 100%)',
+        clipPath: compact
+          ? 'polygon(0 0, 100% 0, 100% calc(100% - 12px), calc(100% - 12px) 100%, 0 100%)'
+          : 'polygon(0 0, 100% 0, 100% calc(100% - 18px), calc(100% - 18px) 100%, 0 100%)',
       }}
     >
       {/* Title bar */}
       <div
         style={{
-          padding: '8px 16px',
+          padding: compact ? '6px 14px' : '8px 16px',
           borderBottom: '1px solid var(--color-ice-deep)',
           display: 'flex',
           alignItems: 'center',
@@ -480,7 +486,7 @@ export function DataReadoutFrame({
         {infoTooltip && <InfoTooltip title={infoTooltip} />}
       </div>
       {/* Content */}
-      <div style={{ padding: '24px 28px' }}>{children}</div>
+      <div style={{ padding: compact ? '14px 18px' : '24px 28px' }}>{children}</div>
     </div>
   )
 }

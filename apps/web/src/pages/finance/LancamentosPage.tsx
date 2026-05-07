@@ -29,6 +29,7 @@ import { CategorizeModal } from './components/CategorizeModal'
 import { TransactionEditModal } from './components/TransactionEditModal'
 import { NewTransactionModal } from './components/NewTransactionModal'
 import { MonthPicker } from './components/MonthPicker'
+import { confirmDialog, alertDialog } from '../../lib/dialog'
 import { parseTxDescricao } from './components/parseTxDescricao'
 import { Card } from '../../components/ui/Primitives'
 import { StaggerList, StaggerItem } from '../../components/ui/Motion'
@@ -85,13 +86,19 @@ export function LancamentosPage() {
   }
 
   async function handleDelete(tx: FinTransaction) {
-    if (!window.confirm(`Deletar transação "${tx.descricao}"?`)) return
+    const ok = await confirmDialog({
+      title: 'Deletar transação',
+      message: `Deletar a transação "${tx.descricao}"?`,
+      confirmLabel: 'DELETAR',
+      danger: true,
+    })
+    if (!ok) return
     try {
       await deleteFinTransaction(tx.id)
       refreshAll()
     } catch (err) {
       reportApiError('deleteFinTransaction', err)
-      alert('Erro ao deletar — veja o console.')
+      alertDialog({ title: 'Erro', message: 'Erro ao deletar — veja o console.', variant: 'danger' })
     }
   }
 
@@ -165,14 +172,17 @@ export function LancamentosPage() {
       {/* Barra de busca + filtros */}
       <div style={{
         padding: '12px 18px',
-        borderBottom: '1px solid var(--color-border)',
+        borderBottom: '1px solid var(--color-ice-deep)',
         display: 'flex', flexDirection: 'column', gap: 10,
       }}>
         <div style={{
           display: 'flex', alignItems: 'center', gap: 8,
-          background: 'var(--color-bg-primary)',
+          background: 'rgba(8, 12, 18, 0.55)',
           border: '1px solid var(--color-border)',
-          borderRadius: 3, padding: '6px 12px',
+          borderRadius: 0,
+          clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 5px), calc(100% - 5px) 100%, 0 100%)',
+          padding: '6px 12px',
+          transition: 'border-color 0.15s, box-shadow 0.15s',
         }}>
           <button
             onClick={() => setFiltersOpen(v => !v)}
@@ -254,30 +264,31 @@ export function LancamentosPage() {
             sub="Ajuste a busca ou limpe os filtros."
           />
         ) : (
-          <StaggerList style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            {/* Header de colunas — guia visual da estrutura tabular.
+          <StaggerList style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {/* Header de colunas tabular — cyber mono `// FIELD` pra cada label.
                 Bordas transparentes pra reservar o mesmo espaço que cada linha
-                de transação tem (border 1px + borderLeft 3px do tipo), senão
-                o header fica 3-4px desalinhado das colunas. */}
+                tem (border 1px + borderLeft 2px), senão o header desalinha. */}
             <div style={{
               display: 'grid',
               gridTemplateColumns: TX_GRID,
               gap: TX_GAP, alignItems: 'center',
-              padding: '4px 12px 6px',
-              fontSize: 9, color: 'var(--color-text-tertiary)',
-              textTransform: 'uppercase', letterSpacing: '0.1em',
+              padding: '4px 14px 8px',
+              fontSize: 9, color: 'var(--color-text-muted)',
+              fontFamily: 'var(--font-mono)',
+              fontWeight: 700,
+              textTransform: 'uppercase', letterSpacing: '0.18em',
               border: '1px solid transparent',
-              borderLeft: '3px solid transparent',
-              borderBottom: '1px solid var(--color-divider)',
+              borderLeft: '2px solid transparent',
+              borderBottom: '1px solid var(--color-ice-deep)',
               marginBottom: 4,
             }}>
-              <span>data</span>
-              <span>tipo</span>
-              <span>nome</span>
-              <span>CPF/CNPJ</span>
-              <span>categoria</span>
-              <span>conta</span>
-              <span>valor</span>
+              <span><span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 3, letterSpacing: 0 }}>//</span>DATA</span>
+              <span><span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 3, letterSpacing: 0 }}>//</span>TIPO</span>
+              <span><span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 3, letterSpacing: 0 }}>//</span>NOME</span>
+              <span><span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 3, letterSpacing: 0 }}>//</span>DOC</span>
+              <span><span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 3, letterSpacing: 0 }}>//</span>CAT</span>
+              <span><span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 3, letterSpacing: 0 }}>//</span>WALLET</span>
+              <span><span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 3, letterSpacing: 0 }}>//</span>VALOR</span>
             </div>
 
             {filtered.map((tx) => {
@@ -285,6 +296,7 @@ export function LancamentosPage() {
               const cat = tx.categoria_id ? catById.get(tx.categoria_id) : null
               const acc = accountById.get(tx.conta_id)
               const p = parsed.get(tx.id) ?? { tipo: null, nome: tx.descricao, doc: null }
+              const accentColor = isEntry ? 'var(--color-success)' : 'var(--color-accent-primary)'
               return (
                 <StaggerItem key={tx.id} layout>
                 <div
@@ -292,25 +304,29 @@ export function LancamentosPage() {
                     display: 'grid',
                     gridTemplateColumns: TX_GRID,
                     gap: TX_GAP, alignItems: 'center',
-                    padding: '10px 12px',
-                    background: 'var(--color-bg-primary)',
-                    border: '1px solid var(--color-border)',
-                    borderLeft: `3px solid ${isEntry ? 'var(--color-success)' : 'var(--color-accent-primary)'}`,
-                    borderRadius: 'var(--radius-sm)',
-                    transition: 'border-color var(--motion-fast) var(--ease-smooth), background var(--motion-fast) var(--ease-smooth)',
+                    padding: '10px 14px',
+                    background: 'rgba(8, 12, 18, 0.55)',
+                    border: '1px solid rgba(143, 191, 211, 0.22)',
+                    borderLeft: `2px solid ${accentColor}`,
+                    clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%)',
+                    transition: 'transform 0.18s var(--ease-emphasis), box-shadow 0.18s, border-color 0.18s',
                   }}
                   onMouseEnter={e => {
-                    e.currentTarget.style.borderColor = 'var(--color-border-strong)'
-                    e.currentTarget.style.background = 'var(--glass-bg-hover)'
+                    e.currentTarget.style.transform = 'translateX(2px)'
+                    e.currentTarget.style.boxShadow = isEntry
+                      ? '0 0 14px rgba(94, 122, 82, 0.16)'
+                      : '0 0 14px rgba(159, 18, 57, 0.16)'
                   }}
                   onMouseLeave={e => {
-                    e.currentTarget.style.borderColor = 'var(--color-border)'
-                    e.currentTarget.style.background = 'var(--color-bg-primary)'
+                    e.currentTarget.style.transform = 'translateX(0)'
+                    e.currentTarget.style.boxShadow = 'none'
                   }}
                 >
                   <span style={{
                     fontSize: 10, color: 'var(--color-text-tertiary)',
                     fontFamily: 'var(--font-mono)',
+                    fontVariantNumeric: 'tabular-nums',
+                    letterSpacing: '0.05em',
                   }}>
                     {formatDate(tx.data)}
                   </span>
@@ -319,8 +335,9 @@ export function LancamentosPage() {
                   {p.tipo ? (
                     <span style={{
                       fontSize: 9, fontWeight: 700,
-                      color: 'var(--color-accent-light)',
-                      letterSpacing: '0.1em',
+                      fontFamily: 'var(--font-mono)',
+                      color: 'var(--color-ice-light)',
+                      letterSpacing: '0.18em',
                       textTransform: 'uppercase',
                       whiteSpace: 'nowrap',
                       overflow: 'hidden',
@@ -362,6 +379,7 @@ export function LancamentosPage() {
                   <span style={{
                     fontSize: 10, color: 'var(--color-text-muted)',
                     fontFamily: 'var(--font-mono)',
+                    fontVariantNumeric: 'tabular-nums',
                     overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                   }}>
                     {p.doc ?? '—'}
@@ -371,13 +389,30 @@ export function LancamentosPage() {
                       onClick={() => setCategorizingTx(tx)}
                       title="alterar categoria"
                       style={{
-                        fontSize: 10, color: 'var(--color-text-tertiary)',
-                        textTransform: 'uppercase', letterSpacing: '0.05em',
-                        cursor: 'pointer', transition: 'color 0.15s',
+                        fontSize: 9, fontWeight: 700,
+                        fontFamily: 'var(--font-mono)',
+                        color: 'var(--color-text-secondary)',
+                        textTransform: 'uppercase', letterSpacing: '0.18em',
+                        cursor: 'pointer',
+                        padding: '3px 8px',
+                        background: 'rgba(143, 191, 211, 0.06)',
+                        border: '1px solid rgba(143, 191, 211, 0.20)',
+                        clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 3px), calc(100% - 3px) 100%, 0 100%)',
+                        justifySelf: 'start',
+                        maxWidth: '100%',
                         overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                        transition: 'color 0.15s, border-color 0.15s, background 0.15s',
                       }}
-                      onMouseEnter={e => { e.currentTarget.style.color = 'var(--color-accent-light)' }}
-                      onMouseLeave={e => { e.currentTarget.style.color = 'var(--color-text-tertiary)' }}
+                      onMouseEnter={e => {
+                        e.currentTarget.style.color = 'var(--color-ice-light)'
+                        e.currentTarget.style.borderColor = 'rgba(143, 191, 211, 0.45)'
+                        e.currentTarget.style.background = 'rgba(143, 191, 211, 0.12)'
+                      }}
+                      onMouseLeave={e => {
+                        e.currentTarget.style.color = 'var(--color-text-secondary)'
+                        e.currentTarget.style.borderColor = 'rgba(143, 191, 211, 0.20)'
+                        e.currentTarget.style.background = 'rgba(143, 191, 211, 0.06)'
+                      }}
                     >
                       {cat.nome}
                     </span>
@@ -386,18 +421,27 @@ export function LancamentosPage() {
                       onClick={() => setCategorizingTx(tx)}
                       title="categorizar"
                       style={{
-                        background: 'none', border: 'none', padding: 0,
+                        background: 'rgba(159, 18, 57, 0.08)',
+                        border: '1px solid rgba(159, 18, 57, 0.30)',
+                        clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 3px), calc(100% - 3px) 100%, 0 100%)',
+                        padding: '3px 8px',
                         cursor: 'pointer',
-                        color: 'var(--color-text-muted)',
-                        fontSize: 10,
-                        letterSpacing: '0.05em', textTransform: 'uppercase',
+                        color: 'var(--color-accent-light)',
+                        fontSize: 9, fontWeight: 700,
+                        fontFamily: 'var(--font-mono)',
+                        letterSpacing: '0.18em', textTransform: 'uppercase',
                         display: 'inline-flex', alignItems: 'center', gap: 4,
                         justifySelf: 'start',
-                        fontFamily: 'inherit',
-                        transition: 'color 0.15s',
+                        transition: 'all 0.15s',
                       }}
-                      onMouseEnter={e => { e.currentTarget.style.color = 'var(--color-accent-light)' }}
-                      onMouseLeave={e => { e.currentTarget.style.color = 'var(--color-text-muted)' }}
+                      onMouseEnter={e => {
+                        e.currentTarget.style.background = 'rgba(159, 18, 57, 0.16)'
+                        e.currentTarget.style.boxShadow = '0 0 8px rgba(159, 18, 57, 0.25)'
+                      }}
+                      onMouseLeave={e => {
+                        e.currentTarget.style.background = 'rgba(159, 18, 57, 0.08)'
+                        e.currentTarget.style.boxShadow = 'none'
+                      }}
                     >
                       <Sparkles size={9} strokeWidth={2} />
                       categorizar
@@ -405,6 +449,8 @@ export function LancamentosPage() {
                   )}
                   <span style={{
                     fontSize: 10, color: 'var(--color-text-muted)',
+                    fontFamily: 'var(--font-mono)',
+                    letterSpacing: '0.05em',
                     overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                   }}>
                     {acc?.nome ?? '—'}
@@ -413,7 +459,8 @@ export function LancamentosPage() {
                     <span className="hq-money" style={{
                       fontSize: 13, fontWeight: 600,
                       fontFamily: 'var(--font-mono)',
-                      color: isEntry ? 'var(--color-success)' : 'var(--color-accent-primary)',
+                      fontVariantNumeric: 'tabular-nums',
+                      color: isEntry ? 'var(--color-success-light)' : 'var(--color-accent-light)',
                     }}>
                       {isEntry ? '+' : ''}{formatBRL(tx.valor)}
                     </span>
@@ -464,28 +511,33 @@ export function LancamentosPage() {
           })}
           title={`exportar transações de ${selectedMonth.year}-${String(selectedMonth.month).padStart(2, '0')} em CSV`}
           style={{
-            background: 'none',
+            background: 'rgba(8, 12, 18, 0.55)',
             border: '1px solid var(--color-border)',
-            borderRadius: 3,
+            cursor: 'pointer',
             color: 'var(--color-text-tertiary)',
-            padding: '6px 10px',
-            fontSize: 10, fontWeight: 600,
-            letterSpacing: '0.1em', textTransform: 'uppercase',
-            display: 'inline-flex', alignItems: 'center', gap: 4,
+            fontFamily: 'var(--font-mono)',
+            padding: '6px 12px',
+            fontSize: 9, fontWeight: 700,
+            letterSpacing: '0.22em', textTransform: 'uppercase',
+            borderRadius: 0,
+            clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 4px), calc(100% - 4px) 100%, 0 100%)',
+            display: 'inline-flex', alignItems: 'center', gap: 6,
             textDecoration: 'none',
-            transition: 'color 0.15s, border-color 0.15s',
+            transition: 'all 0.15s',
           }}
           onMouseEnter={e => {
-            e.currentTarget.style.color = 'var(--color-text-secondary)'
-            e.currentTarget.style.borderColor = 'var(--color-text-tertiary)'
+            e.currentTarget.style.color = 'var(--color-ice-light)'
+            e.currentTarget.style.borderColor = 'rgba(143, 191, 211, 0.45)'
+            e.currentTarget.style.boxShadow = '0 0 8px rgba(143, 191, 211, 0.20)'
           }}
           onMouseLeave={e => {
             e.currentTarget.style.color = 'var(--color-text-tertiary)'
             e.currentTarget.style.borderColor = 'var(--color-border)'
+            e.currentTarget.style.boxShadow = 'none'
           }}
         >
           <Download size={11} strokeWidth={2} />
-          exportar CSV
+          EXPORTAR CSV
         </a>
         <div />
         <div style={{ display: 'flex', gap: 24, fontSize: 11 }}>
@@ -502,17 +554,31 @@ export function LancamentosPage() {
           onClick={() => setShowNewModal(true)}
           title="novo lançamento"
           style={{
-            background: 'var(--color-accent-primary)',
-            border: 'none', cursor: 'pointer',
-            color: 'var(--color-bg-primary)',
-            width: 36, height: 36, borderRadius: '50%',
-            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-            transition: 'transform 0.12s',
+            background: 'rgba(143, 191, 211, 0.14)',
+            border: '1px solid var(--color-ice)',
+            cursor: 'pointer',
+            color: 'var(--color-ice-light)',
+            fontFamily: 'var(--font-mono)',
+            padding: '7px 14px',
+            fontSize: 10, fontWeight: 700,
+            letterSpacing: '0.22em', textTransform: 'uppercase',
+            borderRadius: 0,
+            clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 5px), calc(100% - 5px) 100%, 0 100%)',
+            display: 'inline-flex', alignItems: 'center', gap: 6,
+            boxShadow: '0 0 12px rgba(143, 191, 211, 0.25)',
+            transition: 'all 0.15s',
           }}
-          onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.08)' }}
-          onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)' }}
+          onMouseEnter={e => {
+            e.currentTarget.style.background = 'rgba(143, 191, 211, 0.22)'
+            e.currentTarget.style.boxShadow = '0 0 18px rgba(143, 191, 211, 0.40)'
+          }}
+          onMouseLeave={e => {
+            e.currentTarget.style.background = 'rgba(143, 191, 211, 0.14)'
+            e.currentTarget.style.boxShadow = '0 0 12px rgba(143, 191, 211, 0.25)'
+          }}
         >
-          <Plus size={18} strokeWidth={2.2} />
+          <Plus size={11} strokeWidth={2.2} />
+          NOVO
         </button>
       </div>
 
@@ -573,14 +639,19 @@ function FooterStat({ label, value, color, bold }: {
   return (
     <div style={{ textAlign: 'right' }}>
       <div style={{
-        fontSize: 9, color: 'var(--color-text-tertiary)',
-        textTransform: 'uppercase', letterSpacing: '0.1em',
+        fontFamily: 'var(--font-mono)',
+        fontSize: 9, fontWeight: 700,
+        color: 'var(--color-text-muted)',
+        textTransform: 'uppercase', letterSpacing: '0.22em',
       }}>
-        {label}
+        <span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
+        {label.toUpperCase()}
       </div>
       <div className="hq-money" style={{
-        fontSize: 13, fontWeight: bold ? 700 : 600, color,
+        fontSize: 14, fontWeight: bold ? 700 : 700, color,
         fontFamily: 'var(--font-mono)',
+        letterSpacing: '0.02em',
+        marginTop: 2,
       }}>
         {formatBRL(value)}
       </div>

@@ -41,3 +41,6 @@ class ActiveSessionOut(BaseModel):
     # pra escopear bannerClosedSec ao dia certo (e não somar histórico todo)
     # e pra passar `target` correto em finalizações cross-midnight.
     routine_date: Optional[str] = None
+    # Tempo estimado da entidade em minutos. Banner usa pra detectar overflow
+    # (tempo gasto > estimado → muda paleta da animação pra vermelho/prata).
+    estimated_minutes: Optional[int] = None

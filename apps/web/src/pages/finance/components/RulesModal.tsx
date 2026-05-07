@@ -11,6 +11,7 @@ import {
   modalShell, modalHairline, modalHeader, modalBody,
 } from './styleHelpers'
 import { BackfillConfirmModal } from './BackfillConfirmModal'
+import { confirmDialog, alertDialog } from '../../../lib/dialog'
 
 export function RulesModal({ categories, accounts, onClose }: {
   categories: FinCategory[]
@@ -36,7 +37,7 @@ export function RulesModal({ categories, accounts, onClose }: {
       const preview = await previewBackfillRule(r.id)
       const cat = catById.get(r.categoria_id)
       if (preview.matches_total === 0) {
-        alert('Nenhuma transação lançada bate com esse pattern.')
+        alertDialog({ title: 'Sem matches', message: 'Nenhuma transação lançada bate com esse pattern.', variant: 'default' })
         return
       }
       setBackfillPrompt({
@@ -47,7 +48,7 @@ export function RulesModal({ categories, accounts, onClose }: {
       })
     } catch (err) {
       reportApiError('RulesModal.previewBackfill', err)
-      alert('Erro ao consultar — veja o console.')
+      alertDialog({ title: 'Erro', message: 'Erro ao consultar — veja o console.', variant: 'danger' })
     } finally {
       setBusy(false)
     }
@@ -76,8 +77,8 @@ export function RulesModal({ categories, accounts, onClose }: {
   }
 
   async function saveEdit(r: FinCategorizationRule) {
-    if (!draftPattern.trim()) { alert('Pattern não pode ser vazio.'); return }
-    if (!draftCategoriaId) { alert('Escolha uma categoria.'); return }
+    if (!draftPattern.trim()) { alertDialog({ title: 'Pattern obrigatório', message: 'Pattern não pode ser vazio.', variant: 'warning' }); return }
+    if (!draftCategoriaId) { alertDialog({ title: 'Categoria obrigatória', message: 'Escolha uma categoria.', variant: 'warning' }); return }
     setBusy(true)
     try {
       await updateFinCategorizationRule(r.id, {
@@ -88,7 +89,7 @@ export function RulesModal({ categories, accounts, onClose }: {
       refresh()
     } catch (err) {
       reportApiError('RulesModal.save', err)
-      alert('Erro ao salvar — veja o console.')
+      alertDialog({ title: 'Erro', message: 'Erro ao salvar — veja o console.', variant: 'danger' })
     } finally {
       setBusy(false)
     }
@@ -96,18 +97,20 @@ export function RulesModal({ categories, accounts, onClose }: {
 
   async function handleDelete(r: FinCategorizationRule) {
     const cat = catById.get(r.categoria_id)
-    if (!window.confirm(
-      `Deletar regra "${r.pattern}" → ${cat?.nome ?? '?'}? ` +
-      `Transações já categorizadas continuam categorizadas, só não vai mais ` +
-      `auto-categorizar futuras.`
-    )) return
+    const ok = await confirmDialog({
+      title: 'Deletar regra',
+      message: `Deletar regra "${r.pattern}" → ${cat?.nome ?? '?'}?\nTransações já categorizadas continuam categorizadas, só não vai mais auto-categorizar futuras.`,
+      confirmLabel: 'DELETAR',
+      danger: true,
+    })
+    if (!ok) return
     setBusy(true)
     try {
       await deleteFinCategorizationRule(r.id)
       refresh()
     } catch (err) {
       reportApiError('RulesModal.delete', err)
-      alert('Erro ao deletar — veja o console.')
+      alertDialog({ title: 'Erro', message: 'Erro ao deletar — veja o console.', variant: 'danger' })
     } finally {
       setBusy(false)
     }

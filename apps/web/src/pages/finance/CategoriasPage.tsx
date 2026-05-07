@@ -19,6 +19,7 @@ import {
   modalOverlay, ICON_SIZE, ICON_STROKE, ICON_STROKE_HEAVY,
 } from './components/styleHelpers'
 import { Card, EmptyState, IconButton } from '../../components/ui/Primitives'
+import { confirmDialog, alertDialog } from '../../lib/dialog'
 
 const TIPO_TABS: { tipo: FinCategoryType; label: string }[] = [
   { tipo: 'despesa',       label: 'Despesas' },
@@ -67,7 +68,13 @@ export function CategoriasPage() {
       msg += `\n\nEla tem ${childCount} sub-categoria(s) que também serão deletadas.`
     }
     msg += `\n\nTransações já vinculadas perderão a categoria (não serão apagadas).`
-    if (!window.confirm(msg)) return
+    const ok = await confirmDialog({
+      title: 'Deletar categoria',
+      message: msg,
+      confirmLabel: 'DELETAR',
+      danger: true,
+    })
+    if (!ok) return
     try {
       if (isParent) {
         const children = grouped.childrenByParent.get(c.id) ?? []
@@ -77,7 +84,7 @@ export function CategoriasPage() {
       refreshGlobal()
     } catch (err) {
       reportApiError('CategoriasPage.delete', err)
-      alert('Erro ao deletar — veja o console.')
+      alertDialog({ title: 'Erro', message: 'Erro ao deletar — veja o console.', variant: 'danger' })
     }
   }
 
@@ -331,7 +338,7 @@ function InlineSubcategoryForm({ parent, onCancel, onSaved }: {
       onSaved()
     } catch (err) {
       reportApiError('InlineSubcategoryForm.submit', err)
-      alert('Erro ao salvar — veja o console.')
+      alertDialog({ title: 'Erro', message: 'Erro ao salvar — veja o console.', variant: 'danger' })
       setBusy(false)
     }
   }
@@ -413,8 +420,8 @@ function CategoryFormModal(props: FormMode & {
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
-    if (!nome.trim()) { alert('Nome é obrigatório.'); return }
-    if (isSub && !paiId) { alert('Escolha a categoria pai.'); return }
+    if (!nome.trim()) { alertDialog({ title: 'Nome obrigatório', message: 'Nome é obrigatório.', variant: 'warning' }); return }
+    if (isSub && !paiId) { alertDialog({ title: 'Categoria pai', message: 'Escolha a categoria pai.', variant: 'warning' }); return }
     setBusy(true)
     try {
       if (isEdit) {
@@ -434,7 +441,7 @@ function CategoryFormModal(props: FormMode & {
       props.onSaved()
     } catch (err) {
       reportApiError('CategoryFormModal.submit', err)
-      alert('Erro ao salvar — veja o console.')
+      alertDialog({ title: 'Erro', message: 'Erro ao salvar — veja o console.', variant: 'danger' })
       setBusy(false)
     }
   }
@@ -442,9 +449,12 @@ function CategoryFormModal(props: FormMode & {
   return (
     <div onClick={props.onClose} style={modalOverlay()}>
       <div onClick={e => e.stopPropagation()} style={{
-        background: 'var(--color-bg-primary)',
-        border: '1px solid var(--color-border)',
-        borderRadius: 'var(--radius-md)',
+        background: 'rgba(8, 12, 18, 0.96)',
+        border: '1px solid rgba(143, 191, 211, 0.45)',
+        borderRadius: 0,
+        clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 12px), calc(100% - 12px) 100%, 0 100%)',
+        boxShadow: '0 0 24px rgba(143, 191, 211, 0.20), 0 8px 28px rgba(0, 0, 0, 0.7)',
+        backdropFilter: 'blur(10px)',
         padding: 'var(--space-6)',
         minWidth: 440, maxWidth: 520,
       }}>

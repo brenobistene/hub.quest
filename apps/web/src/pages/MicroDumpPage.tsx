@@ -6,8 +6,11 @@ import {
   createTask, createRoutine,
   reportApiError,
 } from '../api'
-import { parseTimeToMinutes, isValidDateInput } from '../utils/datetime'
+import { parseTimeToMinutes } from '../utils/datetime'
 import { PageShell, TechId } from '../components/ui/CyberShell'
+import { CyberDatePicker } from '../components/ui/CyberDatePicker'
+import { CyberTimePicker } from '../components/ui/CyberTimePicker'
+import { alertDialog } from '../lib/dialog'
 
 /**
  * `/micro-dump` — inbox pra capturar ideias soltas sem triagem. Cada item
@@ -18,6 +21,71 @@ import { PageShell, TechId } from '../components/ui/CyberShell'
  * project_id + deliverable_id. Pra transformar uma ideia em quest, o
  * usuário captura aqui e depois cria no painel do projeto correspondente.
  */
+
+/** Label cyber-mono uppercase pra campos do modal. */
+const cyberFieldLabel: React.CSSProperties = {
+  display: 'block',
+  fontFamily: 'var(--font-mono)',
+  fontSize: 9, fontWeight: 700,
+  color: 'var(--color-text-muted)',
+  letterSpacing: '0.22em',
+  textTransform: 'uppercase',
+  marginBottom: 6,
+}
+
+/** Input cyber-chamferado full-width pra modal. */
+const cyberInputFull: React.CSSProperties = {
+  width: '100%',
+  background: 'rgba(8, 12, 18, 0.55)',
+  border: '1px solid var(--color-border)',
+  color: 'var(--color-ice-light)',
+  fontFamily: 'var(--font-mono)',
+  fontWeight: 700,
+  padding: '8px 12px',
+  fontSize: 12,
+  letterSpacing: '0.05em',
+  outline: 'none',
+  boxSizing: 'border-box',
+  borderRadius: 0,
+  clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 5px), calc(100% - 5px) 100%, 0 100%)',
+  transition: 'all 0.15s',
+}
+
+/** Botão cyber pra converter idea em (tarefa/quest/rotina/arquivo). */
+function ConvertButton({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        background: 'rgba(8, 12, 18, 0.55)',
+        border: '1px solid var(--color-border)',
+        color: 'var(--color-text-tertiary)',
+        cursor: 'pointer',
+        fontFamily: 'var(--font-mono)',
+        padding: '4px 10px',
+        fontSize: 9, fontWeight: 700,
+        letterSpacing: '0.22em', textTransform: 'uppercase',
+        borderRadius: 0,
+        clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 3px), calc(100% - 3px) 100%, 0 100%)',
+        transition: 'all 0.15s',
+      }}
+      onMouseEnter={e => {
+        e.currentTarget.style.color = 'var(--color-ice-light)'
+        e.currentTarget.style.borderColor = 'rgba(143, 191, 211, 0.45)'
+        e.currentTarget.style.background = 'rgba(143, 191, 211, 0.10)'
+        e.currentTarget.style.boxShadow = '0 0 8px rgba(143, 191, 211, 0.20)'
+      }}
+      onMouseLeave={e => {
+        e.currentTarget.style.color = 'var(--color-text-tertiary)'
+        e.currentTarget.style.borderColor = 'var(--color-border)'
+        e.currentTarget.style.background = 'rgba(8, 12, 18, 0.55)'
+        e.currentTarget.style.boxShadow = 'none'
+      }}
+    >
+      {label}
+    </button>
+  )
+}
 export function MicroDumpView({ areas, projects, onArchive }: { areas: Area[]; projects: Project[]; onArchive: (idea: any) => void }) {
   const navigate = useNavigate()
   const [microTasks, setMicroTasks] = useState<any[]>([])
@@ -66,215 +134,266 @@ export function MicroDumpView({ areas, projects, onArchive }: { areas: Area[]; p
       }
     >
 
-      <section style={{ marginTop: 36 }}>
-        <form
-          onSubmit={(e) => {
-            e.preventDefault()
-            if (!microTaskInput.trim()) return
-            createMicroTask(microTaskInput)
-              .then(task => {
-                setMicroTasks([task, ...microTasks])
-                setMicroTaskInput('')
-              })
-              .catch(() => alert('Erro ao criar micro tarefa'))
-          }}
-          style={{ display: 'flex', gap: 12, alignItems: 'center' }}
-        >
-          <input
-            type="text"
-            autoComplete="off"
-            value={microTaskInput}
-            onChange={(e) => setMicroTaskInput(e.target.value)}
-            placeholder="nova ideia…"
-            onFocus={e => (e.currentTarget.style.borderBottomColor = 'var(--color-accent-primary)')}
-            onBlur={e => (e.currentTarget.style.borderBottomColor = 'var(--color-border)')}
-            style={{
-              flex: 1, padding: '8px 2px',
-              background: 'transparent',
-              border: 'none', borderBottom: '2px solid var(--color-border)',
-              color: 'var(--color-text-primary)',
-              fontSize: 14, fontFamily: "'Satoshi', sans-serif", fontWeight: 500,
-              outline: 'none',
-              transition: 'border-color 0.15s',
-            }}
-          />
-          <button
-            type="submit"
-            disabled={!microTaskInput.trim()}
-            style={{
-              background: microTaskInput.trim() ? 'var(--color-accent-primary)' : 'var(--color-bg-tertiary)',
-              color: microTaskInput.trim() ? 'var(--color-bg-primary)' : 'var(--color-text-muted)',
-              border: 'none', cursor: microTaskInput.trim() ? 'pointer' : 'not-allowed',
-              padding: '8px 16px', borderRadius: 3, fontSize: 10, fontWeight: 700,
-              letterSpacing: '0.1em', textTransform: 'uppercase',
-              transition: 'background 0.15s',
-            }}
-          >
-            + adicionar
-          </button>
-        </form>
-      </section>
-
-      <section style={{ marginTop: 48 }}>
+      <section style={{ marginTop: 28 }}>
         <div style={{
-          display: 'flex', alignItems: 'center', gap: 14, marginBottom: 18,
+          padding: '14px 16px',
+          background: 'rgba(8, 12, 18, 0.55)',
+          border: '1px solid var(--color-ice-deep)',
+          borderRadius: 0,
+          clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%)',
         }}>
           <div style={{
-            fontSize: 10, color: 'var(--color-text-tertiary)',
-            letterSpacing: '0.2em', textTransform: 'uppercase', fontWeight: 600,
-          }}>
-            Todas as ideias
-          </div>
-          <div style={{
-            fontSize: 10, color: 'var(--color-text-muted)',
             fontFamily: 'var(--font-mono)',
+            fontSize: 9, fontWeight: 700,
+            color: 'var(--color-ice-light)',
+            letterSpacing: '0.22em', textTransform: 'uppercase',
+            marginBottom: 10,
+            display: 'flex', alignItems: 'center', gap: 8,
           }}>
-            {microTasks.length}
+            <div
+              aria-hidden="true"
+              style={{
+                width: 3, height: 12,
+                background: 'var(--color-ice)',
+                boxShadow: '0 0 6px var(--color-ice-glow)',
+              }}
+            />
+            <span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
+            CAPTURE
+          </div>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault()
+              if (!microTaskInput.trim()) return
+              createMicroTask(microTaskInput)
+                .then(task => {
+                  setMicroTasks([task, ...microTasks])
+                  setMicroTaskInput('')
+                })
+                .catch(() => alertDialog({ title: 'Erro', message: 'Erro ao criar micro tarefa', variant: 'danger' }))
+            }}
+            style={{ display: 'flex', gap: 10, alignItems: 'center' }}
+          >
+            <input
+              type="text"
+              autoComplete="off"
+              value={microTaskInput}
+              onChange={(e) => setMicroTaskInput(e.target.value)}
+              placeholder="dump rápido…"
+              onFocus={e => (e.currentTarget.style.borderBottomColor = 'var(--color-ice)')}
+              onBlur={e => (e.currentTarget.style.borderBottomColor = 'var(--color-ice-deep)')}
+              style={{
+                flex: 1, padding: '6px 2px',
+                background: 'transparent',
+                border: 'none',
+                borderBottom: '1px solid var(--color-ice-deep)',
+                color: 'var(--color-ice-light)',
+                fontFamily: 'var(--font-display)',
+                fontWeight: 600,
+                fontSize: 14,
+                letterSpacing: '0.02em',
+                outline: 'none',
+                transition: 'border-color 0.15s',
+              }}
+            />
+            <button
+              type="submit"
+              disabled={!microTaskInput.trim()}
+              style={{
+                background: microTaskInput.trim() ? 'rgba(143, 191, 211, 0.14)' : 'rgba(8, 12, 18, 0.55)',
+                border: `1px solid ${microTaskInput.trim() ? 'var(--color-ice)' : 'var(--color-border)'}`,
+                color: microTaskInput.trim() ? 'var(--color-ice-light)' : 'var(--color-text-muted)',
+                cursor: microTaskInput.trim() ? 'pointer' : 'not-allowed',
+                fontFamily: 'var(--font-mono)',
+                padding: '6px 14px',
+                fontSize: 10, fontWeight: 700,
+                letterSpacing: '0.22em', textTransform: 'uppercase',
+                borderRadius: 0,
+                clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 5px), calc(100% - 5px) 100%, 0 100%)',
+                boxShadow: microTaskInput.trim() ? '0 0 12px rgba(143, 191, 211, 0.25)' : 'none',
+                transition: 'all 0.15s',
+              }}
+            >
+              + ADICIONAR
+            </button>
+          </form>
+        </div>
+      </section>
+
+      <section style={{ marginTop: 28 }}>
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14,
+          paddingBottom: 8,
+          borderBottom: '1px solid var(--color-ice-deep)',
+        }}>
+          <div
+            aria-hidden="true"
+            style={{
+              width: 3, height: 14,
+              background: 'var(--color-ice)',
+              boxShadow: '0 0 8px var(--color-ice-glow)',
+            }}
+          />
+          <div style={{
+            fontFamily: 'var(--font-mono)',
+            fontSize: 10, fontWeight: 700,
+            color: 'var(--color-ice-light)',
+            letterSpacing: '0.25em', textTransform: 'uppercase',
+            display: 'flex', alignItems: 'center', gap: 8,
+          }}>
+            <span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
+            IDEAS.LIST
+            <span style={{ color: 'var(--color-text-muted)', fontWeight: 700 }}>
+              [{microTasks.length.toString().padStart(2, '0')}]
+            </span>
           </div>
           <div style={{ flex: 1 }} />
           <button
             onClick={() => navigate('/dashboard')}
             style={{
-              background: 'none', border: 'none', cursor: 'pointer',
-              color: 'var(--color-text-tertiary)', fontSize: 10,
-              letterSpacing: '0.1em', textTransform: 'uppercase',
-              padding: 0, transition: 'color 0.15s',
+              background: 'rgba(8, 12, 18, 0.55)',
+              border: '1px solid var(--color-border)',
+              cursor: 'pointer',
+              color: 'var(--color-text-tertiary)',
+              fontFamily: 'var(--font-mono)',
+              fontSize: 9, fontWeight: 700,
+              padding: '5px 10px',
+              letterSpacing: '0.22em', textTransform: 'uppercase',
+              borderRadius: 0,
+              clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 4px), calc(100% - 4px) 100%, 0 100%)',
+              transition: 'all 0.15s',
             }}
-            onMouseEnter={e => (e.currentTarget.style.color = 'var(--color-accent-light)')}
-            onMouseLeave={e => (e.currentTarget.style.color = 'var(--color-text-tertiary)')}
+            onMouseEnter={e => {
+              e.currentTarget.style.color = 'var(--color-ice-light)'
+              e.currentTarget.style.borderColor = 'rgba(143, 191, 211, 0.45)'
+              e.currentTarget.style.boxShadow = '0 0 8px rgba(143, 191, 211, 0.20)'
+            }}
+            onMouseLeave={e => {
+              e.currentTarget.style.color = 'var(--color-text-tertiary)'
+              e.currentTarget.style.borderColor = 'var(--color-border)'
+              e.currentTarget.style.boxShadow = 'none'
+            }}
           >
-            ← dashboard
+            ← DASHBOARD
           </button>
         </div>
 
         {microTasks.length > 0 ? (
-          <div className="hq-stagger" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {microTasks.map((task, idx) => (
               <div
                 key={task.id}
-                className="hq-glass hq-grain hq-card-hoverable hq-animate-fade-up"
                 style={{
-                  padding: 'var(--space-3) var(--space-4)',
-                  ['--stagger-i' as any]: idx,
+                  position: 'relative',
+                  background: 'rgba(8, 12, 18, 0.55)',
+                  border: '1px solid rgba(143, 191, 211, 0.18)',
+                  borderLeft: '2px solid rgba(143, 191, 211, 0.55)',
+                  borderRadius: 0,
+                  clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%)',
+                  padding: '12px 14px',
+                  transition: 'border-color 0.15s, box-shadow 0.15s, transform 0.15s',
+                }}
+                onMouseEnter={e => {
+                  e.currentTarget.style.borderColor = 'rgba(143, 191, 211, 0.45)'
+                  e.currentTarget.style.boxShadow = '0 0 12px rgba(143, 191, 211, 0.18)'
+                  e.currentTarget.style.transform = 'translateX(2px)'
+                }}
+                onMouseLeave={e => {
+                  e.currentTarget.style.borderColor = 'rgba(143, 191, 211, 0.18)'
+                  e.currentTarget.style.boxShadow = 'none'
+                  e.currentTarget.style.transform = 'translateX(0)'
                 }}
               >
-                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 8 }}>
-                  <span style={{ fontSize: 10, color: 'var(--color-text-secondary)', minWidth: 20, paddingTop: 2 }}>
-                    {idx + 1}.
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 10 }}>
+                  <span style={{
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: 9, fontWeight: 700,
+                    color: 'var(--color-text-muted)',
+                    letterSpacing: '0.18em',
+                    minWidth: 24,
+                    paddingTop: 4,
+                  }}>
+                    {String(idx + 1).padStart(2, '0')}
                   </span>
-                  <span style={{ flex: 1, fontSize: 12, color: 'var(--color-text-primary)' }}>{task.title}</span>
+                  <span style={{
+                    flex: 1,
+                    fontFamily: 'var(--font-display)',
+                    fontSize: 13, fontWeight: 600,
+                    color: 'var(--color-text-primary)',
+                    letterSpacing: '0.02em',
+                  }}>{task.title}</span>
                   <button
                     onClick={() => {
                       deleteMicroTask(task.id)
                         .then(() => setMicroTasks(microTasks.filter(t => t.id !== task.id)))
-                        .catch(() => alert('Erro ao deletar'))
+                        .catch(() => alertDialog({ title: 'Erro', message: 'Erro ao deletar', variant: 'danger' }))
                     }}
+                    title="Deletar ideia"
                     style={{
-                      background: 'none',
-                      border: 'none',
-                      color: 'var(--color-text-secondary)',
+                      background: 'rgba(143, 191, 211, 0.04)',
+                      border: '1px solid rgba(143, 191, 211, 0.18)',
+                      color: 'var(--color-text-tertiary)',
                       cursor: 'pointer',
-                      fontSize: 10,
-                      padding: '2px 6px',
-                      opacity: 0.6,
-                      transition: 'opacity 0.2s',
+                      fontSize: 11,
+                      padding: '3px 7px',
+                      borderRadius: 0,
+                      clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 3px), calc(100% - 3px) 100%, 0 100%)',
+                      transition: 'all 0.15s',
                     }}
-                    onMouseEnter={(e) => (e.currentTarget.style.opacity = '1')}
-                    onMouseLeave={(e) => (e.currentTarget.style.opacity = '0.6')}
+                    onMouseEnter={e => {
+                      e.currentTarget.style.color = 'var(--color-accent-light)'
+                      e.currentTarget.style.borderColor = 'rgba(159, 18, 57, 0.45)'
+                      e.currentTarget.style.background = 'rgba(159, 18, 57, 0.10)'
+                    }}
+                    onMouseLeave={e => {
+                      e.currentTarget.style.color = 'var(--color-text-tertiary)'
+                      e.currentTarget.style.borderColor = 'rgba(143, 191, 211, 0.18)'
+                      e.currentTarget.style.background = 'rgba(143, 191, 211, 0.04)'
+                    }}
                   >
                     ✕
                   </button>
                 </div>
 
-                <div style={{ display: 'flex', gap: 6, paddingLeft: 20, fontSize: 9, flexWrap: 'wrap' }}>
-                  <button
+                <div style={{
+                  display: 'flex', gap: 5, paddingLeft: 36, flexWrap: 'wrap',
+                }}>
+                  <ConvertButton
+                    label="→ TAREFA"
                     onClick={() => { setSelectedMicroTask(task); setModalMode('tarefa'); setFormData({ title: task.title }); setDurationInput(''); setEstimatedInput('') }}
-                    style={{
-                      background: 'transparent',
-                      border: '1px solid var(--color-border)',
-                      color: 'var(--color-text-tertiary)',
-                      cursor: 'pointer',
-                      padding: '4px 8px',
-                      borderRadius: 3,
-                      fontSize: 9,
-                      fontWeight: 500,
-                      transition: 'all 0.2s',
-                    }}
-                    onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--color-accent-light)'; e.currentTarget.style.color = 'var(--color-accent-light)' }}
-                    onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--color-border)'; e.currentTarget.style.color = 'var(--color-text-tertiary)' }}
-                  >
-                    → Tarefa
-                  </button>
-                  <button
+                  />
+                  <ConvertButton
+                    label="→ QUEST"
                     onClick={() => { setSelectedMicroTask(task); setModalMode('quest'); setFormData({ title: task.title, area_slug: areas[0]?.slug || '' }); setDurationInput(''); setEstimatedInput('') }}
-                    style={{
-                      background: 'transparent',
-                      border: '1px solid var(--color-border)',
-                      color: 'var(--color-text-tertiary)',
-                      cursor: 'pointer',
-                      padding: '4px 8px',
-                      borderRadius: 3,
-                      fontSize: 9,
-                      fontWeight: 500,
-                      transition: 'all 0.2s',
-                    }}
-                    onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--color-accent-light)'; e.currentTarget.style.color = 'var(--color-accent-light)' }}
-                    onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--color-border)'; e.currentTarget.style.color = 'var(--color-text-tertiary)' }}
-                  >
-                    → Quest
-                  </button>
-                  <button
+                  />
+                  <ConvertButton
+                    label="→ ROTINA"
                     onClick={() => { setSelectedMicroTask(task); setModalMode('rotina'); setFormData({ title: task.title }); setDurationInput(''); setEstimatedInput('') }}
-                    style={{
-                      background: 'transparent',
-                      border: '1px solid var(--color-border)',
-                      color: 'var(--color-text-tertiary)',
-                      cursor: 'pointer',
-                      padding: '4px 8px',
-                      borderRadius: 3,
-                      fontSize: 9,
-                      fontWeight: 500,
-                      transition: 'all 0.2s',
-                    }}
-                    onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--color-accent-light)'; e.currentTarget.style.color = 'var(--color-accent-light)' }}
-                    onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--color-border)'; e.currentTarget.style.color = 'var(--color-text-tertiary)' }}
-                  >
-                    → Rotina
-                  </button>
-                  <button
+                  />
+                  <ConvertButton
+                    label="→ ARQUIVO"
                     onClick={async () => {
                       onArchive({ id: task.id, title: task.title, created_at: task.created_at })
                       await consumeMicroTask(task.id)
                     }}
-                    style={{
-                      background: 'transparent',
-                      border: '1px solid var(--color-border)',
-                      color: 'var(--color-text-tertiary)',
-                      cursor: 'pointer',
-                      padding: '4px 8px',
-                      borderRadius: 3,
-                      fontSize: 9,
-                      fontWeight: 500,
-                      transition: 'all 0.2s',
-                    }}
-                    onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--color-accent-light)'; e.currentTarget.style.color = 'var(--color-accent-light)' }}
-                    onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--color-border)'; e.currentTarget.style.color = 'var(--color-text-tertiary)' }}
-                  >
-                    → Arquivo
-                  </button>
+                  />
                 </div>
               </div>
             ))}
           </div>
         ) : (
           <div style={{
-            textAlign: 'center',
-            padding: '32px 16px',
-            color: 'var(--color-text-tertiary)',
-            fontSize: 12,
-            fontStyle: 'italic',
+            padding: '14px 16px',
+            border: '1px dashed rgba(143, 191, 211, 0.30)',
+            clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%)',
+            fontFamily: 'var(--font-mono)',
+            fontSize: 10, fontWeight: 700,
+            color: 'var(--color-text-muted)',
+            letterSpacing: '0.18em', textTransform: 'uppercase',
+            lineHeight: 1.7,
           }}>
-            Nenhuma ideia capturada ainda
+            <span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
+            NENHUMA IDEIA CAPTURADA · USE O CAPTURE ACIMA
           </div>
         )}
       </section>
@@ -286,7 +405,8 @@ export function MicroDumpView({ areas, projects, onArchive }: { areas: Area[]; p
           left: 0,
           right: 0,
           bottom: 0,
-          background: 'rgba(0, 0, 0, 0.6)',
+          background: 'rgba(0, 0, 0, 0.62)',
+          backdropFilter: 'blur(4px)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
@@ -295,10 +415,13 @@ export function MicroDumpView({ areas, projects, onArchive }: { areas: Area[]; p
           onClick={() => { setModalMode(null); setSelectedMicroTask(null) }}
         >
           <div style={{
-            background: 'var(--color-bg-secondary)',
-            border: '1px solid var(--color-border)',
-            borderRadius: 6,
-            padding: 28,
+            background: 'rgba(8, 12, 18, 0.96)',
+            border: '1px solid rgba(143, 191, 211, 0.45)',
+            borderRadius: 0,
+            clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 14px), calc(100% - 14px) 100%, 0 100%)',
+            boxShadow: '0 0 32px rgba(143, 191, 211, 0.20), 0 12px 40px rgba(0, 0, 0, 0.7)',
+            backdropFilter: 'blur(10px)',
+            padding: 24,
             maxWidth: 500,
             width: '90%',
             maxHeight: '80vh',
@@ -306,88 +429,100 @@ export function MicroDumpView({ areas, projects, onArchive }: { areas: Area[]; p
           }}
             onClick={e => e.stopPropagation()}
           >
-            <h2 style={{ fontSize: 16, color: 'var(--color-text-primary)', marginBottom: 20, fontWeight: 600 }}>
-              Converter para {modalMode === 'tarefa' ? 'Tarefa' : modalMode === 'quest' ? 'Quest' : 'Rotina'}
-            </h2>
+            {/* Hairline ice elétrica */}
+            <div className="hq-hairline-ice" style={{
+              position: 'absolute', top: 0, left: 0, right: 0,
+            }} />
+            <div style={{
+              fontFamily: 'var(--font-mono)',
+              fontSize: 11, fontWeight: 700,
+              color: 'var(--color-ice-light)',
+              letterSpacing: '0.25em', textTransform: 'uppercase',
+              marginBottom: 18,
+              paddingBottom: 10,
+              borderBottom: '1px solid var(--color-ice-deep)',
+              display: 'flex', alignItems: 'center', gap: 8,
+            }}>
+              <div
+                aria-hidden="true"
+                style={{
+                  width: 3, height: 14,
+                  background: 'var(--color-ice)',
+                  boxShadow: '0 0 8px var(--color-ice-glow)',
+                }}
+              />
+              <span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
+              CONVERT.{modalMode === 'tarefa' ? 'TAREFA' : modalMode === 'quest' ? 'QUEST' : 'ROTINA'}
+            </div>
 
-            <div style={{ marginBottom: 16 }}>
-              <label style={{ fontSize: 11, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.1em', display: 'block', marginBottom: 8, fontWeight: 600 }}>
-                Título
+            <div style={{ marginBottom: 14 }}>
+              <label style={cyberFieldLabel}>
+                <span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
+                TÍTULO
               </label>
               <input
                 type="text"
                 autoComplete="off"
                 value={formData.title || ''}
                 onChange={e => setFormData({ ...formData, title: e.target.value })}
-                style={{
-                  width: '100%',
-                  background: 'var(--color-bg-tertiary)',
-                  border: '1px solid var(--color-border)',
-                  color: 'var(--color-text-primary)',
-                  padding: '10px 12px',
-                  fontSize: 13,
-                  borderRadius: 3,
-                  outline: 'none',
-                  fontFamily: "'Satoshi', sans-serif",
-                  fontWeight: 500,
-                  boxSizing: 'border-box',
-                  transition: 'all 0.2s',
+                onFocus={e => {
+                  e.currentTarget.style.borderColor = 'var(--color-ice)'
+                  e.currentTarget.style.boxShadow = '0 0 10px rgba(143, 191, 211, 0.30)'
                 }}
+                onBlur={e => {
+                  e.currentTarget.style.borderColor = 'var(--color-border)'
+                  e.currentTarget.style.boxShadow = 'none'
+                }}
+                style={cyberInputFull}
               />
             </div>
 
             {modalMode === 'quest' && (
               <>
-                <div style={{ marginBottom: 16 }}>
-                  <label style={{ fontSize: 11, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.1em', display: 'block', marginBottom: 8, fontWeight: 600 }}>
-                    Área
+                <div style={{ marginBottom: 14 }}>
+                  <label style={cyberFieldLabel}>
+                    <span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
+                    ÁREA
                   </label>
                   <select
                     value={formData.area_slug || ''}
                     onChange={e => setFormData({ ...formData, area_slug: e.target.value })}
-                    style={{
-                      width: '100%',
-                      background: 'var(--color-bg-tertiary)',
-                      border: '1px solid var(--color-border)',
-                      color: 'var(--color-text-primary)',
-                      padding: '10px 12px',
-                      fontSize: 13,
-                      borderRadius: 3,
-                      outline: 'none',
-                      fontFamily: "'Satoshi', sans-serif",
-                      fontWeight: 500,
-                      boxSizing: 'border-box',
+                    style={cyberInputFull}
+                    onFocus={e => {
+                      e.currentTarget.style.borderColor = 'var(--color-ice)'
+                      e.currentTarget.style.boxShadow = '0 0 10px rgba(143, 191, 211, 0.30)'
+                    }}
+                    onBlur={e => {
+                      e.currentTarget.style.borderColor = 'var(--color-border)'
+                      e.currentTarget.style.boxShadow = 'none'
                     }}
                   >
-                    <option value="">Selecione uma área</option>
+                    <option value="">— SELECIONE UMA ÁREA —</option>
                     {areas.map(a => (
                       <option key={a.slug} value={a.slug}>{a.name}</option>
                     ))}
                   </select>
                 </div>
 
-                <div style={{ marginBottom: 16 }}>
-                  <label style={{ fontSize: 11, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.1em', display: 'block', marginBottom: 8, fontWeight: 600 }}>
-                    Projeto (opcional)
+                <div style={{ marginBottom: 14 }}>
+                  <label style={cyberFieldLabel}>
+                    <span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
+                    PROJETO (OPCIONAL)
                   </label>
                   <select
                     value={formData.parent_id || ''}
                     onChange={e => setFormData({ ...formData, parent_id: e.target.value || undefined })}
-                    style={{
-                      width: '100%',
-                      background: 'var(--color-bg-tertiary)',
-                      border: '1px solid var(--color-border)',
-                      color: 'var(--color-text-primary)',
-                      padding: '10px 12px',
-                      fontSize: 13,
-                      borderRadius: 3,
-                      outline: 'none',
-                      fontFamily: "'Satoshi', sans-serif",
-                      fontWeight: 500,
-                      boxSizing: 'border-box',
+                    style={cyberInputFull}
+                    onFocus={e => {
+                      e.currentTarget.style.borderColor = 'var(--color-ice)'
+                      e.currentTarget.style.boxShadow = '0 0 10px rgba(143, 191, 211, 0.30)'
+                    }}
+                    onBlur={e => {
+                      e.currentTarget.style.borderColor = 'var(--color-border)'
+                      e.currentTarget.style.boxShadow = 'none'
                     }}
                   >
-                    <option value="">Nenhum (quest independente)</option>
+                    <option value="">— NENHUM (QUEST INDEPENDENTE) —</option>
                     {projects.filter(p => p.area_slug === formData.area_slug).map(p => (
                       <option key={p.id} value={p.id}>{p.title}</option>
                     ))}
@@ -398,61 +533,44 @@ export function MicroDumpView({ areas, projects, onArchive }: { areas: Area[]; p
 
             {modalMode === 'tarefa' && (
               <>
-                <div style={{ marginBottom: 16 }}>
-                  <label style={{ fontSize: 11, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.1em', display: 'block', marginBottom: 8, fontWeight: 600 }}>
-                    Data (opcional)
+                <div style={{ marginBottom: 14 }}>
+                  <label style={cyberFieldLabel}>
+                    <span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
+                    DATA (OPCIONAL)
                   </label>
-                  <input
-                    type="date"
-                    autoComplete="off"
+                  <CyberDatePicker
                     value={formData.scheduled_date || ''}
-                    onChange={e => {
-                      if (isValidDateInput(e.target.value)) {
-                        setFormData({ ...formData, scheduled_date: e.target.value || null })
-                      }
-                    }}
-                    style={{
-                      width: '100%', background: 'var(--color-bg-tertiary)', border: '1px solid var(--color-border)',
-                      color: 'var(--color-text-primary)', padding: '8px 10px', fontSize: 12, borderRadius: 3, outline: 'none',
-                      boxSizing: 'border-box', colorScheme: 'dark',
-                    } as any}
+                    onChange={v => setFormData({ ...formData, scheduled_date: v || null })}
+                    width="100%"
                   />
                 </div>
 
-                <div style={{ marginBottom: 16 }}>
-                  <label style={{ fontSize: 11, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.1em', display: 'block', marginBottom: 8, fontWeight: 600 }}>
-                    Horário (opcional)
+                <div style={{ marginBottom: 14 }}>
+                  <label style={cyberFieldLabel}>
+                    <span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
+                    HORÁRIO (OPCIONAL)
                   </label>
                   <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                    <input
-                      type="time"
+                    <CyberTimePicker
                       value={formData.start_time || ''}
-                      onChange={e => setFormData({ ...formData, start_time: e.target.value || null })}
-                      placeholder="Início"
-                      style={{
-                        flex: 1, background: 'var(--color-bg-tertiary)', border: '1px solid var(--color-border)', color: 'var(--color-text-primary)',
-                        padding: '8px 10px', fontSize: 12, borderRadius: 3, outline: 'none',
-                        fontFamily: 'var(--font-mono)', fontWeight: 500, colorScheme: 'dark',
-                      } as any}
+                      onChange={v => setFormData({ ...formData, start_time: v || null })}
+                      placeholder="INÍCIO"
+                      width={130}
                     />
-                    <span style={{ color: 'var(--color-text-secondary)' }}>–</span>
-                    <input
-                      type="time"
+                    <span style={{ color: 'var(--color-ice)', fontFamily: 'var(--font-mono)' }}>→</span>
+                    <CyberTimePicker
                       value={formData.end_time || ''}
-                      onChange={e => setFormData({ ...formData, end_time: e.target.value || null })}
-                      placeholder="Fim"
-                      style={{
-                        flex: 1, background: 'var(--color-bg-tertiary)', border: '1px solid var(--color-border)', color: 'var(--color-text-primary)',
-                        padding: '8px 10px', fontSize: 12, borderRadius: 3, outline: 'none',
-                        fontFamily: 'var(--font-mono)', fontWeight: 500, colorScheme: 'dark',
-                      } as any}
+                      onChange={v => setFormData({ ...formData, end_time: v || null })}
+                      placeholder="FIM"
+                      width={130}
                     />
                   </div>
                 </div>
 
-                <div style={{ marginBottom: 16 }}>
-                  <label style={{ fontSize: 11, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.1em', display: 'block', marginBottom: 8, fontWeight: 600 }}>
-                    Duração estimada (opcional)
+                <div style={{ marginBottom: 14 }}>
+                  <label style={cyberFieldLabel}>
+                    <span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
+                    DURAÇÃO ESTIMADA (OPCIONAL)
                   </label>
                   <input
                     type="text"
@@ -465,111 +583,101 @@ export function MicroDumpView({ areas, projects, onArchive }: { areas: Area[]; p
                       const parsed = parseTimeToMinutes(e.target.value)
                       setFormData({ ...formData, duration_minutes: parsed ?? null })
                     }}
-                    style={{
-                      width: '100%', background: 'var(--color-bg-tertiary)', border: '1px solid var(--color-border)', color: 'var(--color-text-primary)',
-                      padding: '8px 10px', fontSize: 12, borderRadius: 3, outline: 'none', boxSizing: 'border-box',
-                      fontFamily: 'var(--font-mono)', fontWeight: 500,
+                    onFocus={e => {
+                      e.currentTarget.style.borderColor = 'var(--color-ice)'
+                      e.currentTarget.style.boxShadow = '0 0 10px rgba(143, 191, 211, 0.30)'
                     }}
+                    onBlur={e => {
+                      e.currentTarget.style.borderColor = 'var(--color-border)'
+                      e.currentTarget.style.boxShadow = 'none'
+                    }}
+                    style={cyberInputFull}
                   />
                 </div>
 
-                <div style={{ fontSize: 10, color: 'var(--color-text-tertiary)', marginBottom: 8, fontStyle: 'italic' }}>
-                  ↳ Tudo opcional. Uma tarefa é só uma coisa pra fazer — com ou sem agenda.
+                <div style={{
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: 9, fontWeight: 700,
+                  color: 'var(--color-text-muted)',
+                  letterSpacing: '0.18em', textTransform: 'uppercase',
+                  marginBottom: 12,
+                  lineHeight: 1.6,
+                }}>
+                  <span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
+                  TUDO OPCIONAL · UMA TAREFA É UMA COISA PRA FAZER · COM OU SEM AGENDA
                 </div>
               </>
             )}
 
             {modalMode === 'rotina' && (
               <>
-                <div style={{ marginBottom: 16 }}>
-                  <label style={{ fontSize: 11, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.1em', display: 'block', marginBottom: 8, fontWeight: 600 }}>
-                    Horário (opcional)
+                <div style={{ marginBottom: 14 }}>
+                  <label style={cyberFieldLabel}>
+                    <span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
+                    HORÁRIO (OPCIONAL)
                   </label>
                   <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                    <input
-                      type="time"
+                    <CyberTimePicker
                       value={formData.start_time || ''}
-                      onChange={e => setFormData({ ...formData, start_time: e.target.value || null })}
-                      placeholder="Início"
-                      onFocus={e => {
-                        e.currentTarget.style.borderColor = 'var(--color-accent-primary)'
-                        e.currentTarget.style.boxShadow = '0 0 0 2px rgba(139, 46, 46, 0.2)'
-                      }}
-                      onBlur={e => {
-                        e.currentTarget.style.borderColor = 'var(--color-border)'
-                        e.currentTarget.style.boxShadow = 'none'
-                      }}
-                      style={{
-                        flex: 1, background: 'var(--color-bg-tertiary)', border: '1px solid var(--color-border)', color: 'var(--color-text-primary)',
-                        padding: '8px 10px', fontSize: 12, borderRadius: 3, outline: 'none',
-                        fontFamily: 'var(--font-mono)', fontWeight: 500,
-                        transition: 'all 0.2s cubic-bezier(0.3, 0, 0.7, 1)',
-                      }}
+                      onChange={v => setFormData({ ...formData, start_time: v || null })}
+                      placeholder="INÍCIO"
+                      width={130}
                     />
-                    <span style={{ color: 'var(--color-text-secondary)' }}>–</span>
-                    <input
-                      type="time"
+                    <span style={{ color: 'var(--color-ice)', fontFamily: 'var(--font-mono)' }}>→</span>
+                    <CyberTimePicker
                       value={formData.end_time || ''}
-                      onChange={e => setFormData({ ...formData, end_time: e.target.value || null })}
-                      placeholder="Fim"
-                      onFocus={e => {
-                        e.currentTarget.style.borderColor = 'var(--color-accent-primary)'
-                        e.currentTarget.style.boxShadow = '0 0 0 2px rgba(139, 46, 46, 0.2)'
-                      }}
-                      onBlur={e => {
-                        e.currentTarget.style.borderColor = 'var(--color-border)'
-                        e.currentTarget.style.boxShadow = 'none'
-                      }}
-                      style={{
-                        flex: 1, background: 'var(--color-bg-tertiary)', border: '1px solid var(--color-border)', color: 'var(--color-text-primary)',
-                        padding: '8px 10px', fontSize: 12, borderRadius: 3, outline: 'none',
-                        fontFamily: 'var(--font-mono)', fontWeight: 500,
-                        transition: 'all 0.2s cubic-bezier(0.3, 0, 0.7, 1)',
-                      }}
+                      onChange={v => setFormData({ ...formData, end_time: v || null })}
+                      placeholder="FIM"
+                      width={130}
                     />
                   </div>
                   {((formData.start_time && !formData.end_time) || (!formData.start_time && formData.end_time)) && (
-                    <div style={{ fontSize: 10, color: 'var(--color-error)', marginTop: 4 }}>
-                      ⚠ Preencha ambos os horários
+                    <div style={{
+                      fontFamily: 'var(--font-mono)',
+                      fontSize: 9, fontWeight: 700,
+                      color: 'var(--color-accent-light)',
+                      letterSpacing: '0.18em', textTransform: 'uppercase',
+                      marginTop: 6,
+                    }}>
+                      <span style={{ color: 'var(--color-accent-primary)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
+                      PREENCHA AMBOS OS HORÁRIOS
                     </div>
                   )}
                 </div>
 
                 {formData.start_time && formData.end_time && (
-                  <div style={{ marginBottom: 16 }}>
-                    <label style={{ fontSize: 11, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.1em', display: 'block', marginBottom: 8, fontWeight: 600 }}>
-                      Recorrência <span style={{ color: 'var(--color-error)' }}>*</span>
+                  <div style={{ marginBottom: 14 }}>
+                    <label style={cyberFieldLabel}>
+                      <span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
+                      RECORRÊNCIA <span style={{ color: 'var(--color-accent-light)' }}>*</span>
                     </label>
                     <select
                       value={formData.recurrence || ''}
                       onChange={e => setFormData({ ...formData, recurrence: e.target.value })}
-                      style={{
-                        width: '100%',
-                        background: 'var(--color-bg-tertiary)',
-                        border: '1px solid var(--color-border)',
-                        color: 'var(--color-text-primary)',
-                        padding: '10px 12px',
-                        fontSize: 13,
-                        borderRadius: 3,
-                        outline: 'none',
-                        fontFamily: "'Satoshi', sans-serif",
-                        fontWeight: 500,
-                        boxSizing: 'border-box',
+                      onFocus={e => {
+                        e.currentTarget.style.borderColor = 'var(--color-ice)'
+                        e.currentTarget.style.boxShadow = '0 0 10px rgba(143, 191, 211, 0.30)'
                       }}
+                      onBlur={e => {
+                        e.currentTarget.style.borderColor = 'var(--color-border)'
+                        e.currentTarget.style.boxShadow = 'none'
+                      }}
+                      style={cyberInputFull}
                     >
-                      <option value="">Selecione uma recorrência</option>
-                      <option value="daily">Diária</option>
-                      <option value="weekdays">Dias úteis</option>
-                      <option value="weekly">Semanal</option>
-                      <option value="monthly">Mensal</option>
+                      <option value="">— SELECIONE UMA RECORRÊNCIA —</option>
+                      <option value="daily">DIÁRIA</option>
+                      <option value="weekdays">DIAS ÚTEIS</option>
+                      <option value="weekly">SEMANAL</option>
+                      <option value="monthly">MENSAL</option>
                     </select>
                   </div>
                 )}
 
                 {!formData.start_time && !formData.end_time && (
-                  <div style={{ marginBottom: 16 }}>
-                    <label style={{ fontSize: 11, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.1em', display: 'block', marginBottom: 8, fontWeight: 600 }}>
-                      Duração estimada
+                  <div style={{ marginBottom: 14 }}>
+                    <label style={cyberFieldLabel}>
+                      <span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
+                      DURAÇÃO ESTIMADA
                     </label>
                     <input
                       type="text"
@@ -583,19 +691,14 @@ export function MicroDumpView({ areas, projects, onArchive }: { areas: Area[]; p
                         setFormData({ ...formData, estimated_minutes: parsed ?? null })
                       }}
                       onFocus={e => {
-                        e.currentTarget.style.borderColor = 'var(--color-accent-primary)'
-                        e.currentTarget.style.boxShadow = '0 0 0 2px rgba(139, 46, 46, 0.2)'
+                        e.currentTarget.style.borderColor = 'var(--color-ice)'
+                        e.currentTarget.style.boxShadow = '0 0 10px rgba(143, 191, 211, 0.30)'
                       }}
                       onBlur={e => {
                         e.currentTarget.style.borderColor = 'var(--color-border)'
                         e.currentTarget.style.boxShadow = 'none'
                       }}
-                      style={{
-                        width: '100%', background: 'var(--color-bg-tertiary)', border: '1px solid var(--color-border)', color: 'var(--color-text-primary)',
-                        padding: '8px 10px', fontSize: 12, borderRadius: 3, outline: 'none', boxSizing: 'border-box',
-                        fontFamily: 'var(--font-mono)', fontWeight: 500,
-                        transition: 'all 0.2s cubic-bezier(0.3, 0, 0.7, 1)',
-                      }}
+                      style={cyberInputFull}
                     />
                   </div>
                 )}
@@ -607,16 +710,20 @@ export function MicroDumpView({ areas, projects, onArchive }: { areas: Area[]; p
                 onClick={async () => {
                   try {
                     if (!formData.title) {
-                      alert('Título é obrigatório')
+                      alertDialog({ title: 'Título obrigatório', message: 'Título é obrigatório.', variant: 'warning' })
                       return
                     }
 
                     if (modalMode === 'quest') {
-                      alert('Pra criar quest: vá no projeto correspondente e use "+ nova quest" dentro de um entregável. Toda quest precisa de projeto + entregável.')
+                      alertDialog({
+                        title: 'Criar quest',
+                        message: 'Pra criar quest: vá no projeto correspondente e use "+ nova quest" dentro de um entregável. Toda quest precisa de projeto + entregável.',
+                        variant: 'default',
+                      })
                       return
                     } else if (modalMode === 'tarefa') {
                       if ((formData.start_time && !formData.end_time) || (!formData.start_time && formData.end_time)) {
-                        alert('Preencha os dois horários, início e fim')
+                        alertDialog({ title: 'Horários incompletos', message: 'Preencha os dois horários, início e fim.', variant: 'warning' })
                         return
                       }
                       await createTask({
@@ -632,11 +739,11 @@ export function MicroDumpView({ areas, projects, onArchive }: { areas: Area[]; p
                       const temDuracao = formData.estimated_minutes
 
                       if (!temHorario && !temDuracao) {
-                        alert('Preencha horário OU duração estimada')
+                        alertDialog({ title: 'Tempo obrigatório', message: 'Preencha horário OU duração estimada.', variant: 'warning' })
                         return
                       }
                       if (temHorario && !formData.recurrence) {
-                        alert('Recorrência é obrigatória quando há horário fixo')
+                        alertDialog({ title: 'Recorrência obrigatória', message: 'Recorrência é obrigatória quando há horário fixo.', variant: 'warning' })
                         return
                       }
 
@@ -661,58 +768,61 @@ export function MicroDumpView({ areas, projects, onArchive }: { areas: Area[]; p
                     setFormData({})
                   } catch (err) {
                     console.error('[microdump] convert failed', err)
-                    alert('Erro ao criar')
+                    alertDialog({ title: 'Erro', message: 'Erro ao criar', variant: 'danger' })
                   }
                 }}
                 style={{
                   flex: 1,
-                  background: 'var(--color-accent-primary)',
-                  border: '1px solid var(--color-accent-primary)',
-                  color: 'var(--color-bg-primary)',
+                  background: 'rgba(143, 191, 211, 0.14)',
+                  border: '1px solid var(--color-ice)',
+                  color: 'var(--color-ice-light)',
                   cursor: 'pointer',
-                  padding: '10px 12px',
-                  fontSize: 12,
-                  borderRadius: 3,
-                  fontWeight: 700,
-                  letterSpacing: '0.05em',
-                  textTransform: 'uppercase',
-                  transition: 'all 0.2s',
+                  fontFamily: 'var(--font-mono)',
+                  padding: '8px 14px',
+                  fontSize: 10, fontWeight: 700,
+                  letterSpacing: '0.22em', textTransform: 'uppercase',
+                  borderRadius: 0,
+                  clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 5px), calc(100% - 5px) 100%, 0 100%)',
+                  boxShadow: '0 0 12px rgba(143, 191, 211, 0.25)',
+                  transition: 'all 0.15s',
                 }}
                 onMouseEnter={e => {
-                  e.currentTarget.style.background = 'var(--color-accent-secondary)'
-                  e.currentTarget.style.borderColor = 'var(--color-accent-secondary)'
+                  e.currentTarget.style.background = 'rgba(143, 191, 211, 0.22)'
+                  e.currentTarget.style.boxShadow = '0 0 18px rgba(143, 191, 211, 0.40)'
                 }}
                 onMouseLeave={e => {
-                  e.currentTarget.style.background = 'var(--color-accent-primary)'
-                  e.currentTarget.style.borderColor = 'var(--color-accent-primary)'
+                  e.currentTarget.style.background = 'rgba(143, 191, 211, 0.14)'
+                  e.currentTarget.style.boxShadow = '0 0 12px rgba(143, 191, 211, 0.25)'
                 }}
               >
-                Criar
+                ✓ CRIAR
               </button>
               <button
                 onClick={() => { setModalMode(null); setSelectedMicroTask(null) }}
                 style={{
                   flex: 1,
-                  background: 'transparent',
+                  background: 'rgba(8, 12, 18, 0.55)',
                   border: '1px solid var(--color-border)',
-                  color: 'var(--color-text-secondary)',
+                  color: 'var(--color-text-tertiary)',
                   cursor: 'pointer',
-                  padding: '10px 12px',
-                  fontSize: 12,
-                  borderRadius: 3,
-                  fontWeight: 600,
-                  transition: 'all 0.2s',
+                  fontFamily: 'var(--font-mono)',
+                  padding: '8px 14px',
+                  fontSize: 10, fontWeight: 700,
+                  letterSpacing: '0.22em', textTransform: 'uppercase',
+                  borderRadius: 0,
+                  clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 5px), calc(100% - 5px) 100%, 0 100%)',
+                  transition: 'all 0.15s',
                 }}
                 onMouseEnter={e => {
-                  e.currentTarget.style.borderColor = 'var(--color-accent-light)'
                   e.currentTarget.style.color = 'var(--color-accent-light)'
+                  e.currentTarget.style.borderColor = 'rgba(159, 18, 57, 0.45)'
                 }}
                 onMouseLeave={e => {
+                  e.currentTarget.style.color = 'var(--color-text-tertiary)'
                   e.currentTarget.style.borderColor = 'var(--color-border)'
-                  e.currentTarget.style.color = 'var(--color-text-secondary)'
                 }}
               >
-                Cancelar
+                CANCELAR
               </button>
             </div>
           </div>

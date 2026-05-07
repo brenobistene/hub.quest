@@ -173,10 +173,18 @@ function TopBar({ summary, selectedMonth, onMonthChange }: {
               </span>
             </div>
             <span style={{
-              fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)',
-              alignSelf: 'flex-end', marginBottom: 4, letterSpacing: '0.02em',
+              fontFamily: 'var(--font-mono)',
+              fontSize: 9, fontWeight: 700,
+              color: 'var(--color-text-tertiary)',
+              alignSelf: 'flex-end', marginBottom: 4,
+              letterSpacing: '0.22em', textTransform: 'uppercase',
+              padding: '4px 10px',
+              border: '1px solid var(--color-border)',
+              borderRadius: 0,
+              clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 3px), calc(100% - 3px) 100%, 0 100%)',
+              transition: 'all 0.15s',
             }}>
-              ver carteira →
+              VER CARTEIRA →
             </span>
           </Link>
 
@@ -184,15 +192,21 @@ function TopBar({ summary, selectedMonth, onMonthChange }: {
             <span
               title="contas em moeda estrangeira sem cotação definida — não somam no total"
               style={{
-                fontSize: 'var(--text-xs)',
-                color: 'var(--color-error)',
-                background: 'var(--color-danger-bg)',
-                border: '1px solid var(--color-danger-border)',
-                padding: '4px var(--space-2)',
-                borderRadius: 'var(--radius-pill)',
+                fontFamily: 'var(--font-mono)',
+                fontSize: 9, fontWeight: 700,
+                color: 'var(--color-accent-light)',
+                background: 'rgba(159, 18, 57, 0.10)',
+                border: '1px solid var(--color-accent-primary)',
+                padding: '4px 10px',
+                letterSpacing: '0.22em',
+                textTransform: 'uppercase',
+                borderRadius: 0,
+                clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 4px), calc(100% - 4px) 100%, 0 100%)',
+                boxShadow: '0 0 8px rgba(159, 18, 57, 0.20)',
               }}
             >
-              {naoConvertidasCount} sem cotação
+              <span style={{ color: 'var(--color-accent-primary)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
+              {naoConvertidasCount} SEM COTAÇÃO
             </span>
           )}
         </div>
@@ -260,30 +274,48 @@ function CardCompromissosMes({ commitments, monthlySummary, onOpenRecurring, onO
         borderBottom: items.length > 0 ? '1px solid var(--color-divider)' : 'none',
       }}>
         <div style={{
-          display: 'flex', alignItems: 'baseline', gap: 'var(--space-3)',
+          display: 'flex', alignItems: 'center', gap: 8,
         }}>
-          <span style={cardLabel}>Compromissos do mês</span>
-          {items.length > 0 && (
-            <span style={{
-              fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)',
-              fontFamily: 'var(--font-mono)',
-            }}>
-              {items.length} {items.length === 1 ? 'item' : 'itens'}
-            </span>
-          )}
+          <div
+            aria-hidden="true"
+            style={{
+              width: 3, height: 14,
+              background: 'var(--color-ice)',
+              boxShadow: '0 0 8px var(--color-ice-glow)',
+              flexShrink: 0,
+            }}
+          />
+          <span style={{
+            fontFamily: 'var(--font-mono)',
+            fontSize: 10, fontWeight: 700,
+            color: 'var(--color-ice-light)',
+            letterSpacing: '0.25em', textTransform: 'uppercase',
+          }}>
+            <span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
+            COMPROMISSOS.MES
+            {items.length > 0 && (
+              <span style={{ color: 'var(--color-text-muted)', fontWeight: 700, marginLeft: 8 }}>
+                [{items.length.toString().padStart(2, '0')}]
+              </span>
+            )}
+          </span>
         </div>
       </div>
       <div style={{ padding: 'var(--space-5) var(--space-6)' }}>
 
       {items.length === 0 ? (
         <div style={{
-          padding: '20px 16px',
-          border: '1px dashed var(--color-border)', borderRadius: 4,
-          textAlign: 'center', color: 'var(--color-text-muted)',
-          fontSize: 11, fontStyle: 'italic',
+          padding: '14px 16px',
+          border: '1px dashed rgba(143, 191, 211, 0.30)',
+          clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%)',
+          fontFamily: 'var(--font-mono)',
+          fontSize: 10, fontWeight: 700,
+          color: 'var(--color-text-muted)',
+          letterSpacing: '0.18em', textTransform: 'uppercase',
+          lineHeight: 1.7,
         }}>
-          nenhum compromisso pra esse mês. cadastre contas fixas, receitas
-          recorrentes ou parcelas de dívida pra ver o cronograma aqui.
+          <span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
+          NENHUM COMPROMISSO PRA ESSE MÊS · CADASTRE FIXAS / RECEITAS / DÍVIDAS
         </div>
       ) : (
         <>
@@ -308,19 +340,19 @@ function CardCompromissosMes({ commitments, monthlySummary, onOpenRecurring, onO
                 PLANEJADO
               </div>
               <PlanRealRow
-                label="A pagar"
+                label="A PAGAR"
                 value={total_a_pagar}
                 color={total_a_pagar > 0 ? 'var(--color-accent-light)' : 'var(--color-text-muted)'}
               />
               <PlanRealRow
-                label="A receber"
+                label="A RECEBER"
                 value={total_a_receber}
                 color={total_a_receber > 0 ? 'var(--color-success-light)' : 'var(--color-text-muted)'}
               />
               <PlanRealRow
-                label="Sobra projetada"
+                label="SOBRA PROJETADA"
                 value={sobra}
-                color={sobra >= 0 ? 'var(--color-text-primary)' : 'var(--color-error)'}
+                color={sobra >= 0 ? 'var(--color-text-primary)' : 'var(--color-accent-light)'}
               />
             </div>
 
@@ -336,19 +368,19 @@ function CardCompromissosMes({ commitments, monthlySummary, onOpenRecurring, onO
                 REAL · NUBANK
               </div>
               <PlanRealRow
-                label="Pago"
+                label="PAGO"
                 value={despesaReal}
-                color={despesaReal > 0 ? 'var(--color-accent-primary)' : 'var(--color-text-muted)'}
+                color={despesaReal > 0 ? 'var(--color-accent-light)' : 'var(--color-text-muted)'}
               />
               <PlanRealRow
-                label="Recebido"
+                label="RECEBIDO"
                 value={receitaReal}
-                color={receitaReal > 0 ? 'var(--color-success)' : 'var(--color-text-muted)'}
+                color={receitaReal > 0 ? 'var(--color-success-light)' : 'var(--color-text-muted)'}
               />
               <PlanRealRow
-                label="Saldo real"
+                label="SALDO REAL"
                 value={saldoReal}
-                color={saldoReal >= 0 ? 'var(--color-text-primary)' : 'var(--color-error)'}
+                color={saldoReal >= 0 ? 'var(--color-text-primary)' : 'var(--color-accent-light)'}
               />
             </div>
           </div>
@@ -375,28 +407,30 @@ function CardCompromissosMes({ commitments, monthlySummary, onOpenRecurring, onO
                 type="button"
                 onClick={() => setExpanded(v => !v)}
                 style={{
-                  background: 'none',
-                  border: 'none',
+                  background: 'rgba(8, 12, 18, 0.55)',
+                  border: '1px solid var(--color-border)',
                   cursor: 'pointer',
-                  fontSize: 'var(--text-xs)',
-                  fontFamily: 'var(--font-body)',
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: 9, fontWeight: 700,
                   color: 'var(--color-text-tertiary)',
-                  padding: 'var(--space-2)',
-                  marginTop: 'var(--space-1)',
+                  padding: '5px 12px',
+                  marginTop: 8,
                   textAlign: 'center',
-                  borderRadius: 'var(--radius-sm)',
-                  transition: 'color var(--motion-fast) var(--ease-smooth), background var(--motion-fast) var(--ease-smooth)',
+                  letterSpacing: '0.22em', textTransform: 'uppercase',
+                  borderRadius: 0,
+                  clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 4px), calc(100% - 4px) 100%, 0 100%)',
+                  transition: 'all 0.15s',
                 }}
                 onMouseEnter={e => {
-                  e.currentTarget.style.color = 'var(--color-text-primary)'
-                  e.currentTarget.style.background = 'var(--glass-bg-hover)'
+                  e.currentTarget.style.color = 'var(--color-ice-light)'
+                  e.currentTarget.style.borderColor = 'rgba(143, 191, 211, 0.45)'
                 }}
                 onMouseLeave={e => {
                   e.currentTarget.style.color = 'var(--color-text-tertiary)'
-                  e.currentTarget.style.background = 'transparent'
+                  e.currentTarget.style.borderColor = 'var(--color-border)'
                 }}
               >
-                {expanded ? '↑ ver menos' : `↓ ver mais ${hidden} ${hidden === 1 ? 'item' : 'itens'}`}
+                {expanded ? '↑ VER MENOS' : `↓ VER MAIS · ${hidden} ${hidden === 1 ? 'ITEM' : 'ITENS'}`}
               </button>
             )}
           </StaggerList>
@@ -476,60 +510,84 @@ function CardOutrasTransacoes({ transactions, commitments, onSeeAll }: {
         borderBottom: outras.length > 0 ? '1px solid var(--color-divider)' : 'none',
       }}>
         <div style={{
-          display: 'flex', alignItems: 'baseline', gap: 'var(--space-3)', flexWrap: 'wrap',
+          display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',
         }}>
-          <span style={cardLabel}>Outras transações do mês</span>
-          {outras.length > 0 && (
-            <span style={{
-              fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)',
-              fontFamily: 'var(--font-mono)',
-            }}>
-              {outras.length} item{outras.length === 1 ? '' : 'ns'}
-            </span>
-          )}
+          <div
+            aria-hidden="true"
+            style={{
+              width: 3, height: 14,
+              background: 'var(--color-ice)',
+              boxShadow: '0 0 8px var(--color-ice-glow)',
+              flexShrink: 0,
+            }}
+          />
+          <span style={{
+            fontFamily: 'var(--font-mono)',
+            fontSize: 10, fontWeight: 700,
+            color: 'var(--color-ice-light)',
+            letterSpacing: '0.25em', textTransform: 'uppercase',
+          }}>
+            <span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
+            OTHER.TX
+            {outras.length > 0 && (
+              <span style={{ color: 'var(--color-text-muted)', fontWeight: 700, marginLeft: 8 }}>
+                [{outras.length.toString().padStart(2, '0')}]
+              </span>
+            )}
+          </span>
           <div style={{ flex: 1 }} />
           <button onClick={onSeeAll} style={{
-            background: 'transparent', border: '1px solid var(--color-border)', cursor: 'pointer',
+            background: 'rgba(8, 12, 18, 0.55)',
+            border: '1px solid var(--color-border)',
+            cursor: 'pointer',
             color: 'var(--color-text-tertiary)',
-            fontSize: 'var(--text-xs)',
-            padding: '5px var(--space-3)', borderRadius: 'var(--radius-sm)',
-            fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase',
-            transition: 'color var(--motion-fast) var(--ease-smooth), border-color var(--motion-fast) var(--ease-smooth)',
+            fontFamily: 'var(--font-mono)',
+            fontSize: 9, fontWeight: 700,
+            padding: '5px 12px',
+            letterSpacing: '0.22em', textTransform: 'uppercase',
+            borderRadius: 0,
+            clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 4px), calc(100% - 4px) 100%, 0 100%)',
+            transition: 'all 0.15s',
           }}
           onMouseEnter={e => {
-            e.currentTarget.style.color = 'var(--color-accent-light)'
-            e.currentTarget.style.borderColor = 'var(--color-accent-light)'
+            e.currentTarget.style.color = 'var(--color-ice-light)'
+            e.currentTarget.style.borderColor = 'rgba(143, 191, 211, 0.45)'
+            e.currentTarget.style.boxShadow = '0 0 8px rgba(143, 191, 211, 0.20)'
           }}
           onMouseLeave={e => {
             e.currentTarget.style.color = 'var(--color-text-tertiary)'
             e.currentTarget.style.borderColor = 'var(--color-border)'
+            e.currentTarget.style.boxShadow = 'none'
           }}>
-            ver lançamentos →
+            VER LANÇAMENTOS →
           </button>
         </div>
       </div>
       <div style={{ padding: 'var(--space-5) var(--space-6)' }}>
 
-      {/* Subtotal compacto dos avulsos — diff vs plano, em uma linha só */}
+      {/* Subtotal compacto dos avulsos — mono uppercase */}
       {outras.length > 0 && (
         <div style={{
-          display: 'flex', gap: 'var(--space-4)', marginBottom: 14,
-          paddingBottom: 14, borderBottom: '1px solid var(--color-border)',
-          fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)',
+          display: 'flex', gap: 16, marginBottom: 14,
+          paddingBottom: 14,
+          borderBottom: '1px solid var(--color-ice-deep)',
+          fontFamily: 'var(--font-mono)',
+          fontSize: 10, fontWeight: 700,
+          letterSpacing: '0.18em', textTransform: 'uppercase',
           fontVariantNumeric: 'tabular-nums',
         }}>
-          <span style={{ color: 'var(--color-text-tertiary)' }}>
-            <span className="hq-money" style={{ color: 'var(--color-accent-light)', fontWeight: 700 }}>
+          <span>
+            <span style={{ color: 'var(--color-text-muted)', marginRight: 5 }}>//OUT</span>
+            <span className="hq-money" style={{ color: 'var(--color-accent-light)' }}>
               {formatBRL(totalAvulsoDespesa)}
             </span>
-            <span style={{ marginLeft: 4 }}>gastos avulsos</span>
           </span>
           {totalAvulsoReceita > 0 && (
-            <span style={{ color: 'var(--color-text-tertiary)' }}>
-              <span className="hq-money" style={{ color: 'var(--color-success-light)', fontWeight: 700 }}>
+            <span>
+              <span style={{ color: 'var(--color-text-muted)', marginRight: 5 }}>//IN</span>
+              <span className="hq-money" style={{ color: 'var(--color-success-light)' }}>
                 {formatBRL(totalAvulsoReceita)}
               </span>
-              <span style={{ marginLeft: 4 }}>entradas avulsas</span>
             </span>
           )}
         </div>
@@ -537,25 +595,47 @@ function CardOutrasTransacoes({ transactions, commitments, onSeeAll }: {
 
       {outras.length === 0 ? (
         <div style={{
-          padding: '20px 16px',
-          border: '1px dashed var(--color-border)', borderRadius: 4,
-          textAlign: 'center', color: 'var(--color-text-muted)',
-          fontSize: 11, fontStyle: 'italic',
+          padding: '14px 16px',
+          border: '1px dashed rgba(143, 191, 211, 0.30)',
+          clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%)',
+          fontFamily: 'var(--font-mono)',
+          fontSize: 10, fontWeight: 700,
+          color: 'var(--color-text-muted)',
+          letterSpacing: '0.18em', textTransform: 'uppercase',
+          lineHeight: 1.7,
         }}>
-          nenhuma transação avulsa este mês — tudo bateu com um compromisso.
+          <span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
+          NENHUMA TRANSAÇÃO AVULSA · TUDO BATEU COM COMPROMISSOS
         </div>
       ) : (
-        <StaggerList style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
+        <StaggerList style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           {visibleItems.map((tx) => {
             const isReceita = tx.valor >= 0
+            const borderLeftColor = isReceita ? 'var(--color-success)' : 'rgba(143, 191, 211, 0.30)'
+            const hoverGlowColor = isReceita ? 'rgba(94, 122, 82, 0.18)' : 'rgba(143, 191, 211, 0.15)'
             return (
               <StaggerItem key={tx.id}>
               <div
-                className="hq-row-hoverable"
                 style={{
-                  ...listRow,
-                  padding: 'var(--space-2) var(--space-3)',
-                  borderRadius: 'var(--radius-sm)',
+                  background: 'rgba(8, 12, 18, 0.55)',
+                  border: '1px solid rgba(143, 191, 211, 0.18)',
+                  borderLeft: `2px solid ${borderLeftColor}`,
+                  padding: '8px 12px',
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                  gap: 12,
+                  borderRadius: 0,
+                  clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%)',
+                  transition: 'border-color 0.15s, box-shadow 0.15s, transform 0.15s',
+                }}
+                onMouseEnter={e => {
+                  e.currentTarget.style.borderColor = 'rgba(143, 191, 211, 0.40)'
+                  e.currentTarget.style.boxShadow = `0 0 10px ${hoverGlowColor}`
+                  e.currentTarget.style.transform = 'translateX(2px)'
+                }}
+                onMouseLeave={e => {
+                  e.currentTarget.style.borderColor = 'rgba(143, 191, 211, 0.18)'
+                  e.currentTarget.style.boxShadow = 'none'
+                  e.currentTarget.style.transform = 'translateX(0)'
                 }}
               >
                 <div style={{ minWidth: 0 }}>
@@ -563,16 +643,20 @@ function CardOutrasTransacoes({ transactions, commitments, onSeeAll }: {
                     ...listRowTitle,
                     color: isReceita ? 'var(--color-success-light)' : 'var(--color-text-primary)',
                   }}>
-                    {isReceita ? '↓ ' : '↑ '}{tx.descricao}
+                    <span style={{ color: isReceita ? 'var(--color-success)' : 'var(--color-text-muted)', marginRight: 4 }}>
+                      {isReceita ? '↓' : '↑'}
+                    </span>
+                    {tx.descricao}
                   </div>
                   <div style={listRowSub}>
                     {tx.data.split('-').reverse().slice(0, 2).join('/')}
                   </div>
                 </div>
                 <span className="hq-money" style={{
-                  fontSize: 'var(--text-sm)', fontWeight: 600,
+                  fontSize: 13, fontWeight: 700,
                   fontFamily: 'var(--font-mono)',
                   fontVariantNumeric: 'tabular-nums',
+                  letterSpacing: '0.02em',
                   color: isReceita ? 'var(--color-success-light)' : 'var(--color-text-secondary)',
                 }}>
                   {formatBRL(Math.abs(tx.valor))}
@@ -586,23 +670,30 @@ function CardOutrasTransacoes({ transactions, commitments, onSeeAll }: {
               type="button"
               onClick={() => setExpanded(v => !v)}
               style={{
-                background: 'none', border: 'none', cursor: 'pointer',
-                fontSize: 'var(--text-xs)', fontFamily: 'var(--font-body)',
+                background: 'rgba(8, 12, 18, 0.55)',
+                border: '1px solid var(--color-border)',
+                cursor: 'pointer',
+                fontFamily: 'var(--font-mono)',
+                fontSize: 9, fontWeight: 700,
                 color: 'var(--color-text-tertiary)',
-                padding: 'var(--space-2)', marginTop: 'var(--space-1)',
-                textAlign: 'center', borderRadius: 'var(--radius-sm)',
-                transition: 'color var(--motion-fast) var(--ease-smooth), background var(--motion-fast) var(--ease-smooth)',
+                padding: '5px 12px',
+                marginTop: 6,
+                textAlign: 'center',
+                letterSpacing: '0.22em', textTransform: 'uppercase',
+                borderRadius: 0,
+                clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 4px), calc(100% - 4px) 100%, 0 100%)',
+                transition: 'all 0.15s',
               }}
               onMouseEnter={e => {
-                e.currentTarget.style.color = 'var(--color-text-primary)'
-                e.currentTarget.style.background = 'var(--glass-bg-hover)'
+                e.currentTarget.style.color = 'var(--color-ice-light)'
+                e.currentTarget.style.borderColor = 'rgba(143, 191, 211, 0.45)'
               }}
               onMouseLeave={e => {
                 e.currentTarget.style.color = 'var(--color-text-tertiary)'
-                e.currentTarget.style.background = 'transparent'
+                e.currentTarget.style.borderColor = 'var(--color-border)'
               }}
             >
-              {expanded ? '↑ ver menos' : `↓ ver mais ${hidden} item${hidden === 1 ? '' : 'ns'}`}
+              {expanded ? '↑ VER MENOS' : `↓ VER MAIS · ${hidden} ${hidden === 1 ? 'ITEM' : 'ITENS'}`}
             </button>
           )}
         </StaggerList>
@@ -619,8 +710,11 @@ function PlanRealRow({ label, value, color }: { label: string; value: number; co
   return (
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 }}>
       <span style={{
-        fontSize: 10, color: 'var(--color-text-tertiary)',
-        letterSpacing: '0.05em',
+        fontFamily: 'var(--font-mono)',
+        fontSize: 9, fontWeight: 700,
+        color: 'var(--color-text-muted)',
+        letterSpacing: '0.18em',
+        textTransform: 'uppercase',
       }}>
         {label}
       </span>
@@ -629,6 +723,7 @@ function PlanRealRow({ label, value, color }: { label: string; value: number; co
         color,
         fontFamily: 'var(--font-mono)',
         fontVariantNumeric: 'tabular-nums',
+        letterSpacing: '0.02em',
       }}>
         {formatBRL(value)}
       </span>
@@ -647,26 +742,42 @@ function CompromissoRow({ item, onClick, index = 0 }: {
   const dotColor = isCompleted
     ? 'var(--color-success-light)'
     : isAtrasada
-      ? 'var(--color-error)'
-      : 'var(--color-text-muted)'
+      ? 'var(--color-accent-vivid)'
+      : 'rgba(143, 191, 211, 0.55)'
+  const dotGlow = isCompleted
+    ? 'rgba(94, 122, 82, 0.55)'
+    : isAtrasada
+      ? 'rgba(159, 18, 57, 0.55)'
+      : 'rgba(143, 191, 211, 0.30)'
   const valorColor = isCompleted
     ? 'var(--color-text-primary)'
     : isReceita
       ? 'var(--color-success-light)'
       : 'var(--color-text-secondary)'
+  // Border-left semântica (estado da row no scope da month)
+  const borderLeftColor = isAtrasada
+    ? 'var(--color-accent-primary)'
+    : isCompleted
+      ? 'var(--color-success)'
+      : 'rgba(143, 191, 211, 0.30)'
+  const hoverGlowColor = isAtrasada
+    ? 'rgba(159, 18, 57, 0.20)'
+    : isCompleted
+      ? 'rgba(94, 122, 82, 0.20)'
+      : 'rgba(143, 191, 211, 0.15)'
 
-  // Sub-line: "vence dia X" / "cai dia X" / "X paga em DD/MM"
+  // Sub-line cyber-mono uppercase: "PAGA · 06/05" / "VENCE 15/05" / "DIA 12"
   let subText: string
   if (isCompleted && item.data_pagamento) {
     const [, m, d] = item.data_pagamento.split('-')
-    subText = `${isReceita ? 'recebida' : 'paga'} em ${d}/${m}`
+    subText = `${isReceita ? 'RCB' : 'PG'} · ${d}/${m}`
   } else if (item.dia) {
-    subText = `${isReceita ? 'cai dia' : 'vence dia'} ${item.dia}`
+    subText = `${isReceita ? 'CAI' : 'VC'} DIA ${item.dia}`
   } else if (item.data_prevista) {
     const [, m, d] = item.data_prevista.split('-')
-    subText = `${isReceita ? 'cai em' : 'vence em'} ${d}/${m}`
+    subText = `${isReceita ? 'CAI' : 'VC'} ${d}/${m}`
   } else {
-    subText = 'sem data fixa'
+    subText = 'SEM DATA FIXA'
   }
 
   void index
@@ -674,12 +785,27 @@ function CompromissoRow({ item, onClick, index = 0 }: {
     <StaggerItem>
     <div
       onClick={onClick}
-      className="hq-row-hoverable"
       style={{
-        ...listRow,
         cursor: 'pointer',
-        padding: 'var(--space-2) var(--space-3)',
-        borderRadius: 'var(--radius-sm)',
+        background: 'rgba(8, 12, 18, 0.55)',
+        border: '1px solid rgba(143, 191, 211, 0.18)',
+        borderLeft: `2px solid ${borderLeftColor}`,
+        padding: '8px 12px',
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+        gap: 12,
+        borderRadius: 0,
+        clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%)',
+        transition: 'border-color 0.15s, box-shadow 0.15s, transform 0.15s',
+      }}
+      onMouseEnter={e => {
+        e.currentTarget.style.borderColor = 'rgba(143, 191, 211, 0.45)'
+        e.currentTarget.style.boxShadow = `0 0 10px ${hoverGlowColor}`
+        e.currentTarget.style.transform = 'translateX(2px)'
+      }}
+      onMouseLeave={e => {
+        e.currentTarget.style.borderColor = 'rgba(143, 191, 211, 0.18)'
+        e.currentTarget.style.boxShadow = 'none'
+        e.currentTarget.style.transform = 'translateX(0)'
       }}
       title={
         item.kind === 'bill' ? 'abrir contas/receitas fixas' :
@@ -688,30 +814,30 @@ function CompromissoRow({ item, onClick, index = 0 }: {
         'abrir gerenciar dívidas'
       }
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', minWidth: 0 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+        {/* Square dot com glow — substitui o circle */}
         <span style={{
-          width: 7, height: 7, borderRadius: '50%',
+          width: 8, height: 8,
           background: dotColor, flexShrink: 0,
-          boxShadow: isCompleted
-            ? '0 0 6px rgba(122, 154, 138, 0.5)'
-            : isAtrasada
-              ? '0 0 6px rgba(220, 38, 38, 0.5)'
-              : 'none',
+          boxShadow: `0 0 6px ${dotGlow}`,
         }} />
         <div style={{ minWidth: 0 }}>
           <div style={{
             ...listRowTitle,
-            // Sinal sutil pra distinguir receita de despesa
             color: isReceita ? 'var(--color-success-light)' : 'var(--color-text-primary)',
           }}>
-            {isReceita ? '↓ ' : '↑ '}{item.descricao}
+            <span style={{ color: isReceita ? 'var(--color-success)' : 'var(--color-text-muted)', marginRight: 4 }}>
+              {isReceita ? '↓' : '↑'}
+            </span>
+            {item.descricao}
             {item.sub_descricao && (
               <span style={{
-                fontSize: 9,
+                fontFamily: 'var(--font-mono)',
+                fontSize: 9, fontWeight: 700,
                 color: 'var(--color-text-muted)',
                 marginLeft: 6,
-                fontWeight: 400,
-                letterSpacing: '0.05em',
+                letterSpacing: '0.18em',
+                textTransform: 'uppercase',
               }}>
                 · {item.sub_descricao}
               </span>
@@ -721,9 +847,10 @@ function CompromissoRow({ item, onClick, index = 0 }: {
         </div>
       </div>
       <span className="hq-money" style={{
-        fontSize: 13, fontWeight: 600,
+        fontSize: 13, fontWeight: 700,
         fontFamily: 'var(--font-mono)',
         fontVariantNumeric: 'tabular-nums',
+        letterSpacing: '0.02em',
         color: valorColor,
       }}>
         {isCompleted && item.valor_pago != null

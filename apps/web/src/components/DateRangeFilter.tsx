@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { ChevronDown, Check } from 'lucide-react'
 import type { DatePreset, DateRange } from '../utils/dateRange'
 import { DATE_PRESET_LABELS, computeRange, rangeLabel } from '../utils/dateRange'
@@ -10,6 +11,11 @@ import { DATE_PRESET_LABELS, computeRange, rangeLabel } from '../utils/dateRange
  *  - Planejador do Dia (filtro de data)
  *
  * Presets + custom (`de ... até ...`). Closes on outside click.
+ *
+ * O dropdown é renderizado via `createPortal` no `document.body` pra escapar
+ * de ancestrais com `overflow: hidden` ou stacking contexts (ex: dentro de
+ * PageShell/BodyAtmosphere). Posiciona via `position: fixed` com bounding
+ * rect do botão computado em runtime.
  */
 export function DateRangeFilter({ value, onChange }: {
   value: DateRange
@@ -19,12 +25,39 @@ export function DateRangeFilter({ value, onChange }: {
   const [customFrom, setCustomFrom] = useState(value.customFrom ?? '')
   const [customTo, setCustomTo] = useState(value.customTo ?? '')
   const [showingCustom, setShowingCustom] = useState(value.preset === 'custom')
-  const ref = useRef<HTMLDivElement>(null)
+  const wrapperRef = useRef<HTMLDivElement>(null)
+  const buttonRef = useRef<HTMLButtonElement>(null)
+  const popoverRef = useRef<HTMLDivElement>(null)
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null)
 
+  // Posiciona popover logo abaixo do botão. Recomputa em scroll/resize pra
+  // acompanhar o anchor se a página rolar enquanto aberto.
+  useLayoutEffect(() => {
+    if (!open || !buttonRef.current) return
+    function place() {
+      if (!buttonRef.current) return
+      const r = buttonRef.current.getBoundingClientRect()
+      setPos({ top: r.bottom + 6, left: r.left })
+    }
+    place()
+    window.addEventListener('scroll', place, true)
+    window.addEventListener('resize', place)
+    return () => {
+      window.removeEventListener('scroll', place, true)
+      window.removeEventListener('resize', place)
+    }
+  }, [open])
+
+  // Outside-click fecha. Considera tanto o popover (no body) quanto o botão
+  // (no fluxo normal) como áreas "seguras" — clique no botão deve toggle,
+  // não fechar e reabrir.
   useEffect(() => {
     if (!open) return
     function handleClick(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+      const target = e.target as Node
+      if (popoverRef.current && popoverRef.current.contains(target)) return
+      if (buttonRef.current && buttonRef.current.contains(target)) return
+      setOpen(false)
     }
     document.addEventListener('mousedown', handleClick)
     return () => document.removeEventListener('mousedown', handleClick)
@@ -39,8 +72,9 @@ export function DateRangeFilter({ value, onChange }: {
   }
 
   return (
-    <div ref={ref} style={{ position: 'relative', display: 'inline-block' }}>
+    <div ref={wrapperRef} style={{ position: 'relative', display: 'inline-block' }}>
       <button
+        ref={buttonRef}
         onClick={() => setOpen(o => !o)}
         style={{
           background: 'none', border: '1px solid var(--color-border)', cursor: 'pointer',
@@ -63,17 +97,17 @@ export function DateRangeFilter({ value, onChange }: {
         {rangeLabel(value)}
         <ChevronDown size={10} strokeWidth={2} />
       </button>
-      {open && (
+      {open && pos && createPortal(
         <div
+          ref={popoverRef}
           className="hq-animate-fade-up"
           style={{
-            // Surface opaca pra legibilidade (4.5:1 garantido). O hq-glass-elevated
-            // tem bg rgba(0.045) — sobre um shell que já é glass (ex: PlannerDrawer)
-            // o popover fica fantasma. Aqui usamos var(--color-bg-secondary) sólido
-            // + borda chrome + shadow, mantendo o look "elevated" sem perder texto.
-            position: 'absolute', top: '100%', left: 0, marginTop: 6,
+            // Portal-ado pra escapar de overflow:hidden de ancestrais
+            // (BodyAtmosphere do PageShell). Position fixed com offset
+            // computado pelo bounding rect do botão.
+            position: 'fixed', top: pos.top, left: pos.left,
             padding: 'var(--space-1) 0',
-            zIndex: 100, minWidth: 200,
+            zIndex: 10000, minWidth: 200,
             background: 'var(--color-bg-secondary)',
             border: '1px solid var(--color-border-strong)',
             borderRadius: 'var(--radius-md)',
@@ -162,7 +196,8 @@ export function DateRangeFilter({ value, onChange }: {
               </button>
             </div>
           )}
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   )

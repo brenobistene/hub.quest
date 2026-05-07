@@ -6,6 +6,7 @@ import {
   parseBRL, sanitizeMoneyInput,
   modalShell, modalHairline, modalHeader, modalBody,
 } from './styleHelpers'
+import { alertDialog } from '../../../lib/dialog'
 
 /**
  * Modal pra lançar transação manual. Substitui o NewTransactionForm inline
@@ -42,10 +43,10 @@ export function NewTransactionModal({
   async function submit(e: React.FormEvent) {
     e.preventDefault()
     if (!descricao.trim() || !contaId) {
-      alert('Preencha descrição e selecione uma conta.'); return
+      alertDialog({ title: 'Campos obrigatórios', message: 'Preencha descrição e selecione uma conta.', variant: 'warning' }); return
     }
     const valorNum = parseBRL(valor)
-    if (valorNum == null || valorNum === 0) { alert('Valor inválido.'); return }
+    if (valorNum == null || valorNum === 0) { alertDialog({ title: 'Valor inválido', message: 'Valor inválido.', variant: 'warning' }); return }
     setBusy(true)
     try {
       await createFinTransaction({
@@ -58,7 +59,7 @@ export function NewTransactionModal({
       onCreated()
     } catch (err) {
       reportApiError('NewTransactionModal.submit', err)
-      alert('Erro ao lançar — veja o console (F12).')
+      alertDialog({ title: 'Erro', message: 'Erro ao lançar — veja o console (F12).', variant: 'danger' })
       setBusy(false)
     }
   }

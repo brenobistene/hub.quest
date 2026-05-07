@@ -9,6 +9,7 @@ import {
   modalOverlay, modalShell, modalHairline, modalHeader, modalBody,
   parseBRL, sanitizeMoneyInput,
 } from './styleHelpers'
+import { alertDialog } from '../../../lib/dialog'
 
 export function AccountModal({ onClose, onCreated }: {
   onClose: () => void
@@ -35,7 +36,7 @@ export function AccountModal({ onClose, onCreated }: {
       setCotacao(String(r.rate).replace('.', ','))
     } catch (err) {
       reportApiError('AccountModal.fetchRate', err)
-      alert('Não consegui buscar online (rede bloqueada ou API offline). Cadastra manualmente.')
+      alertDialog({ title: 'Cotação offline', message: 'Não consegui buscar online (rede bloqueada ou API offline). Cadastra manualmente.', variant: 'warning' })
     } finally {
       setFetchingRate(false)
     }
@@ -48,7 +49,7 @@ export function AccountModal({ onClose, onCreated }: {
     if (moeda !== 'BRL' && cotacao.trim()) {
       const parsed = parseBRL(cotacao)
       if (parsed == null || parsed <= 0) {
-        alert('Cotação inválida — deixe em branco se preferir definir depois.')
+        alertDialog({ title: 'Cotação inválida', message: 'Cotação inválida — deixe em branco se preferir definir depois.', variant: 'warning' })
         return
       }
       cotacaoNum = parsed
@@ -61,7 +62,7 @@ export function AccountModal({ onClose, onCreated }: {
       onCreated()
     } catch (err) {
       reportApiError('createFinAccount', err)
-      alert('Erro ao criar conta — veja o console.')
+      alertDialog({ title: 'Erro', message: 'Erro ao criar conta — veja o console.', variant: 'danger' })
       setBusy(false)
     }
   }

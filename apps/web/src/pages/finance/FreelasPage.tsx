@@ -11,10 +11,10 @@
  */
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Briefcase, Clock, ExternalLink, TrendingDown, TrendingUp, Users } from 'lucide-react'
+import { ExternalLink, TrendingDown, TrendingUp } from 'lucide-react'
 import { useHubFinance } from './HubFinanceContext'
 import { ClientsManagerModal } from './components/ClientsManagerModal'
-import { formatBRL, cardLabel } from './components/styleHelpers'
+import { formatBRL } from './components/styleHelpers'
 import { MonthPicker } from './components/MonthPicker'
 import { Card } from '../../components/ui/Primitives'
 import { SkeletonStatCard, SkeletonRow, SkeletonCardGrid } from '../../components/ui/Motion'
@@ -41,6 +41,37 @@ const headerWithGradient: React.CSSProperties = {
 
 const cardBody: React.CSSProperties = {
   padding: 'var(--space-5) var(--space-6)',
+}
+
+/** Tab marker semantic + // LABEL [NN] mono — padrão consistente
+ *  com VisaoGeral / Carteira / Fixas / Dividas. */
+function CardHeaderTab({
+  label, count, accent = 'var(--color-ice)', glow = 'var(--color-ice-glow)',
+}: {
+  label: string
+  count?: number
+  accent?: string
+  glow?: string
+}) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      <span style={{
+        width: 3, height: 14,
+        background: accent,
+        boxShadow: `0 0 8px ${glow}`,
+        flexShrink: 0,
+      }} />
+      <span style={{
+        fontFamily: 'var(--font-mono)',
+        fontSize: 9, fontWeight: 700,
+        color: 'var(--color-text-muted)',
+        letterSpacing: '0.22em', textTransform: 'uppercase',
+      }}>
+        <span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
+        {label}{count != null && ` [${count.toString().padStart(2, '0')}]`}
+      </span>
+    </div>
+  )
 }
 import type { FinFreelaProject, FinHourlyRateStats, FinClient } from '../../types'
 
@@ -100,22 +131,16 @@ export function FreelasPage() {
         justifyContent: 'space-between',
         gap: 'var(--space-3)',
       }}>
-        <div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <CardHeaderTab label="FREELAS" count={ativos.length} />
           <div style={{
-            fontSize: 'var(--text-xs)',
-            color: 'var(--color-text-tertiary)',
-            letterSpacing: '0.12em',
-            textTransform: 'uppercase',
-            fontWeight: 600,
-          }}>
-            Freelas
-          </div>
-          <div style={{
-            fontSize: 'var(--text-xs)',
+            fontFamily: 'var(--font-mono)',
+            fontSize: 9, fontWeight: 700,
             color: 'var(--color-text-muted)',
-            marginTop: 2,
+            letterSpacing: '0.18em', textTransform: 'uppercase',
+            opacity: 0.75,
           }}>
-            pipeline filtra pelo mês · estatísticas e projetos ativos são globais
+            PIPELINE FILTRA POR MÊS · STATS E ATIVOS SÃO GLOBAIS
           </div>
         </div>
         <MonthPicker selectedMonth={selectedMonth} onChange={setSelectedMonth} />
@@ -169,11 +194,16 @@ function Hero({ stats, projetos }: {
     <Card padding="none" style={cardWrap}>
       <CardHairline />
       <div style={headerWithGradient}>
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 'var(--space-3)' }}>
-          <Clock size={12} strokeWidth={1.8} style={{ color: 'var(--color-text-tertiary)' }} />
-          <div style={cardLabel}>Sua média de R$/hora</div>
-          <div style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', fontStyle: 'italic' }}>
-            baseline pra precificar próximos projetos
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
+          <CardHeaderTab label="HOURLY.RATE" />
+          <div style={{
+            fontFamily: 'var(--font-mono)',
+            fontSize: 9, fontWeight: 700,
+            color: 'var(--color-text-muted)',
+            letterSpacing: '0.18em', textTransform: 'uppercase',
+            opacity: 0.7,
+          }}>
+            BASELINE · PRECIFICAR PRÓXIMOS PROJETOS
           </div>
         </div>
       </div>
@@ -181,59 +211,72 @@ function Hero({ stats, projetos }: {
 
       {!hasData ? (
         <div style={{
-          padding: '20px 16px',
-          border: '1px dashed var(--color-border)', borderRadius: 4,
-          textAlign: 'center', color: 'var(--color-text-muted)',
-          fontSize: 11, fontStyle: 'italic', lineHeight: 1.6,
+          padding: '14px 16px',
+          border: '1px dashed rgba(143, 191, 211, 0.30)',
+          clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%)',
+          fontFamily: 'var(--font-mono)',
+          fontSize: 10, fontWeight: 700,
+          color: 'var(--color-text-muted)',
+          letterSpacing: '0.18em', textTransform: 'uppercase',
+          lineHeight: 1.7,
         }}>
-          ainda não tem dados pra calcular sua R$/hora — você precisa de pelo menos
-          um projeto da área <strong>Freelas</strong> com valor acordado e tempo trabalhado
-          (sessões nas quests).
+          <span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
+          AINDA SEM DADOS · CRIE PROJETO DA ÁREA "FREELAS" COM VALOR ACORDADO + SESSÕES
         </div>
       ) : (
         <>
           <div style={{
-            display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16,
+            display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12,
             marginBottom: 14,
           }}>
             <RateCard
-              label="Real (recebido)"
+              label="REAL · RECEBIDO"
               value={stats!.media_real_brl_h}
-              accent="var(--color-success)"
+              accent="var(--color-success-light)"
+              accentGlow="rgba(125, 154, 111, 0.40)"
               footer={stats!.media_real_brl_h != null
-                ? `${formatBRL(stats!.valor_recebido_total)} em ${fmtH(stats!.horas_totais_real)} · ${stats!.projetos_considerados_real} projeto${stats!.projetos_considerados_real === 1 ? '' : 's'}`
-                : 'sem recebimentos vinculados ainda'}
+                ? `${formatBRL(stats!.valor_recebido_total)} · ${fmtH(stats!.horas_totais_real)} · ${stats!.projetos_considerados_real.toString().padStart(2, '0')} PROJ`
+                : 'SEM RECEBIMENTOS VINCULADOS'}
             />
             <RateCard
-              label="Estimado (acordado)"
+              label="ESTIMADO · ACORDADO"
               value={stats!.media_estimada_brl_h}
-              accent="var(--color-accent-light)"
+              accent="var(--color-ice-light)"
+              accentGlow="var(--color-ice-glow)"
               footer={stats!.media_estimada_brl_h != null
-                ? `${formatBRL(stats!.valor_acordado_total)} em ${fmtH(stats!.horas_totais_estim)} · ${stats!.projetos_considerados_estim} projeto${stats!.projetos_considerados_estim === 1 ? '' : 's'}`
-                : 'sem valor acordado preenchido'}
+                ? `${formatBRL(stats!.valor_acordado_total)} · ${fmtH(stats!.horas_totais_estim)} · ${stats!.projetos_considerados_estim.toString().padStart(2, '0')} PROJ`
+                : 'SEM VALOR ACORDADO'}
             />
           </div>
 
           {/* Sub-stats agregados de TODOS os projetos */}
           <div style={{
-            paddingTop: 12,
-            borderTop: '1px solid var(--color-border)',
+            paddingTop: 14,
+            borderTop: '1px solid var(--color-ice-deep)',
             display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16,
           }}>
-            <SubStat label="Total recebido" value={formatBRL(totalRecebido)} color="var(--color-success)" />
-            <SubStat label="Total acordado" value={formatBRL(totalAcordado)} color="var(--color-text-primary)" />
-            <SubStat label="Total horas" value={fmtH(totalHoras)} color="var(--color-text-primary)" />
+            <SubStat label="TOTAL.RCB" value={formatBRL(totalRecebido)} color="var(--color-success-light)" />
+            <SubStat label="TOTAL.ACORDO" value={formatBRL(totalAcordado)} color="var(--color-text-primary)" />
+            <SubStat label="TOTAL.HORAS" value={fmtH(totalHoras)} color="var(--color-text-primary)" />
           </div>
 
           {stats!.media_real_brl_h != null && stats!.media_estimada_brl_h != null
             && stats!.media_real_brl_h < stats!.media_estimada_brl_h && (
             <div style={{
-              marginTop: 12, fontSize: 11, color: 'var(--color-text-muted)',
-              fontStyle: 'italic',
+              marginTop: 12,
+              padding: '8px 12px',
+              background: 'rgba(159, 18, 57, 0.06)',
+              border: '1px solid rgba(159, 18, 57, 0.22)',
+              borderLeft: '2px solid var(--color-accent-primary)',
+              clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 4px), calc(100% - 4px) 100%, 0 100%)',
+              fontFamily: 'var(--font-mono)',
+              fontSize: 9, fontWeight: 700,
+              color: 'var(--color-accent-light)',
+              letterSpacing: '0.18em', textTransform: 'uppercase',
+              lineHeight: 1.6,
             }}>
-              R$/hora real está abaixo do estimado — projetos demoram mais que o
-              esperado, ou ainda há valor a receber. Use a real pra orçar próximos
-              trabalhos.
+              <span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
+              ALERTA · REAL ABAIXO DO ESTIMADO · USE REAL PRA ORÇAR
             </div>
           )}
         </>
@@ -243,32 +286,46 @@ function Hero({ stats, projetos }: {
   )
 }
 
-function RateCard({ label, value, accent, footer }: {
-  label: string; value: number | null; accent: string; footer: string
+function RateCard({ label, value, accent, accentGlow, footer }: {
+  label: string
+  value: number | null
+  accent: string
+  accentGlow: string
+  footer: string
 }) {
   return (
     <div style={{
-      padding: '12px 14px',
-      background: 'var(--color-bg-primary)',
-      border: '1px solid var(--color-border)',
-      borderLeft: `3px solid ${accent}`,
-      borderRadius: 3,
+      padding: '14px 16px',
+      background: 'rgba(8, 12, 18, 0.55)',
+      border: '1px solid rgba(143, 191, 211, 0.22)',
+      borderLeft: `2px solid ${accent}`,
+      clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%)',
     }}>
       <div style={{
-        fontSize: 9, color: 'var(--color-text-tertiary)',
-        letterSpacing: '0.15em', textTransform: 'uppercase', fontWeight: 600,
+        fontFamily: 'var(--font-mono)',
+        fontSize: 9, fontWeight: 700,
+        color: 'var(--color-text-muted)',
+        letterSpacing: '0.22em', textTransform: 'uppercase',
       }}>
+        <span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
         {label}
       </div>
       <div className="hq-money" style={{
-        fontSize: 24, fontWeight: 700, marginTop: 6,
+        fontSize: 24, fontWeight: 700, marginTop: 8,
         color: value != null ? accent : 'var(--color-text-muted)',
         fontFamily: 'var(--font-mono)',
+        fontVariantNumeric: 'tabular-nums',
+        letterSpacing: '-0.02em',
+        textShadow: value != null ? `0 0 18px ${accentGlow}` : 'none',
       }}>
         {value != null ? `${formatBRL(value)}/h` : '—'}
       </div>
       <div style={{
-        fontSize: 10, color: 'var(--color-text-muted)', marginTop: 4,
+        fontFamily: 'var(--font-mono)',
+        fontSize: 9, fontWeight: 700,
+        color: 'var(--color-text-muted)',
+        letterSpacing: '0.15em', textTransform: 'uppercase',
+        marginTop: 6,
       }}>
         {footer}
       </div>
@@ -280,14 +337,19 @@ function SubStat({ label, value, color }: { label: string; value: string; color:
   return (
     <div>
       <div style={{
-        fontSize: 9, color: 'var(--color-text-tertiary)',
-        letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 2,
+        fontFamily: 'var(--font-mono)',
+        fontSize: 9, fontWeight: 700,
+        color: 'var(--color-text-muted)',
+        letterSpacing: '0.22em', textTransform: 'uppercase',
+        marginBottom: 4,
       }}>
+        <span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
         {label}
       </div>
       <div className="hq-money" style={{
         fontSize: 13, fontWeight: 700, color,
         fontFamily: 'var(--font-mono)',
+        fontVariantNumeric: 'tabular-nums',
       }}>
         {value}
       </div>
@@ -309,16 +371,26 @@ function PipelineRecebimentos({ itens, mes }: {
     <Card padding="none" style={cardWrap}>
       <CardHairline />
       <div style={headerWithGradient}>
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 'var(--space-3)' }}>
-          <div style={cardLabel}>Recebimentos previstos · {mesLabel}</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
+          <CardHeaderTab
+            label={`PIPELINE.RCB · ${mesLabel.toUpperCase()}`}
+            count={itens.length}
+            accent="var(--color-success-light)"
+            glow="rgba(125, 154, 111, 0.55)"
+          />
           {itens.length > 0 && (
-            <div className="hq-money" style={{
-              fontSize: 'var(--text-sm)', fontWeight: 700, color: 'var(--color-success)',
-              fontFamily: 'var(--font-mono)',
-              fontVariantNumeric: 'tabular-nums',
-            }}>
-              {formatBRL(total)}
-            </div>
+            <>
+              <div style={{ flex: 1 }} />
+              <div className="hq-money" style={{
+                fontSize: 14, fontWeight: 700,
+                color: 'var(--color-success-light)',
+                fontFamily: 'var(--font-mono)',
+                fontVariantNumeric: 'tabular-nums',
+                textShadow: '0 0 12px rgba(125, 154, 111, 0.40)',
+              }}>
+                {formatBRL(total)}
+              </div>
+            </>
           )}
         </div>
       </div>
@@ -326,61 +398,91 @@ function PipelineRecebimentos({ itens, mes }: {
 
       {itens.length === 0 ? (
         <div style={{
-          fontSize: 11, color: 'var(--color-text-muted)', fontStyle: 'italic',
-          padding: '12px 0',
+          padding: '14px 16px',
+          border: '1px dashed rgba(143, 191, 211, 0.30)',
+          clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%)',
+          fontFamily: 'var(--font-mono)',
+          fontSize: 10, fontWeight: 700,
+          color: 'var(--color-text-muted)',
+          letterSpacing: '0.18em', textTransform: 'uppercase',
+          lineHeight: 1.7,
         }}>
-          nenhum recebimento previsto pra {mesLabel}. cadastre parcelas
-          esperadas nos seus projetos freela pra ver o pipeline, ou troque
-          o mês no seletor acima.
+          <span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
+          NENHUM RECEBIMENTO EM {mesLabel.toUpperCase()} · CADASTRE PARCELAS NOS PROJETOS
         </div>
       ) : (
-        <div className="hq-stagger" style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+        <div className="hq-stagger" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           {itens.map(({ projeto, parcela }, i) => (
             <div
               key={parcela.id}
               className="hq-animate-fade-up"
               style={{
-                display: 'grid', gridTemplateColumns: '1fr 110px 100px',
-                gap: 12, alignItems: 'center', padding: '8px 12px',
-                background: 'var(--color-bg-primary)',
-                border: '1px solid var(--color-border)',
-                borderLeft: '3px solid var(--color-success)',
-                borderRadius: 'var(--radius-sm)',
-                transition: 'border-color var(--motion-fast) var(--ease-smooth), background var(--motion-fast) var(--ease-smooth)',
+                display: 'grid', gridTemplateColumns: '1fr 110px 110px',
+                gap: 12, alignItems: 'center', padding: '10px 14px',
+                background: 'rgba(8, 12, 18, 0.55)',
+                border: '1px solid rgba(143, 191, 211, 0.22)',
+                borderLeft: '2px solid var(--color-success-light)',
+                clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%)',
+                transition: 'transform 0.18s var(--ease-emphasis), box-shadow 0.18s, border-color 0.18s',
                 ['--stagger-i' as any]: i,
               }}
               onMouseEnter={e => {
-                e.currentTarget.style.borderColor = 'var(--color-border-strong)'
-                e.currentTarget.style.background = 'var(--glass-bg-hover)'
+                e.currentTarget.style.transform = 'translateX(2px)'
+                e.currentTarget.style.boxShadow = '0 0 14px rgba(125, 154, 111, 0.18)'
               }}
               onMouseLeave={e => {
-                e.currentTarget.style.borderColor = 'var(--color-border)'
-                e.currentTarget.style.background = 'var(--color-bg-primary)'
+                e.currentTarget.style.transform = 'translateX(0)'
+                e.currentTarget.style.boxShadow = 'none'
               }}
             >
-              <div style={{ minWidth: 0 }}>
-                <div style={{
-                  fontSize: 13, color: 'var(--color-text-primary)',
-                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                }}>
-                  {projeto.title} · parcela #{parcela.numero}
-                </div>
-                {projeto.cliente_nome && (
-                  <div style={{ fontSize: 10, color: 'var(--color-text-muted)', marginTop: 2 }}>
-                    {projeto.cliente_nome}
+              <div style={{ minWidth: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{
+                  width: 6, height: 6,
+                  background: 'var(--color-success-light)',
+                  boxShadow: '0 0 6px rgba(125, 154, 111, 0.55)',
+                  flexShrink: 0,
+                  opacity: 0.95,
+                }} />
+                <div style={{ minWidth: 0 }}>
+                  <div style={{
+                    fontSize: 13, color: 'var(--color-text-primary)',
+                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                  }}>
+                    {projeto.title} <span style={{
+                      fontFamily: 'var(--font-mono)',
+                      color: 'var(--color-text-muted)',
+                      fontSize: 10,
+                      letterSpacing: '0.1em',
+                    }}>· P{parcela.numero.toString().padStart(2, '0')}</span>
                   </div>
-                )}
+                  {projeto.cliente_nome && (
+                    <div style={{
+                      fontFamily: 'var(--font-mono)',
+                      fontSize: 9, fontWeight: 700,
+                      color: 'var(--color-text-muted)',
+                      letterSpacing: '0.18em', textTransform: 'uppercase',
+                      marginTop: 2,
+                    }}>
+                      {projeto.cliente_nome}
+                    </div>
+                  )}
+                </div>
               </div>
               <span style={{
-                fontSize: 10, color: 'var(--color-text-muted)',
                 fontFamily: 'var(--font-mono)',
+                fontSize: 9, fontWeight: 700,
+                color: 'var(--color-text-tertiary)',
+                letterSpacing: '0.15em', textTransform: 'uppercase',
               }}>
-                {parcela.data_prevista ?? 'sem data'}
+                {parcela.data_prevista
+                  ? parcela.data_prevista.split('-').reverse().slice(0, 2).join('/')
+                  : 'SEM DATA'}
               </span>
               <span className="hq-money" style={{
                 fontSize: 13, fontWeight: 600, textAlign: 'right',
                 fontFamily: 'var(--font-mono)',
-                color: 'var(--color-success)',
+                fontVariantNumeric: 'tabular-nums',
+                color: 'var(--color-success-light)',
               }}>
                 {formatBRL(parcela.valor)}
               </span>
@@ -403,29 +505,23 @@ function ProjetosAtivos({ projetos, hourlyStats }: {
     <Card padding="none" style={cardWrap}>
       <CardHairline />
       <div style={headerWithGradient}>
-        <div style={{
-          display: 'flex', alignItems: 'baseline', gap: 'var(--space-3)',
-        }}>
-          <Briefcase size={12} strokeWidth={1.8} style={{ color: 'var(--color-text-tertiary)' }} />
-          <div style={cardLabel}>Projetos ativos</div>
-          {projetos.length > 0 && (
-            <div style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' }}>
-              {projetos.length}
-            </div>
-          )}
-        </div>
+        <CardHeaderTab label="PROJETOS.ATIVOS" count={projetos.length} />
       </div>
       <div style={cardBody}>
 
       {projetos.length === 0 ? (
         <div style={{
-          fontSize: 11, color: 'var(--color-text-muted)', fontStyle: 'italic',
-          padding: '20px 16px',
-          border: '1px dashed var(--color-border)', borderRadius: 4,
-          textAlign: 'center', lineHeight: 1.6,
+          padding: '14px 16px',
+          border: '1px dashed rgba(143, 191, 211, 0.30)',
+          clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%)',
+          fontFamily: 'var(--font-mono)',
+          fontSize: 10, fontWeight: 700,
+          color: 'var(--color-text-muted)',
+          letterSpacing: '0.18em', textTransform: 'uppercase',
+          lineHeight: 1.7,
         }}>
-          nenhum projeto freela ativo. crie um projeto na área <strong>Freelas</strong>
-          do Hub Quest e adicione valor acordado pra ver aqui.
+          <span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
+          NENHUM PROJETO FREELA ATIVO · CRIE PROJETO NA ÁREA "FREELAS" COM VALOR ACORDADO
         </div>
       ) : (
         <div className="hq-stagger" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -471,45 +567,96 @@ function ProjectCard({ projeto: p, hourlyStats }: {
     navigate('/areas/freelas')
   }
 
+  // Border-left semantic baseado no progresso (consistente com Dividas):
+  // olive-light se quase entregue (>=75%), ice-light se andou (>=30%),
+  // ice-deep se cedo.
+  const accentColor = progresso >= 75
+    ? 'var(--color-success-light)'
+    : progresso >= 30
+      ? 'var(--color-ice-light)'
+      : 'var(--color-ice-deep)'
+  const accentGlow = progresso >= 75
+    ? 'rgba(125, 154, 111, 0.40)'
+    : 'var(--color-ice-glow)'
+
   return (
-    <div style={{
-      background: 'var(--color-bg-primary)',
-      border: '1px solid var(--color-border)',
-      borderLeft: '3px solid var(--color-accent-light)',
-      borderRadius: 4, padding: '14px 16px',
-    }}>
+    <div
+      style={{
+        background: 'rgba(8, 12, 18, 0.55)',
+        border: '1px solid rgba(143, 191, 211, 0.22)',
+        borderLeft: `2px solid ${accentColor}`,
+        clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%)',
+        padding: '14px 16px',
+        transition: 'transform 0.18s var(--ease-emphasis), box-shadow 0.18s, border-color 0.18s',
+      }}
+      onMouseEnter={e => {
+        e.currentTarget.style.transform = 'translateX(2px)'
+        e.currentTarget.style.boxShadow = `0 0 16px ${accentGlow}`
+      }}
+      onMouseLeave={e => {
+        e.currentTarget.style.transform = 'translateX(0)'
+        e.currentTarget.style.boxShadow = 'none'
+      }}
+    >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
-        <div style={{ minWidth: 0 }}>
-          <div style={{
-            fontSize: 14, fontWeight: 600, color: 'var(--color-text-primary)',
-          }}>
-            {p.title}
-          </div>
-          {p.cliente_nome && (
+        <div style={{ minWidth: 0, display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+          <span style={{
+            width: 6, height: 6,
+            background: accentColor,
+            boxShadow: `0 0 6px ${accentGlow}`,
+            flexShrink: 0,
+            marginTop: 6,
+            opacity: 0.95,
+          }} />
+          <div style={{ minWidth: 0 }}>
             <div style={{
-              fontSize: 10, color: 'var(--color-text-tertiary)',
-              textTransform: 'uppercase', letterSpacing: '0.1em', marginTop: 2,
+              fontSize: 14, fontWeight: 600, color: 'var(--color-text-primary)',
             }}>
-              {p.cliente_nome}
+              {p.title}
             </div>
-          )}
+            {p.cliente_nome && (
+              <div style={{
+                fontFamily: 'var(--font-mono)',
+                fontSize: 9, fontWeight: 700,
+                color: 'var(--color-text-muted)',
+                letterSpacing: '0.22em', textTransform: 'uppercase',
+                marginTop: 3,
+              }}>
+                <span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
+                {p.cliente_nome}
+              </div>
+            )}
+          </div>
         </div>
         <button
           onClick={openInHubQuest}
           title="abrir projeto no Hub Quest"
           style={{
-            background: 'none', border: '1px solid var(--color-border)',
-            cursor: 'pointer', borderRadius: 3,
-            color: 'var(--color-text-tertiary)',
-            padding: '4px 8px', fontSize: 9,
-            letterSpacing: '0.1em', textTransform: 'uppercase',
+            background: 'rgba(8, 12, 18, 0.55)',
+            border: '1px solid var(--color-border)',
+            cursor: 'pointer',
+            color: 'var(--color-text-muted)',
+            padding: '4px 10px',
+            fontFamily: 'var(--font-mono)',
+            fontSize: 9, fontWeight: 700,
+            letterSpacing: '0.22em', textTransform: 'uppercase',
+            clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 3px), calc(100% - 3px) 100%, 0 100%)',
             display: 'inline-flex', alignItems: 'center', gap: 4,
             whiteSpace: 'nowrap',
+            transition: 'all 0.15s',
           }}
-          onMouseEnter={e => { e.currentTarget.style.color = 'var(--color-accent-light)' }}
-          onMouseLeave={e => { e.currentTarget.style.color = 'var(--color-text-tertiary)' }}
+          onMouseEnter={e => {
+            e.currentTarget.style.color = 'var(--color-ice-light)'
+            e.currentTarget.style.borderColor = 'rgba(143, 191, 211, 0.45)'
+            e.currentTarget.style.boxShadow = '0 0 8px rgba(143, 191, 211, 0.20)'
+          }}
+          onMouseLeave={e => {
+            e.currentTarget.style.color = 'var(--color-text-muted)'
+            e.currentTarget.style.borderColor = 'var(--color-border)'
+            e.currentTarget.style.boxShadow = 'none'
+          }}
         >
-          abrir
+          ABRIR
           <ExternalLink size={10} strokeWidth={2} />
         </button>
       </div>
@@ -517,34 +664,44 @@ function ProjectCard({ projeto: p, hourlyStats }: {
       {/* R$/hora + comparação */}
       <div style={{
         display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14,
-        marginTop: 12,
+        marginTop: 14,
       }}>
         <div>
           <div style={{
-            fontSize: 9, color: 'var(--color-text-muted)',
-            letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 2,
+            fontFamily: 'var(--font-mono)',
+            fontSize: 9, fontWeight: 700,
+            color: 'var(--color-text-muted)',
+            letterSpacing: '0.22em', textTransform: 'uppercase',
+            marginBottom: 4,
           }}>
-            R$/h estimado
+            <span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
+            R$/H ESTIM
           </div>
           <div className="hq-money" style={{
             fontSize: 14, fontWeight: 700,
-            color: p.hourly_estimado != null ? 'var(--color-accent-light)' : 'var(--color-text-muted)',
+            color: p.hourly_estimado != null ? 'var(--color-ice-light)' : 'var(--color-text-muted)',
             fontFamily: 'var(--font-mono)',
+            fontVariantNumeric: 'tabular-nums',
           }}>
             {p.hourly_estimado != null ? `${formatBRL(p.hourly_estimado)}/h` : '—'}
           </div>
         </div>
         <div>
           <div style={{
-            fontSize: 9, color: 'var(--color-text-muted)',
-            letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 2,
+            fontFamily: 'var(--font-mono)',
+            fontSize: 9, fontWeight: 700,
+            color: 'var(--color-text-muted)',
+            letterSpacing: '0.22em', textTransform: 'uppercase',
+            marginBottom: 4,
           }}>
-            R$/h real
+            <span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
+            R$/H REAL
           </div>
           <div className="hq-money" style={{
             fontSize: 14, fontWeight: 700,
-            color: p.hourly_real != null ? 'var(--color-success)' : 'var(--color-text-muted)',
+            color: p.hourly_real != null ? 'var(--color-success-light)' : 'var(--color-text-muted)',
             fontFamily: 'var(--font-mono)',
+            fontVariantNumeric: 'tabular-nums',
           }}>
             {p.hourly_real != null ? `${formatBRL(p.hourly_real)}/h` : '—'}
           </div>
@@ -553,65 +710,102 @@ function ProjectCard({ projeto: p, hourlyStats }: {
 
       {showCompare && (
         <div style={{
-          marginTop: 8, fontSize: 10,
+          marginTop: 10,
+          fontFamily: 'var(--font-mono)',
+          fontSize: 9, fontWeight: 700,
+          letterSpacing: '0.18em', textTransform: 'uppercase',
           display: 'flex', alignItems: 'center', gap: 6,
-          color: acimaMedia ? 'var(--color-success)' : 'var(--color-accent-primary)',
+          color: acimaMedia ? 'var(--color-success-light)' : 'var(--color-accent-light)',
         }}>
           {acimaMedia ? <TrendingUp size={11} strokeWidth={2} /> : <TrendingDown size={11} strokeWidth={2} />}
-          <span style={{ fontWeight: 600 }}>
-            {formatBRL(Math.abs(diff))}/h {acimaMedia ? 'acima' : 'abaixo'}
+          <span>
+            {formatBRL(Math.abs(diff))}/H {acimaMedia ? 'ACIMA' : 'ABAIXO'}
           </span>
-          <span style={{ color: 'var(--color-text-muted)', fontWeight: 400 }}>
-            da sua média {tipoRate}
+          <span style={{ color: 'var(--color-text-muted)', opacity: 0.7 }}>
+            · MED {tipoRate.toUpperCase()}
           </span>
         </div>
       )}
 
-      {/* Recebido / a receber + barra */}
+      {/* Recebido / a receber + 10-segment progress */}
       {p.valor_acordado != null && (
         <div style={{
           marginTop: 14, paddingTop: 12,
-          borderTop: '1px solid var(--color-border)',
+          borderTop: '1px solid var(--color-ice-deep)',
         }}>
           <div style={{
             display: 'flex', justifyContent: 'space-between', alignItems: 'baseline',
-            marginBottom: 6,
+            marginBottom: 8,
           }}>
             <span className="hq-money" style={{
-              fontSize: 11, fontWeight: 600,
+              fontSize: 13, fontWeight: 700,
               fontFamily: 'var(--font-mono)',
-              color: 'var(--color-success)',
+              fontVariantNumeric: 'tabular-nums',
+              color: 'var(--color-success-light)',
+              textShadow: '0 0 10px rgba(125, 154, 111, 0.30)',
             }}>
               {formatBRL(p.valor_pago)}
             </span>
             <span style={{
-              fontSize: 10, color: 'var(--color-text-muted)',
+              fontFamily: 'var(--font-mono)',
+              fontSize: 9, fontWeight: 700,
+              color: 'var(--color-text-muted)',
+              letterSpacing: '0.18em', textTransform: 'uppercase',
             }}>
-              de <span className="hq-money">{formatBRL(p.valor_acordado)}</span> ({progresso.toFixed(0)}%)
+              DE <span className="hq-money" style={{ color: 'var(--color-text-secondary)' }}>{formatBRL(p.valor_acordado)}</span> · {progresso.toFixed(0)}%
             </span>
           </div>
-          <div style={{
-            height: 4, background: 'var(--color-border)',
-            borderRadius: 2, overflow: 'hidden',
-          }}>
-            <div style={{
-              height: '100%', width: `${progresso}%`,
-              background: 'var(--color-success)', transition: 'width 0.3s',
-            }} />
-          </div>
+          <ProjectSegmentedProgress value={progresso} />
           {p.parcelas_total > 0 && (
             <div style={{
-              fontSize: 10, color: 'var(--color-text-muted)',
-              marginTop: 6,
+              fontFamily: 'var(--font-mono)',
+              fontSize: 9, fontWeight: 700,
+              color: 'var(--color-text-muted)',
+              letterSpacing: '0.18em', textTransform: 'uppercase',
+              marginTop: 8,
+              lineHeight: 1.6,
             }}>
-              {p.parcelas_pagas} de {p.parcelas_total} parcelas pagas
+              {p.parcelas_pagas.toString().padStart(2, '0')}/{p.parcelas_total.toString().padStart(2, '0')} PARC PG
               {p.proxima_parcela && (
-                <> · próxima: <strong style={{ fontFamily: 'var(--font-mono)' }}>{formatBRL(p.proxima_parcela.valor)}</strong>{p.proxima_parcela.data_prevista ? ` em ${p.proxima_parcela.data_prevista}` : ''}</>
+                <>
+                  {' · NEXT '}
+                  <span className="hq-money" style={{ color: 'var(--color-ice-light)' }}>
+                    {formatBRL(p.proxima_parcela.valor)}
+                  </span>
+                  {p.proxima_parcela.data_prevista && (
+                    <> · {p.proxima_parcela.data_prevista.split('-').reverse().slice(0, 2).join('/')}</>
+                  )}
+                </>
               )}
             </div>
           )}
         </div>
       )}
+    </div>
+  )
+}
+
+/** 10-segment cyber progress pra ProjectCard. */
+function ProjectSegmentedProgress({ value }: { value: number }) {
+  const segments = 10
+  const filled = Math.round((value / 100) * segments)
+  return (
+    <div style={{ display: 'flex', gap: 3 }}>
+      {Array.from({ length: segments }).map((_, i) => (
+        <div
+          key={i}
+          style={{
+            flex: 1,
+            height: 6,
+            background: i < filled ? 'var(--color-success-light)' : 'rgba(143, 191, 211, 0.10)',
+            border: i < filled
+              ? '1px solid transparent'
+              : '1px solid rgba(143, 191, 211, 0.18)',
+            boxShadow: i < filled ? '0 0 6px rgba(125, 154, 111, 0.35)' : 'none',
+            transition: 'background 0.3s, box-shadow 0.3s',
+          }}
+        />
+      ))}
     </div>
   )
 }
@@ -636,39 +830,53 @@ function ClientesSidebar({ clients, projetos, onManage }: {
     <Card padding="none" style={cardWrap}>
       <CardHairline />
       <div style={headerWithGradient}>
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 'var(--space-3)' }}>
-          <Users size={12} strokeWidth={1.8} style={{ color: 'var(--color-text-tertiary)' }} />
-          <div style={cardLabel}>Clientes</div>
-          {clients.length > 0 && (
-            <div style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' }}>
-              {clients.length}
-            </div>
-          )}
-        </div>
+        <CardHeaderTab label="CLIENTES" count={clients.length} />
       </div>
       <div style={cardBody}>
 
       {clients.length === 0 ? (
         <div style={{
-          fontSize: 11, color: 'var(--color-text-muted)', fontStyle: 'italic',
-          padding: '12px 0', lineHeight: 1.5,
+          padding: '14px 16px',
+          border: '1px dashed rgba(143, 191, 211, 0.30)',
+          clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%)',
+          fontFamily: 'var(--font-mono)',
+          fontSize: 10, fontWeight: 700,
+          color: 'var(--color-text-muted)',
+          letterSpacing: '0.18em', textTransform: 'uppercase',
+          lineHeight: 1.7,
         }}>
-          nenhum cliente cadastrado. cadastre quem te paga (com CPF/CNPJ) pra
-          ativar o auto-vínculo de receita.
+          <span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
+          NENHUM CLIENTE · CADASTRE COM CPF/CNPJ PRA AUTO-VÍNCULO
         </div>
       ) : (
         <div className="hq-stagger" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           {clients.slice(0, 8).map((c, i) => {
             const count = projetosPorCliente.get(c.id) ?? 0
+            const hasProjects = count > 0
             return (
               <div
                 key={c.id}
-                className="hq-row-hoverable hq-animate-fade-up"
+                className="hq-animate-fade-up"
                 style={{
                   display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                  padding: 'var(--space-2) var(--space-3)',
-                  borderRadius: 'var(--radius-sm)',
+                  gap: 8,
+                  padding: '8px 12px',
+                  background: 'rgba(8, 12, 18, 0.55)',
+                  border: '1px solid rgba(143, 191, 211, 0.22)',
+                  borderLeft: hasProjects
+                    ? '2px solid var(--color-ice-light)'
+                    : '2px solid var(--color-ice-deep)',
+                  clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 5px), calc(100% - 5px) 100%, 0 100%)',
                   ['--stagger-i' as any]: i,
+                  transition: 'transform 0.18s var(--ease-emphasis), box-shadow 0.18s, border-color 0.18s',
+                }}
+                onMouseEnter={e => {
+                  e.currentTarget.style.transform = 'translateX(2px)'
+                  e.currentTarget.style.boxShadow = '0 0 12px rgba(143, 191, 211, 0.10)'
+                }}
+                onMouseLeave={e => {
+                  e.currentTarget.style.transform = 'translateX(0)'
+                  e.currentTarget.style.boxShadow = 'none'
                 }}
               >
                 <div style={{ minWidth: 0 }}>
@@ -677,62 +885,75 @@ function ClientesSidebar({ clients, projetos, onManage }: {
                   </div>
                   {c.cpf_cnpj && (
                     <div style={{
-                      fontSize: 9, color: 'var(--color-text-muted)',
+                      fontSize: 9, fontWeight: 700,
+                      color: 'var(--color-text-muted)',
                       fontFamily: 'var(--font-mono)',
+                      letterSpacing: '0.05em',
+                      marginTop: 2,
                     }}>
                       {c.cpf_cnpj}
                     </div>
                   )}
                 </div>
                 <span style={{
-                  fontSize: 10, color: 'var(--color-text-tertiary)',
-                  textTransform: 'uppercase', letterSpacing: '0.05em',
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: 9, fontWeight: 700,
+                  color: hasProjects ? 'var(--color-ice-light)' : 'var(--color-text-muted)',
+                  textTransform: 'uppercase', letterSpacing: '0.18em',
+                  flexShrink: 0,
                 }}>
-                  {count} projeto{count === 1 ? '' : 's'}
+                  {count.toString().padStart(2, '0')} PROJ
                 </span>
               </div>
             )
           })}
           {clients.length > 8 && (
-            <div style={{ fontSize: 10, color: 'var(--color-text-muted)', textAlign: 'center', marginTop: 4 }}>
-              + {clients.length - 8} clientes
+            <div style={{
+              fontFamily: 'var(--font-mono)',
+              fontSize: 9, fontWeight: 700,
+              color: 'var(--color-text-muted)',
+              letterSpacing: '0.22em', textTransform: 'uppercase',
+              textAlign: 'center', marginTop: 6,
+            }}>
+              + {(clients.length - 8).toString().padStart(2, '0')} CLIENTES
             </div>
           )}
         </div>
       )}
 
       </div>
-      {/* Footer-action button — mesmo padrão do Carteira: full-width
-          borderless com hover suave de cor + bg. */}
+      {/* Footer-action button cyber-mono */}
       <button
         onClick={onManage}
         style={{
           width: '100%',
-          background: 'transparent',
+          background: 'rgba(143, 191, 211, 0.04)',
           border: 'none',
-          borderTop: '1px solid var(--color-divider)',
+          borderTop: '1px solid var(--color-ice-deep)',
           padding: 'var(--space-3) var(--space-6)',
-          color: 'var(--color-text-tertiary)',
-          fontSize: 'var(--text-xs)',
-          fontWeight: 600,
-          letterSpacing: '0.05em',
+          color: 'var(--color-text-muted)',
+          fontFamily: 'var(--font-mono)',
+          fontSize: 10, fontWeight: 700,
+          letterSpacing: '0.22em', textTransform: 'uppercase',
           cursor: 'pointer',
           textAlign: 'left',
           display: 'flex',
           alignItems: 'center',
           gap: 'var(--space-2)',
+          transition: 'background 0.18s, color 0.18s',
         }}
         onMouseEnter={e => {
-          e.currentTarget.style.background = 'var(--glass-bg-hover)'
-          e.currentTarget.style.color = 'var(--color-accent-light)'
+          e.currentTarget.style.background = 'rgba(143, 191, 211, 0.10)'
+          e.currentTarget.style.color = 'var(--color-ice-light)'
         }}
         onMouseLeave={e => {
-          e.currentTarget.style.background = 'transparent'
-          e.currentTarget.style.color = 'var(--color-text-tertiary)'
+          e.currentTarget.style.background = 'rgba(143, 191, 211, 0.04)'
+          e.currentTarget.style.color = 'var(--color-text-muted)'
         }}
       >
-        gerenciar clientes
-        <span style={{ marginLeft: 'auto' }}>→</span>
+        <span style={{ color: 'var(--color-ice)', opacity: 0.85, letterSpacing: 0 }}>//</span>
+        GERENCIAR CLIENTES
+        <span style={{ marginLeft: 'auto', opacity: 0.7 }}>→</span>
       </button>
     </Card>
   )

@@ -26,6 +26,7 @@ import {
   modalShell, modalHairline, modalHeader, modalBody,
 } from './styleHelpers'
 import { EmptyState, IconButton } from '../../../components/ui/Primitives'
+import { confirmDialog, alertDialog } from '../../../lib/dialog'
 
 export function DebtParcelasModal({
   debt, accounts, categories, onClose, onChanged,
@@ -94,7 +95,7 @@ export function DebtParcelasModal({
       onChanged()
     } catch (err) {
       reportApiError('DebtParcelasModal.addParcela', err)
-      alert('Erro ao adicionar parcela.')
+      alertDialog({ title: 'Erro', message: 'Erro ao adicionar parcela.', variant: 'danger' })
     } finally {
       setBusy(false)
     }
@@ -102,10 +103,16 @@ export function DebtParcelasModal({
 
   async function handleDeleteParcela(p: FinDebtParcela) {
     if (p.status === 'paga') {
-      alert('Parcela já paga não pode ser deletada — desvincule a transação primeiro.')
+      alertDialog({ title: 'Parcela já paga', message: 'Parcela já paga não pode ser deletada — desvincule a transação primeiro.', variant: 'warning' })
       return
     }
-    if (!window.confirm(`Deletar parcela #${p.numero}?`)) return
+    const ok = await confirmDialog({
+      title: 'Deletar parcela',
+      message: `Deletar parcela #${p.numero.toString().padStart(2, '0')}?`,
+      confirmLabel: 'DELETAR',
+      danger: true,
+    })
+    if (!ok) return
     setBusy(true)
     try {
       await deleteFinDebtParcela(p.id)
@@ -113,18 +120,19 @@ export function DebtParcelasModal({
       onChanged()
     } catch (err) {
       reportApiError('DebtParcelasModal.deleteParcela', err)
-      alert('Erro ao deletar.')
+      alertDialog({ title: 'Erro', message: 'Erro ao deletar.', variant: 'danger' })
     } finally {
       setBusy(false)
     }
   }
 
   async function handleUnlinkPaid(p: FinDebtParcela) {
-    if (!window.confirm(
-      `Desvincular pagamento da parcela #${p.numero}?\n\n` +
-      `A transação NÃO é apagada (segue em Lançamentos), só perde o vínculo. ` +
-      `A parcela volta a "pendente".`
-    )) return
+    const ok = await confirmDialog({
+      title: 'Desvincular pagamento',
+      message: `Desvincular pagamento da parcela #${p.numero.toString().padStart(2, '0')}?\n\nA transação NÃO é apagada (segue em Lançamentos), só perde o vínculo. A parcela volta a "pendente".`,
+      confirmLabel: 'DESVINCULAR',
+    })
+    if (!ok) return
     setBusy(true)
     try {
       await updateFinDebtParcela(p.id, { transacao_pagamento_id: null })
@@ -132,7 +140,7 @@ export function DebtParcelasModal({
       onChanged()
     } catch (err) {
       reportApiError('DebtParcelasModal.unlinkPaid', err)
-      alert('Erro ao desvincular.')
+      alertDialog({ title: 'Erro', message: 'Erro ao desvincular.', variant: 'danger' })
     } finally {
       setBusy(false)
     }
@@ -249,7 +257,7 @@ export function DebtParcelasModal({
                     onChanged()
                   } catch (err) {
                     reportApiError('DebtParcelasModal.edit', err)
-                    alert('Erro ao atualizar.')
+                    alertDialog({ title: 'Erro', message: 'Erro ao atualizar.', variant: 'danger' })
                   }
                 }}
                 onDelete={handleDeleteParcela}
@@ -400,7 +408,7 @@ function ParcelaRow({ parcela, autoValue, onEdit, onDelete, onMarkPaid, onUnlink
     }
     const parsed = parseBRL(trimmed)
     if (parsed == null || parsed < 0) {
-      alert('Valor inválido. Use número positivo ou deixe vazio pra auto.')
+      alertDialog({ title: 'Valor inválido', message: 'Use número positivo ou deixe vazio pra auto.', variant: 'warning' })
       setValorDraft(parcela.valor_planejado != null
         ? String(parcela.valor_planejado).replace('.', ',') : '')
       return
@@ -648,11 +656,11 @@ function GenerateParcelasModal({ debt, onClose, onGenerated }: {
   async function submit(e: React.FormEvent) {
     e.preventDefault()
     if (isNaN(nParsed) || nParsed < 1 || nParsed > 360) {
-      alert('Número de parcelas entre 1 e 360.')
+      alertDialog({ title: 'Quantidade inválida', message: 'Número de parcelas entre 1 e 360.', variant: 'warning' })
       return
     }
     if (!dataInicio) {
-      alert('Defina data de início.')
+      alertDialog({ title: 'Data obrigatória', message: 'Defina data de início.', variant: 'warning' })
       return
     }
     setBusy(true)
@@ -665,7 +673,7 @@ function GenerateParcelasModal({ debt, onClose, onGenerated }: {
       onGenerated()
     } catch (err) {
       reportApiError('GenerateParcelasModal.submit', err)
-      alert('Erro ao gerar parcelas.')
+      alertDialog({ title: 'Erro', message: 'Erro ao gerar parcelas.', variant: 'danger' })
       setBusy(false)
     }
   }
@@ -811,20 +819,19 @@ function MarkParcelaPaidModal({ debt, parcela, accounts, categories, onClose, on
   async function submit(e: React.FormEvent) {
     e.preventDefault()
     if (!descricao.trim() || !contaId) {
-      alert('Descrição e conta são obrigatórias.')
+      alertDialog({ title: 'Campos obrigatórios', message: 'Descrição e conta são obrigatórias.', variant: 'warning' })
       return
     }
     const valorNum = parseBRL(valor)
     if (valorNum == null || valorNum < 0) {
-      alert('Valor inválido.')
+      alertDialog({ title: 'Valor inválido', message: 'Valor inválido.', variant: 'warning' })
       return
     }
     // Aceita valor 0 SOMENTE se a parcela foi planejada como zero (carência,
     // mês "pulado" do cronograma). Caso contrário, valor 0 é provável erro
-    // de digitação. A transação de R$ 0 vira marcador: o status da parcela
-    // depende de transacao_pagamento_id existir, não do valor.
+    // de digitação.
     if (valorNum === 0 && (parcela.valor_planejado ?? 0) !== 0) {
-      alert('Valor inválido — essa parcela não é zerada.')
+      alertDialog({ title: 'Valor inválido', message: 'Essa parcela não é zerada.', variant: 'warning' })
       return
     }
     setBusy(true)
@@ -844,7 +851,7 @@ function MarkParcelaPaidModal({ debt, parcela, accounts, categories, onClose, on
       onPaid()
     } catch (err) {
       reportApiError('MarkParcelaPaidModal.submit', err)
-      alert('Erro ao registrar pagamento.')
+      alertDialog({ title: 'Erro', message: 'Erro ao registrar pagamento.', variant: 'danger' })
       setBusy(false)
     }
   }
@@ -1001,11 +1008,11 @@ function CompleteParcelasModal({ debt, parcelas, autoCount, onClose, onCompleted
   async function submit(e: React.FormEvent) {
     e.preventDefault()
     if (semRestante) {
-      alert('Não há saldo restante pra distribuir — parcelas fixas já cobrem o total.')
+      alertDialog({ title: 'Sem saldo', message: 'Não há saldo restante pra distribuir — parcelas fixas já cobrem o total.', variant: 'warning' })
       return
     }
     if (!valid) {
-      alert('Quantas parcelas? (entre 1 e 360)')
+      alertDialog({ title: 'Quantas parcelas?', message: 'Informe número de parcelas (entre 1 e 360).', variant: 'warning' })
       return
     }
     setBusy(true)
@@ -1017,7 +1024,7 @@ function CompleteParcelasModal({ debt, parcelas, autoCount, onClose, onCompleted
       onCompleted()
     } catch (err) {
       reportApiError('CompleteParcelasModal.submit', err)
-      alert((err as Error).message || 'Erro ao completar.')
+      alertDialog({ title: 'Erro', message: (err as Error).message || 'Erro ao completar.', variant: 'danger' })
       setBusy(false)
     }
   }

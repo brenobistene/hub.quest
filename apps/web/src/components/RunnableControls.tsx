@@ -8,6 +8,7 @@ import {
 } from '../api'
 import { parseIsoAsUtc, sumClosedSessionsSeconds, formatHMS } from '../utils/datetime'
 import { SessionHistoryModal } from './SessionHistoryModal'
+import { alertDialog } from '../lib/dialog'
 
 /**
  * Play/pause/resume/stop cluster + live timer for a quest / task / routine.
@@ -69,8 +70,11 @@ export function RunnableControls({ runnableType, id, sessions, activeSession, on
       else await startRoutineSession(id, target)
       onSessionUpdate()
     } catch (err: any) {
-      if (err?.conflictTitle) alert(`"${err.conflictTitle}" está em execução. Pause antes.`)
-      else alert('Erro ao iniciar sessão — veja o console (F12).')
+      if (err?.conflictTitle) {
+        alertDialog({ title: 'Sessão em execução', message: `"${err.conflictTitle}" está em execução. Pause antes.`, variant: 'warning' })
+      } else {
+        alertDialog({ title: 'Erro', message: 'Erro ao iniciar sessão — veja o console (F12).', variant: 'danger' })
+      }
       console.error('[runnable] start failed', { runnableType, id, err })
     }
   }
@@ -82,7 +86,7 @@ export function RunnableControls({ runnableType, id, sessions, activeSession, on
       onSessionUpdate()
     } catch (err) {
       console.error('[runnable] pause failed', { runnableType, id, err })
-      alert('Erro ao pausar — veja o console (F12).')
+      alertDialog({ title: 'Erro', message: 'Erro ao pausar — veja o console (F12).', variant: 'danger' })
     }
   }
   async function handleResume() {
@@ -92,8 +96,11 @@ export function RunnableControls({ runnableType, id, sessions, activeSession, on
       else await resumeRoutineSession(id, target)
       onSessionUpdate()
     } catch (err: any) {
-      if (err?.conflictTitle) alert(`"${err.conflictTitle}" está em execução. Pause antes.`)
-      else alert('Erro ao retomar — veja o console (F12).')
+      if (err?.conflictTitle) {
+        alertDialog({ title: 'Sessão em execução', message: `"${err.conflictTitle}" está em execução. Pause antes.`, variant: 'warning' })
+      } else {
+        alertDialog({ title: 'Erro', message: 'Erro ao retomar — veja o console (F12).', variant: 'danger' })
+      }
       console.error('[runnable] resume failed', { runnableType, id, err })
     }
   }
@@ -110,31 +117,53 @@ export function RunnableControls({ runnableType, id, sessions, activeSession, on
       onSessionUpdate()
     } catch (err) {
       console.error('[runnable] stop failed', { runnableType, id, err })
-      alert('Erro ao finalizar — veja o console (F12).')
+      alertDialog({ title: 'Erro', message: 'Erro ao finalizar — veja o console (F12).', variant: 'danger' })
     }
   }
 
   const canShowHistory = sessions.length > 0
+
+  // ─── Estilos cyber compartilhados ───────────────────────────────────────
+  const cyberBtnBase = {
+    cursor: 'pointer',
+    fontFamily: 'var(--font-mono)',
+    fontSize: 9, fontWeight: 700,
+    padding: '5px 10px',
+    letterSpacing: '0.18em', textTransform: 'uppercase' as const,
+    borderRadius: 0,
+    clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 5px), calc(100% - 5px) 100%, 0 100%)',
+    display: 'inline-flex', alignItems: 'center', gap: 4,
+    transition: 'all 0.15s',
+  }
+
+  const timerStyle = (color: string, glow = false) => ({
+    fontFamily: 'var(--font-mono)',
+    fontSize: 11, fontWeight: 700,
+    color,
+    letterSpacing: '0.04em',
+    textShadow: glow ? `0 0 8px ${color}55` : 'none',
+    cursor: canShowHistory ? 'pointer' : 'default',
+    transition: 'color 0.15s',
+  })
 
   if (done) {
     return (
       <>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           <span style={{
-            fontSize: 9, color: 'var(--color-success)', letterSpacing: '0.15em',
+            fontFamily: 'var(--font-mono)',
+            fontSize: 9, color: 'var(--color-success)', letterSpacing: '0.22em',
             textTransform: 'uppercase', fontWeight: 700,
           }}>
-            feito
+            <span style={{ color: 'var(--color-success)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
+            FEITO
           </span>
           {displaySec > 0 && (
             <span
               onClick={() => canShowHistory && setShowHistory(true)}
               title={canShowHistory ? 'ver histórico' : undefined}
-              style={{
-                fontSize: 10, color: 'var(--color-text-tertiary)', fontFamily: 'var(--font-mono)',
-                cursor: canShowHistory ? 'pointer' : 'default', transition: 'color 0.15s',
-              }}
-              onMouseEnter={e => { if (canShowHistory) e.currentTarget.style.color = 'var(--color-text-primary)' }}
+              style={timerStyle('var(--color-text-tertiary)')}
+              onMouseEnter={e => { if (canShowHistory) e.currentTarget.style.color = 'var(--color-ice-light)' }}
               onMouseLeave={e => { e.currentTarget.style.color = 'var(--color-text-tertiary)' }}
             >
               {formatHMS(displaySec)}
@@ -145,21 +174,25 @@ export function RunnableControls({ runnableType, id, sessions, activeSession, on
               onClick={onReopen}
               title="reabrir"
               style={{
-                background: 'none', border: '1px solid var(--color-border)', cursor: 'pointer',
-                color: 'var(--color-text-tertiary)', padding: '4px 8px', fontSize: 10,
-                borderRadius: 3, letterSpacing: '0.1em', textTransform: 'uppercase',
-                transition: 'color 0.15s, border-color 0.15s',
+                ...cyberBtnBase,
+                background: 'rgba(8, 12, 18, 0.55)',
+                border: '1px solid var(--color-border)',
+                color: 'var(--color-text-tertiary)',
               }}
               onMouseEnter={e => {
-                e.currentTarget.style.color = 'var(--color-text-secondary)'
-                e.currentTarget.style.borderColor = 'var(--color-text-tertiary)'
+                e.currentTarget.style.color = 'var(--color-ice-light)'
+                e.currentTarget.style.borderColor = 'rgba(143, 191, 211, 0.45)'
+                e.currentTarget.style.background = 'rgba(143, 191, 211, 0.10)'
+                e.currentTarget.style.boxShadow = '0 0 10px rgba(143, 191, 211, 0.20)'
               }}
               onMouseLeave={e => {
                 e.currentTarget.style.color = 'var(--color-text-tertiary)'
                 e.currentTarget.style.borderColor = 'var(--color-border)'
+                e.currentTarget.style.background = 'rgba(8, 12, 18, 0.55)'
+                e.currentTarget.style.boxShadow = 'none'
               }}
             >
-              ↻ reabrir
+              ↻ REABRIR
             </button>
           )}
         </div>
@@ -176,12 +209,8 @@ export function RunnableControls({ runnableType, id, sessions, activeSession, on
             <span
               onClick={() => canShowHistory && setShowHistory(true)}
               title={canShowHistory ? 'ver histórico' : undefined}
-              style={{
-                fontSize: 10, color: 'var(--color-text-tertiary)', fontFamily: 'var(--font-mono)',
-                cursor: canShowHistory ? 'pointer' : 'default',
-                transition: 'color 0.15s',
-              }}
-              onMouseEnter={e => { if (canShowHistory) e.currentTarget.style.color = 'var(--color-text-primary)' }}
+              style={timerStyle('var(--color-text-tertiary)')}
+              onMouseEnter={e => { if (canShowHistory) e.currentTarget.style.color = 'var(--color-ice-light)' }}
               onMouseLeave={e => { e.currentTarget.style.color = 'var(--color-text-tertiary)' }}
             >
               {formatHMS(displaySec)}
@@ -191,23 +220,23 @@ export function RunnableControls({ runnableType, id, sessions, activeSession, on
             onClick={handlePlay}
             title="iniciar sessão"
             style={{
-              background: 'none', border: '1px solid var(--color-border)', cursor: 'pointer',
-              color: 'var(--color-text-tertiary)', padding: '4px 8px', fontSize: 10,
-              borderRadius: 3, letterSpacing: '0.1em', textTransform: 'uppercase',
-              display: 'inline-flex', alignItems: 'center', gap: 4,
-              transition: 'color 0.15s, border-color 0.15s',
+              ...cyberBtnBase,
+              background: 'rgba(143, 191, 211, 0.10)',
+              border: '1px solid rgba(143, 191, 211, 0.45)',
+              color: 'var(--color-ice-light)',
+              boxShadow: '0 0 10px rgba(143, 191, 211, 0.15)',
             }}
             onMouseEnter={e => {
-              e.currentTarget.style.color = 'var(--color-accent-light)'
-              e.currentTarget.style.borderColor = 'var(--color-accent-light)'
+              e.currentTarget.style.background = 'rgba(143, 191, 211, 0.20)'
+              e.currentTarget.style.boxShadow = '0 0 16px rgba(143, 191, 211, 0.40)'
             }}
             onMouseLeave={e => {
-              e.currentTarget.style.color = 'var(--color-text-tertiary)'
-              e.currentTarget.style.borderColor = 'var(--color-border)'
+              e.currentTarget.style.background = 'rgba(143, 191, 211, 0.10)'
+              e.currentTarget.style.boxShadow = '0 0 10px rgba(143, 191, 211, 0.15)'
             }}
           >
             <Play size={9} strokeWidth={2} fill="currentColor" />
-            play
+            PLAY
           </button>
         </div>
         {showHistory && <SessionHistoryModal sessions={sessions} kind={runnableType} onChanged={onSessionUpdate} onClose={() => setShowHistory(false)} />}
@@ -215,49 +244,90 @@ export function RunnableControls({ runnableType, id, sessions, activeSession, on
     )
   }
 
+  // Estado: este item é a sessão ativa (running ou paused).
   return (
     <>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
         <span
           onClick={() => canShowHistory && setShowHistory(true)}
           title={canShowHistory ? 'ver histórico' : undefined}
-          style={{
-            fontSize: 12, fontWeight: 700,
-            color: running ? 'var(--color-accent-primary)' : 'var(--color-text-tertiary)',
-            fontFamily: 'var(--font-mono)',
-            cursor: canShowHistory ? 'pointer' : 'default',
-            transition: 'color 0.15s',
-          }}
+          style={timerStyle(
+            running ? 'var(--color-ice-light)' : 'var(--color-text-secondary)',
+            running, // glow só quando rodando
+          )}
           onMouseEnter={e => { if (canShowHistory) e.currentTarget.style.color = 'var(--color-text-primary)' }}
           onMouseLeave={e => {
-            e.currentTarget.style.color = running ? 'var(--color-accent-primary)' : 'var(--color-text-tertiary)'
+            e.currentTarget.style.color = running ? 'var(--color-ice-light)' : 'var(--color-text-secondary)'
           }}
         >
           {formatHMS(displaySec)}
         </span>
-        <button
-          onClick={running ? handlePause : handleResume}
-          title={running ? 'pausar' : 'retomar'}
-          style={{
-            background: running ? 'var(--color-accent-primary)' : 'var(--color-success)',
-            border: 'none', cursor: 'pointer',
-            color: 'var(--color-bg-primary)', padding: '4px 10px', fontSize: 10,
-            borderRadius: 3, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase',
-          }}
-        >
-          {running ? 'pausar' : 'retomar'}
-        </button>
+        {running ? (
+          <button
+            onClick={handlePause}
+            title="pausar"
+            style={{
+              ...cyberBtnBase,
+              background: 'rgba(159, 18, 57, 0.14)',
+              border: '1px solid var(--color-accent-primary)',
+              color: 'var(--color-accent-light)',
+              boxShadow: '0 0 12px rgba(159, 18, 57, 0.22)',
+            }}
+            onMouseEnter={e => {
+              e.currentTarget.style.background = 'rgba(159, 18, 57, 0.22)'
+              e.currentTarget.style.boxShadow = '0 0 16px rgba(159, 18, 57, 0.40)'
+            }}
+            onMouseLeave={e => {
+              e.currentTarget.style.background = 'rgba(159, 18, 57, 0.14)'
+              e.currentTarget.style.boxShadow = '0 0 12px rgba(159, 18, 57, 0.22)'
+            }}
+          >
+            ❚❚ PAUSAR
+          </button>
+        ) : (
+          <button
+            onClick={handleResume}
+            title="retomar"
+            style={{
+              ...cyberBtnBase,
+              background: 'rgba(143, 191, 211, 0.10)',
+              border: '1px solid rgba(143, 191, 211, 0.45)',
+              color: 'var(--color-ice-light)',
+              boxShadow: '0 0 10px rgba(143, 191, 211, 0.15)',
+            }}
+            onMouseEnter={e => {
+              e.currentTarget.style.background = 'rgba(143, 191, 211, 0.20)'
+              e.currentTarget.style.boxShadow = '0 0 16px rgba(143, 191, 211, 0.40)'
+            }}
+            onMouseLeave={e => {
+              e.currentTarget.style.background = 'rgba(143, 191, 211, 0.10)'
+              e.currentTarget.style.boxShadow = '0 0 10px rgba(143, 191, 211, 0.15)'
+            }}
+          >
+            <Play size={9} strokeWidth={2} fill="currentColor" />
+            RETOMAR
+          </button>
+        )}
         <button
           onClick={handleStop}
           title={runnableType === 'task' ? 'finalizar tarefa' : runnableType === 'routine' ? 'marcar feita hoje' : 'finalizar quest'}
           style={{
-            background: 'none', border: '1px solid var(--color-success)',
-            color: 'var(--color-success)', cursor: 'pointer',
-            padding: '4px 10px', fontSize: 10,
-            borderRadius: 3, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase',
+            ...cyberBtnBase,
+            background: 'rgba(94, 122, 82, 0.14)',
+            border: '1px solid var(--color-success)',
+            color: 'var(--color-success-light)',
+            boxShadow: '0 0 10px rgba(94, 122, 82, 0.18)',
+          }}
+          onMouseEnter={e => {
+            e.currentTarget.style.background = 'rgba(94, 122, 82, 0.22)'
+            e.currentTarget.style.boxShadow = '0 0 16px rgba(94, 122, 82, 0.40)'
+          }}
+          onMouseLeave={e => {
+            e.currentTarget.style.background = 'rgba(94, 122, 82, 0.14)'
+            e.currentTarget.style.boxShadow = '0 0 10px rgba(94, 122, 82, 0.18)'
           }}
         >
-          finalizar
+          ✓ FINALIZAR
         </button>
       </div>
       {showHistory && <SessionHistoryModal sessions={sessions} kind={runnableType} onChanged={onSessionUpdate} onClose={() => setShowHistory(false)} />}

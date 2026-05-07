@@ -16,6 +16,7 @@ import {
   modalShell, modalHairline, modalHeader, modalBody,
   formatMoney, parseBRL, sanitizeMoneyInput,
 } from './styleHelpers'
+import { alertDialog } from '../../../lib/dialog'
 
 const TOL = 0.01  // tolerância pra arredondamento
 
@@ -52,7 +53,7 @@ export function ReconciliationModal({ account, onClose, onSaved }: {
       onSaved()
     } catch (err) {
       reportApiError('ReconciliationModal.adjustment', err)
-      alert('Erro ao criar ajuste — veja o console.')
+      alertDialog({ title: 'Erro', message: 'Erro ao criar ajuste — veja o console.', variant: 'danger' })
       setBusy(false)
     }
   }

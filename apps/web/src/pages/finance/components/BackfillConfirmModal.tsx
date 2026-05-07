@@ -13,6 +13,7 @@ import {
   sectionLabel, primaryButton, ghostButton, modalOverlay,
   modalShell, modalHairline, modalHeader, modalBody,
 } from './styleHelpers'
+import { alertDialog } from '../../../lib/dialog'
 
 export function BackfillConfirmModal({
   ruleId, pattern, categoryName, preview, onClose, onApplied,
@@ -35,7 +36,7 @@ export function BackfillConfirmModal({
       onApplied(updated)
     } catch (err) {
       reportApiError('BackfillConfirmModal.apply', err)
-      alert('Erro ao aplicar — veja o console.')
+      alertDialog({ title: 'Erro', message: 'Erro ao aplicar — veja o console.', variant: 'danger' })
       setBusy(false)
     }
   }

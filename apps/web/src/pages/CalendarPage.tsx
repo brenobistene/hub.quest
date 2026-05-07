@@ -8,6 +8,7 @@ import { SessionHistoryModal } from '../components/SessionHistoryModal'
 import type { UnproductiveBlock } from '../utils/blocks'
 import { getAllBlockRangesForDay } from '../utils/blocks'
 import { Card } from '../components/ui/Primitives'
+import { alertDialog } from '../lib/dialog'
 
 const MONTH_NAMES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
                      'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro']
@@ -341,16 +342,8 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger, on
             {viewMode === 'dia' ? 'VISÃO DO DIA' : viewMode === 'semana' ? 'VISÃO DA SEMANA' : viewMode === 'mês' ? 'VISÃO DO MÊS' : 'VISÃO DO ANO'}
           </div>
         </div>
-        {/* Mode tabs — segmented control glass */}
-        <div
-          className="hq-glass"
-          style={{
-            display: 'inline-flex',
-            padding: 3,
-            borderRadius: 'var(--radius-pill)',
-            gap: 2,
-          }}
-        >
+        {/* Mode tabs — pills cyber chamfered (igual filtros Hub Finance) */}
+        <div style={{ display: 'flex', gap: 4 }}>
           {(['dia', 'semana', 'mês', 'ano'] as const).map((mode) => {
             const active = viewMode === mode
             return (
@@ -358,19 +351,18 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger, on
                 key={mode}
                 onClick={() => setViewMode(mode)}
                 style={{
-                  background: active ? 'var(--chrome-grad)' : 'transparent',
-                  border: 'none',
+                  background: active ? 'rgba(143, 191, 211, 0.10)' : 'rgba(8, 12, 18, 0.55)',
+                  border: `1px solid ${active ? 'rgba(143, 191, 211, 0.45)' : 'var(--color-border)'}`,
                   cursor: 'pointer',
-                  color: active ? '#1a1a1c' : 'var(--color-text-tertiary)',
-                  fontSize: 'var(--text-xs)',
-                  fontWeight: active ? 700 : 500,
-                  padding: '6px 14px',
-                  borderRadius: 'var(--radius-pill)',
-                  letterSpacing: '0.04em',
-                  textTransform: 'lowercase',
-                  fontFamily: 'var(--font-body)',
-                  boxShadow: active ? 'var(--shadow-chrome-inner)' : 'none',
-                  transition: 'background var(--motion-fast) var(--ease-smooth), color var(--motion-fast) var(--ease-smooth)',
+                  color: active ? 'var(--color-ice-light)' : 'var(--color-text-tertiary)',
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: 9, fontWeight: 700,
+                  padding: '6px 12px',
+                  letterSpacing: '0.22em', textTransform: 'uppercase',
+                  borderRadius: 0,
+                  clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 5px), calc(100% - 5px) 100%, 0 100%)',
+                  transition: 'all 0.15s',
+                  boxShadow: active ? '0 0 12px rgba(143, 191, 211, 0.18)' : 'none',
                 }}
               >
                 {mode}
@@ -384,24 +376,39 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger, on
 
       {viewMode === 'dia' && (
         <div>
-          {/* Day nav — chevron icons + glass "hoje" button */}
+          {/* Day nav — chevron icons cyber + // DATE label + HOJE button */}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 'var(--space-3)', marginBottom: 'var(--space-6)' }}>
             <button
               type="button"
-              className="hq-icon-btn-bare"
+              className="hq-icon-btn"
               onClick={() => setCurrentDate(new Date(currentDate.getTime() - 86400000))}
               title="Dia anterior"
               aria-label="Dia anterior"
+              style={{ minWidth: 32, minHeight: 32 }}
             >
-              <ChevronLeft size={16} strokeWidth={1.5} />
+              <ChevronLeft size={14} strokeWidth={1.8} />
             </button>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 'var(--space-3)',
+              padding: '6px 16px',
+              background: 'rgba(8, 12, 18, 0.55)',
+              border: '1px solid var(--color-ice-deep)',
+              clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%)',
+            }}>
+              <span style={{
+                fontFamily: 'var(--font-mono)',
+                fontSize: 9, fontWeight: 700,
+                color: 'var(--color-ice)',
+                letterSpacing: '0.22em', textTransform: 'uppercase',
+                marginRight: 4,
+              }}>//</span>
               <div style={{
-                fontSize: 'var(--text-md)',
-                color: 'var(--color-text-primary)',
-                fontWeight: 500,
                 fontFamily: 'var(--font-display)',
-                letterSpacing: '-0.01em',
+                fontSize: 13,
+                color: 'var(--color-ice-light)',
+                fontWeight: 600,
+                letterSpacing: '0.03em',
+                textTransform: 'uppercase',
                 minWidth: 220,
                 textAlign: 'center',
               }}>
@@ -409,56 +416,81 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger, on
               </div>
               <button
                 type="button"
-                className="hq-btn hq-btn--ghost"
                 onClick={() => setCurrentDate(new Date())}
-                style={{ padding: '4px 12px', fontSize: 'var(--text-xs)' }}
+                style={{
+                  background: 'rgba(143, 191, 211, 0.14)',
+                  border: '1px solid var(--color-ice)',
+                  cursor: 'pointer',
+                  color: 'var(--color-ice-light)',
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: 9, fontWeight: 700,
+                  padding: '4px 10px',
+                  letterSpacing: '0.22em', textTransform: 'uppercase',
+                  borderRadius: 0,
+                  clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 5px), calc(100% - 5px) 100%, 0 100%)',
+                  boxShadow: '0 0 10px rgba(143, 191, 211, 0.22)',
+                  transition: 'all 0.15s',
+                }}
+                onMouseEnter={e => {
+                  e.currentTarget.style.background = 'rgba(143, 191, 211, 0.22)'
+                  e.currentTarget.style.boxShadow = '0 0 14px rgba(143, 191, 211, 0.45)'
+                }}
+                onMouseLeave={e => {
+                  e.currentTarget.style.background = 'rgba(143, 191, 211, 0.14)'
+                  e.currentTarget.style.boxShadow = '0 0 10px rgba(143, 191, 211, 0.22)'
+                }}
               >
-                hoje
+                HOJE
               </button>
             </div>
             <button
               type="button"
-              className="hq-icon-btn-bare"
+              className="hq-icon-btn"
               onClick={() => setCurrentDate(new Date(currentDate.getTime() + 86400000))}
               title="Próximo dia"
               aria-label="Próximo dia"
+              style={{ minWidth: 32, minHeight: 32 }}
             >
-              <ChevronRight size={16} strokeWidth={1.5} />
+              <ChevronRight size={14} strokeWidth={1.8} />
             </button>
           </div>
 
-          {/* Legend — pills compactos */}
+          {/* Legend — chips cyber chamfered */}
           <div style={{
             display: 'flex',
-            gap: 'var(--space-2)',
+            gap: 6,
             marginBottom: 'var(--space-4)',
             flexWrap: 'wrap',
           }}>
             {[
-              { label: 'Quests', color: 'var(--color-accent-light)' },
-              { label: 'Tarefas', color: 'var(--color-gold)' },
-              { label: 'Rotinas', color: 'var(--color-routine-block-border)' },
-              { label: 'Improdutivo', color: 'var(--color-text-muted)' },
+              { label: 'QST', name: 'QUESTS', color: 'var(--color-ice)' },
+              { label: 'TSK', name: 'TAREFAS', color: 'var(--color-warning)' },
+              { label: 'RTN', name: 'ROTINAS', color: 'var(--color-success)' },
+              { label: 'IMP', name: 'IMPRODUTIVO', color: 'var(--color-text-muted)' },
             ].map(item => (
               <div
                 key={item.label}
                 style={{
                   display: 'inline-flex', alignItems: 'center', gap: 6,
-                  fontSize: 'var(--text-xs)',
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: 9, fontWeight: 700,
                   color: 'var(--color-text-tertiary)',
+                  letterSpacing: '0.18em', textTransform: 'uppercase',
                   padding: '4px 10px',
-                  background: 'var(--glass-bg)',
+                  background: 'rgba(8, 12, 18, 0.55)',
                   border: '1px solid var(--color-border)',
-                  borderRadius: 'var(--radius-pill)',
+                  borderRadius: 0,
+                  clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 5px), calc(100% - 5px) 100%, 0 100%)',
                 }}
               >
                 <div style={{
-                  width: 8, height: 8,
+                  width: 6, height: 6,
                   background: item.color,
-                  borderRadius: '50%',
                   flexShrink: 0,
+                  boxShadow: `0 0 4px ${item.color}`,
                 }} />
-                {item.label}
+                <span style={{ color: item.color }}>{item.label}</span>
+                <span style={{ opacity: 0.7 }}>{item.name}</span>
               </div>
             ))}
           </div>
@@ -469,39 +501,47 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger, on
               if (!dayProjects.length) return null
               return (
                 <div
-                  className="hq-glass"
                   style={{
                     position: 'sticky', top: 0, zIndex: 10,
-                    padding: 'var(--space-2) var(--space-3)',
-                    marginBottom: 'var(--space-2)',
-                    display: 'flex', gap: 'var(--space-2)',
+                    padding: '8px 12px',
+                    marginBottom: 8,
+                    background: 'rgba(8, 12, 18, 0.85)',
+                    backdropFilter: 'blur(16px) saturate(140%)',
+                    WebkitBackdropFilter: 'blur(16px) saturate(140%)',
+                    border: '1px solid var(--color-ice-deep)',
+                    clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%)',
+                    display: 'flex', gap: 8,
                     flexWrap: 'wrap', alignItems: 'center',
                   }}
                 >
                   <span style={{
-                    fontSize: 'var(--text-xs)',
-                    color: 'var(--color-text-tertiary)',
-                    letterSpacing: '0.12em',
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: 9, fontWeight: 700,
+                    color: 'var(--color-ice-light)',
+                    letterSpacing: '0.22em',
                     textTransform: 'uppercase',
-                    fontWeight: 600,
-                    marginRight: 'var(--space-2)',
+                    marginRight: 6,
                   }}>
-                    deadlines hoje
+                    <span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
+                    DEADLINES HOJE
                   </span>
                   {dayProjects.map(q => (
                     <span
                       key={q.id}
                       style={{
                         display: 'inline-flex', alignItems: 'center', gap: 6,
-                        fontSize: 'var(--text-xs)',
+                        fontFamily: 'var(--font-display)',
+                        fontSize: 11, fontWeight: 600,
                         color: 'var(--color-text-primary)',
-                        background: 'var(--glass-bg-elevated)',
-                        border: '1px solid var(--color-border-chrome)',
-                        borderRadius: 'var(--radius-pill)',
+                        letterSpacing: '0.03em',
+                        textTransform: 'uppercase',
+                        background: 'rgba(143, 191, 211, 0.08)',
+                        border: '1px solid rgba(143, 191, 211, 0.30)',
+                        clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 5px), calc(100% - 5px) 100%, 0 100%)',
                         padding: '4px 10px',
                       }}
                     >
-                      <Target size={11} strokeWidth={1.6} style={{ color: 'var(--color-accent-light)' }} />
+                      <Target size={11} strokeWidth={1.8} style={{ color: 'var(--color-ice-light)' }} />
                       {q.title}
                     </span>
                   ))}
@@ -522,7 +562,7 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger, on
               }}
               style={{ display: 'flex', gap: 0 }}
             >
-              <div style={{ width: 50, flexShrink: 0, paddingTop: 20 }}>
+              <div style={{ width: 56, flexShrink: 0, paddingTop: 20 }}>
                 {Array.from({ length: 24 }).map((_, hour) => (
                   <div
                     key={hour}
@@ -532,32 +572,35 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger, on
                       display: 'flex',
                       alignItems: 'flex-start',
                       justifyContent: 'flex-end',
-                      paddingRight: 8,
-                      fontSize: 10,
-                      color: 'var(--color-text-muted)',
-                      borderBottom: '1px solid var(--color-border)',
+                      paddingRight: 10,
+                      fontFamily: 'var(--font-mono)',
+                      fontSize: 9, fontWeight: 700,
+                      color: 'var(--color-ice-light)',
+                      letterSpacing: '0.08em',
+                      borderBottom: '1px solid var(--color-ice-deep)',
                     }}
                   >
                     {String(hour).padStart(2, '0')}:00
-                    {/* Marca de :30 — só aparece com zoom suficiente pra caber
-                        sem colidir com o rótulo da hora. */}
+                    {/* Marca de :30 — só aparece com zoom suficiente. */}
                     {timelineZoom >= 1 && (
                       <span style={{
                         position: 'absolute',
-                        top: '50%', right: 8,
+                        top: '50%', right: 10,
                         transform: 'translateY(-50%)',
-                        fontSize: 9,
-                        color: 'var(--color-text-tertiary)',
-                        opacity: 0.55,
+                        fontFamily: 'var(--font-mono)',
+                        fontSize: 8, fontWeight: 600,
+                        color: 'var(--color-text-muted)',
+                        letterSpacing: '0.05em',
+                        opacity: 0.65,
                       }}>
-                        {String(hour).padStart(2, '0')}:30
+                        :30
                       </span>
                     )}
                   </div>
                 ))}
               </div>
 
-              <div style={{ flex: 1, position: 'relative', borderLeft: '1px solid var(--color-border)', paddingTop: 20 }}>
+              <div style={{ flex: 1, position: 'relative', borderLeft: '1px solid var(--color-ice-deep)', paddingTop: 20 }}>
                 {Array.from({ length: 24 }).map((_, hour) => (
                   <div
                     key={hour}
@@ -585,29 +628,27 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger, on
                     }}
                     style={{
                       height: 60 * timelineZoom,
-                      borderBottom: '1px solid var(--color-divider)',
+                      borderBottom: '1px solid rgba(143, 191, 211, 0.12)',
                       position: 'relative',
                       cursor: 'pointer',
                       transition: 'background-color 0.2s',
                     }}
                     onMouseEnter={(e) => {
-                      e.currentTarget.style.backgroundColor = 'var(--glass-bg-hover)'
+                      e.currentTarget.style.backgroundColor = 'rgba(143, 191, 211, 0.05)'
                     }}
                     onMouseLeave={(e) => {
                       e.currentTarget.style.backgroundColor = 'transparent'
                     }}
                   >
-                    {/* Marca visual de :30 no timeline — linha tracejada sutil
-                        pra bater com o rótulo :30 da coluna de horas. Só
-                        aparece com zoom suficiente. */}
+                    {/* Marca visual de :30 no timeline — linha tracejada ice. */}
                     {timelineZoom >= 1 && (
                       <div
                         aria-hidden
                         style={{
                           position: 'absolute',
                           top: '50%', left: 0, right: 0,
-                          borderTop: '1px dashed var(--color-divider)',
-                          opacity: 0.45,
+                          borderTop: '1px dashed rgba(143, 191, 211, 0.12)',
+                          opacity: 0.6,
                           pointerEvents: 'none',
                         }}
                       />
@@ -622,29 +663,47 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger, on
                       top: `${20 + (currentTime.getHours() + currentTime.getMinutes() / 60) * 60 * timelineZoom}px`,
                       left: 0, right: 0,
                       height: 1,
-                      background: 'linear-gradient(90deg, var(--color-accent-primary), var(--color-accent-light) 50%, transparent)',
-                      boxShadow: '0 0 12px rgba(159, 18, 57, 0.45)',
+                      background: 'linear-gradient(90deg, var(--color-ice), var(--color-ice-light) 50%, transparent)',
+                      boxShadow: '0 0 14px rgba(143, 191, 211, 0.55), 0 0 4px rgba(143, 191, 211, 0.85)',
                       zIndex: 100,
                       pointerEvents: 'none',
                     }}
                   >
-                    {/* Dot vivo no início da linha */}
+                    {/* Square ice pulsante no início da linha (HUD vibe) */}
                     <div
-                      className="hq-pulse-dot"
                       style={{
                         position: 'absolute',
-                        left: -5, top: -4,
+                        left: -6, top: -4,
                         width: 9, height: 9,
+                        background: 'var(--color-ice)',
+                        boxShadow: '0 0 10px var(--color-ice-glow), inset 0 0 0 1px rgba(255, 255, 255, 0.20)',
                       }}
                     />
+                    {/* Label HH:MM em mono */}
+                    <div
+                      style={{
+                        position: 'absolute',
+                        left: 12, top: -7,
+                        fontFamily: 'var(--font-mono)',
+                        fontSize: 9, fontWeight: 700,
+                        color: 'var(--color-ice-light)',
+                        letterSpacing: '0.12em',
+                        textShadow: '0 0 6px rgba(143, 191, 211, 0.55)',
+                        background: 'rgba(8, 12, 18, 0.85)',
+                        padding: '2px 6px',
+                        clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 4px), calc(100% - 4px) 100%, 0 100%)',
+                      }}
+                    >
+                      {String(currentTime.getHours()).padStart(2, '0')}:{String(currentTime.getMinutes()).padStart(2, '0')}
+                    </div>
                   </div>
                 )}
 
                 {getAllBlockRangesForDay(unproductiveBlocks, currentDate).map((r, idx) => {
                   const topPercent = 20 + r.start * 60 * timelineZoom
                   const heightPercent = (r.end - r.start) * 60 * timelineZoom
-                  const bgColor = r.block.title.toLowerCase().includes('dorm') ? 'rgba(75, 85, 102, 0.3)' : 'rgba(107, 100, 96, 0.25)'
-
+                  // Blocos improdutivos: bg dark + diagonal stripes ice deep
+                  // sutis (vibe "área desativada HUD")
                   return (
                     <div
                       key={`unproductive-${r.block.id}-${idx}`}
@@ -660,30 +719,31 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger, on
                         right: '0',
                         top: `${topPercent}px`,
                         height: `${Math.max(20, heightPercent)}px`,
-                        background: bgColor,
-                        borderLeft: `2px solid var(--color-text-muted)`,
+                        background: `repeating-linear-gradient(135deg, rgba(40, 50, 57, 0.55) 0, rgba(40, 50, 57, 0.55) 6px, rgba(28, 38, 48, 0.7) 6px, rgba(28, 38, 48, 0.7) 12px)`,
+                        borderLeft: '2px solid var(--color-text-muted)',
                         zIndex: 1,
                         cursor: 'pointer',
                         transition: 'all 0.2s',
                       }}
                       onMouseEnter={(e) => {
-                        e.currentTarget.style.background = bgColor.replace('0.3', '0.5').replace('0.25', '0.4')
-                        e.currentTarget.style.borderLeft = '2px solid var(--color-accent-light)'
+                        e.currentTarget.style.borderLeft = '2px solid var(--color-ice)'
+                        e.currentTarget.style.boxShadow = 'inset 0 0 0 1px rgba(143, 191, 211, 0.30)'
                       }}
                       onMouseLeave={(e) => {
-                        e.currentTarget.style.background = bgColor
                         e.currentTarget.style.borderLeft = '2px solid var(--color-text-muted)'
+                        e.currentTarget.style.boxShadow = 'none'
                       }}
                       title={`${r.block.title} - Clique para editar`}
                     >
                       {heightPercent > 20 && (
                         <div style={{
-                          fontSize: 8,
+                          fontFamily: 'var(--font-mono)',
+                          fontSize: 8, fontWeight: 700,
                           color: 'var(--color-text-muted)',
-                          padding: '2px 4px',
-                          fontStyle: 'italic',
-                          opacity: 0.6,
+                          letterSpacing: '0.18em', textTransform: 'uppercase',
+                          padding: '3px 6px',
                         }}>
+                          <span style={{ color: 'var(--color-text-tertiary)', marginRight: 4 }}>//</span>
                           {r.block.title}
                         </div>
                       )}
@@ -765,40 +825,56 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger, on
                             width: lane.width,
                             top: `${topPercent}px`,
                             height: `${heightPercent}px`,
-                            background: getAreaColor(quest.area_slug, areas),
-                            borderRadius: 3,
-                            padding: isShort ? '0' : '4px',
+                            background: `linear-gradient(135deg, ${getAreaColor(quest.area_slug, areas)}cc, ${getAreaColor(quest.area_slug, areas)}88)`,
+                            borderRadius: 0,
+                            padding: isShort ? '0' : '4px 6px',
                             overflow: 'hidden',
                             display: 'flex',
                             flexDirection: 'column',
                             justifyContent: 'space-between',
                             cursor: 'pointer',
-                            opacity: 0.85,
-                            transition: 'opacity 0.15s, box-shadow 0.15s',
-                            boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
-                            border: '1px solid rgba(255,255,255,0.2)',
-                            // Cross-midnight: tira borda do lado da continuação
-                            // (visual indica que o bloco "continua" no outro dia)
-                            borderTopLeftRadius: seg.crossesIn ? 0 : 3,
-                            borderTopRightRadius: seg.crossesIn ? 0 : 3,
-                            borderBottomLeftRadius: seg.crossesOut ? 0 : 3,
-                            borderBottomRightRadius: seg.crossesOut ? 0 : 3,
+                            opacity: 0.95,
+                            transition: 'opacity 0.15s, box-shadow 0.15s, filter 0.15s',
+                            boxShadow: `inset 0 0 0 1px rgba(255, 255, 255, 0.18), 0 0 8px ${getAreaColor(quest.area_slug, areas)}55`,
+                            borderLeft: `2px solid ${getAreaColor(quest.area_slug, areas)}`,
+                            // Chamfer top-right ou bottom-left dependendo se cruza meia-noite
+                            clipPath: seg.crossesIn || seg.crossesOut
+                              ? undefined
+                              : 'polygon(0 0, calc(100% - 6px) 0, 100% 6px, 100% 100%, 6px 100%, 0 calc(100% - 6px))',
                           }}
                           onMouseEnter={e => {
                             e.currentTarget.style.opacity = '1'
-                            e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.5)'
+                            e.currentTarget.style.filter = 'brightness(1.15)'
+                            e.currentTarget.style.boxShadow = `inset 0 0 0 1px rgba(255, 255, 255, 0.30), 0 0 14px ${getAreaColor(quest.area_slug, areas)}aa`
                           }}
                           onMouseLeave={e => {
-                            e.currentTarget.style.opacity = '0.85'
-                            e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.3)'
+                            e.currentTarget.style.opacity = '0.95'
+                            e.currentTarget.style.filter = 'brightness(1)'
+                            e.currentTarget.style.boxShadow = `inset 0 0 0 1px rgba(255, 255, 255, 0.18), 0 0 8px ${getAreaColor(quest.area_slug, areas)}55`
                           }}
                         >
                           {!isShort && (
                             <>
-                              <div style={{ fontSize: 9, color: '#fff', fontWeight: 600, lineHeight: 1.2, wordBreak: 'break-word' }}>
+                              <div style={{
+                                fontFamily: 'var(--font-display)',
+                                fontSize: 10, fontWeight: 600,
+                                color: '#fff',
+                                letterSpacing: '0.03em',
+                                textTransform: 'uppercase',
+                                lineHeight: 1.2,
+                                wordBreak: 'break-word',
+                                textShadow: '0 1px 2px rgba(0, 0, 0, 0.5)',
+                              }}>
                                 {displayTitle.substring(0, 35)}
                               </div>
-                              <div style={{ fontSize: 8, color: 'rgba(255,255,255,0.9)', marginTop: 2 }}>
+                              <div style={{
+                                fontFamily: 'var(--font-mono)',
+                                fontSize: 8, fontWeight: 700,
+                                color: 'rgba(255, 255, 255, 0.92)',
+                                letterSpacing: '0.08em',
+                                marginTop: 2,
+                                textShadow: '0 1px 2px rgba(0, 0, 0, 0.5)',
+                              }}>
                                 {timeLabel}
                               </div>
                             </>
@@ -873,25 +949,54 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger, on
                           style={{
                             position: 'absolute', left: lane.left, width: lane.width,
                             top: `${topPercent}px`, height: `${heightPercent}px`,
-                            background: 'var(--color-gold)',
-                            border: running ? '1px dashed #fff' : '1px solid rgba(255,255,255,0.2)',
-                            borderTopLeftRadius: seg.crossesIn ? 0 : 3,
-                            borderTopRightRadius: seg.crossesIn ? 0 : 3,
-                            borderBottomLeftRadius: seg.crossesOut ? 0 : 3,
-                            borderBottomRightRadius: seg.crossesOut ? 0 : 3,
-                            padding: isShort ? '0' : '4px',
+                            background: `linear-gradient(135deg, var(--color-warning) 0%, rgba(192, 138, 58, 0.65) 100%)`,
+                            border: running ? '1px dashed var(--color-ice-light)' : '1px solid rgba(255, 255, 255, 0.18)',
+                            borderLeft: '2px solid var(--color-warning)',
+                            borderRadius: 0,
+                            clipPath: seg.crossesIn || seg.crossesOut
+                              ? undefined
+                              : 'polygon(0 0, calc(100% - 6px) 0, 100% 6px, 100% 100%, 6px 100%, 0 calc(100% - 6px))',
+                            padding: isShort ? '0' : '4px 6px',
                             overflow: 'hidden',
                             display: 'flex', flexDirection: 'column', justifyContent: 'space-between',
-                            opacity: 0.85,
-                            boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+                            opacity: 0.95,
+                            cursor: 'pointer',
+                            boxShadow: running
+                              ? 'inset 0 0 0 1px rgba(143, 191, 211, 0.35), 0 0 14px rgba(143, 191, 211, 0.30)'
+                              : 'inset 0 0 0 1px rgba(255, 255, 255, 0.18), 0 0 8px rgba(192, 138, 58, 0.55)',
+                            transition: 'opacity 0.15s, filter 0.15s, box-shadow 0.15s',
+                          }}
+                          onMouseEnter={e => {
+                            e.currentTarget.style.opacity = '1'
+                            e.currentTarget.style.filter = 'brightness(1.15)'
+                          }}
+                          onMouseLeave={e => {
+                            e.currentTarget.style.opacity = '0.95'
+                            e.currentTarget.style.filter = 'brightness(1)'
                           }}
                         >
                           {!isShort && (
                             <>
-                              <div style={{ fontSize: 9, color: '#fff', fontWeight: 600, lineHeight: 1.2 }}>
+                              <div style={{
+                                fontFamily: 'var(--font-display)',
+                                fontSize: 10, fontWeight: 600,
+                                color: '#fff',
+                                letterSpacing: '0.03em',
+                                textTransform: 'uppercase',
+                                lineHeight: 1.2,
+                                textShadow: '0 1px 2px rgba(0, 0, 0, 0.5)',
+                              }}>
+                                <span style={{ color: 'var(--color-bg-primary)', marginRight: 4, opacity: 0.7 }}>TSK</span>
                                 {task.title.substring(0, 35)}
                               </div>
-                              <div style={{ fontSize: 8, color: 'rgba(255,255,255,0.9)', marginTop: 2 }}>
+                              <div style={{
+                                fontFamily: 'var(--font-mono)',
+                                fontSize: 8, fontWeight: 700,
+                                color: 'rgba(255, 255, 255, 0.92)',
+                                letterSpacing: '0.08em',
+                                marginTop: 2,
+                                textShadow: '0 1px 2px rgba(0, 0, 0, 0.5)',
+                              }}>
                                 {timeLabel}
                               </div>
                             </>
@@ -966,25 +1071,54 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger, on
                           style={{
                             position: 'absolute', left: lane.left, width: lane.width,
                             top: `${topPercent}px`, height: `${heightPercent}px`,
-                            background: 'var(--color-routine-block)',
-                            border: running ? '1px dashed #fff' : '1px solid var(--color-routine-block-border)',
-                            borderTopLeftRadius: seg.crossesIn ? 0 : 3,
-                            borderTopRightRadius: seg.crossesIn ? 0 : 3,
-                            borderBottomLeftRadius: seg.crossesOut ? 0 : 3,
-                            borderBottomRightRadius: seg.crossesOut ? 0 : 3,
-                            padding: isShort ? '0' : '4px',
+                            background: `linear-gradient(135deg, var(--color-success) 0%, rgba(94, 122, 82, 0.55) 100%)`,
+                            border: running ? '1px dashed var(--color-ice-light)' : '1px solid rgba(255, 255, 255, 0.18)',
+                            borderLeft: '2px solid var(--color-success)',
+                            borderRadius: 0,
+                            clipPath: seg.crossesIn || seg.crossesOut
+                              ? undefined
+                              : 'polygon(0 0, calc(100% - 6px) 0, 100% 6px, 100% 100%, 6px 100%, 0 calc(100% - 6px))',
+                            padding: isShort ? '0' : '4px 6px',
                             overflow: 'hidden',
                             display: 'flex', flexDirection: 'column', justifyContent: 'space-between',
-                            opacity: 0.9,
-                            boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+                            opacity: 0.95,
+                            cursor: 'pointer',
+                            boxShadow: running
+                              ? 'inset 0 0 0 1px rgba(143, 191, 211, 0.35), 0 0 14px rgba(143, 191, 211, 0.30)'
+                              : 'inset 0 0 0 1px rgba(255, 255, 255, 0.18), 0 0 8px rgba(94, 122, 82, 0.55)',
+                            transition: 'opacity 0.15s, filter 0.15s',
+                          }}
+                          onMouseEnter={e => {
+                            e.currentTarget.style.opacity = '1'
+                            e.currentTarget.style.filter = 'brightness(1.15)'
+                          }}
+                          onMouseLeave={e => {
+                            e.currentTarget.style.opacity = '0.95'
+                            e.currentTarget.style.filter = 'brightness(1)'
                           }}
                         >
                           {!isShort && (
                             <>
-                              <div style={{ fontSize: 9, color: '#fff', fontWeight: 600, lineHeight: 1.2 }}>
+                              <div style={{
+                                fontFamily: 'var(--font-display)',
+                                fontSize: 10, fontWeight: 600,
+                                color: '#fff',
+                                letterSpacing: '0.03em',
+                                textTransform: 'uppercase',
+                                lineHeight: 1.2,
+                                textShadow: '0 1px 2px rgba(0, 0, 0, 0.5)',
+                              }}>
+                                <span style={{ opacity: 0.7, marginRight: 4 }}>RTN</span>
                                 {routine.title.substring(0, 35)}
                               </div>
-                              <div style={{ fontSize: 8, color: 'rgba(255,255,255,0.9)', marginTop: 2 }}>
+                              <div style={{
+                                fontFamily: 'var(--font-mono)',
+                                fontSize: 8, fontWeight: 700,
+                                color: 'rgba(255, 255, 255, 0.92)',
+                                letterSpacing: '0.08em',
+                                marginTop: 2,
+                                textShadow: '0 1px 2px rgba(0, 0, 0, 0.5)',
+                              }}>
                                 {timeLabel}
                               </div>
                             </>
@@ -1062,42 +1196,59 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger, on
                           width: lane.width,
                           top: `${topPercent}px`,
                           height: `${heightPercent}px`,
-                          background: 'var(--color-routine-block)',
-                          borderRadius: 3,
-                          border: '1px solid var(--color-routine-block-border)',
-                          padding: isShort ? '0' : '4px',
+                          background: routine.done
+                            ? 'rgba(40, 50, 57, 0.45)'
+                            : 'rgba(8, 12, 18, 0.55)',
+                          border: `1px dashed ${routine.done ? 'var(--color-text-muted)' : 'var(--color-success)'}`,
+                          borderLeft: `2px solid ${routine.done ? 'var(--color-text-muted)' : 'var(--color-success)'}`,
+                          borderRadius: 0,
+                          clipPath: 'polygon(0 0, calc(100% - 6px) 0, 100% 6px, 100% 100%, 6px 100%, 0 calc(100% - 6px))',
+                          padding: isShort ? '0' : '4px 6px',
                           overflow: 'hidden',
                           display: 'flex',
                           flexDirection: 'column',
                           justifyContent: 'space-between',
                           cursor: 'pointer',
-                          opacity: routine.done ? 0.5 : 0.85,
-                          transition: 'opacity 0.15s, box-shadow 0.15s',
-                          boxShadow: '0 2px 6px rgba(0,0,0,0.2)',
+                          opacity: routine.done ? 0.55 : 0.95,
+                          transition: 'opacity 0.15s, box-shadow 0.15s, background 0.15s',
+                          boxShadow: routine.done ? 'none' : '0 0 8px rgba(94, 122, 82, 0.30)',
                         }}
                         onMouseEnter={e => {
-                          e.currentTarget.style.opacity = routine.done ? '0.6' : '1'
-                          e.currentTarget.style.boxShadow = '0 4px 10px rgba(0,0,0,0.4)'
+                          if (routine.done) {
+                            e.currentTarget.style.opacity = '0.7'
+                          } else {
+                            e.currentTarget.style.background = 'rgba(94, 122, 82, 0.10)'
+                            e.currentTarget.style.boxShadow = '0 0 14px rgba(94, 122, 82, 0.50)'
+                          }
                         }}
                         onMouseLeave={e => {
-                          e.currentTarget.style.opacity = routine.done ? '0.5' : '0.85'
-                          e.currentTarget.style.boxShadow = '0 2px 6px rgba(0,0,0,0.2)'
+                          if (routine.done) {
+                            e.currentTarget.style.opacity = '0.55'
+                          } else {
+                            e.currentTarget.style.background = 'rgba(8, 12, 18, 0.55)'
+                            e.currentTarget.style.boxShadow = '0 0 8px rgba(94, 122, 82, 0.30)'
+                          }
                         }}
                       >
                         {!isShort && (
                           <>
                             <div style={{
-                              fontSize: 9,
-                              color: routine.done ? 'var(--color-text-secondary)' : 'var(--color-text-primary)',
-                              fontWeight: 500,
-                              lineHeight: 1,
+                              fontFamily: 'var(--font-display)',
+                              fontSize: 10, fontWeight: 600,
+                              color: routine.done ? 'var(--color-text-tertiary)' : 'var(--color-success-light)',
+                              letterSpacing: '0.03em',
+                              textTransform: 'uppercase',
+                              lineHeight: 1.2,
                               textDecoration: routine.done ? 'line-through' : 'none',
                             }}>
+                              <span style={{ color: routine.done ? 'var(--color-text-muted)' : 'var(--color-success)', marginRight: 4, opacity: 0.85 }}>RTN</span>
                               {routine.title.substring(0, 25)}
                             </div>
                             <div style={{
-                              fontSize: 7,
-                              color: routine.done ? 'var(--color-text-tertiary)' : 'var(--color-text-secondary)',
+                              fontFamily: 'var(--font-mono)',
+                              fontSize: 8, fontWeight: 700,
+                              color: routine.done ? 'var(--color-text-muted)' : 'var(--color-text-tertiary)',
+                              letterSpacing: '0.08em',
                               marginTop: 2,
                             }}>
                               {timeLabel}
@@ -1111,7 +1262,7 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger, on
                               if (confirm(`Excluir rotina "${routine.title}"?`)) {
                                 deleteRoutine(routine.id)
                                   .then(() => setRoutines(rs => rs.filter(r => r.id !== routine.id)))
-                                  .catch(() => alert('Erro ao excluir rotina'))
+                                  .catch(() => alertDialog({ title: 'Erro', message: 'Erro ao excluir rotina', variant: 'danger' }))
                               }
                             }}
                             style={{
@@ -1156,67 +1307,116 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger, on
         <div>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
             <button
+              type="button"
+              className="hq-icon-btn"
               onClick={() => setCurrentDate(new Date(currentDate.getTime() - 604800000))}
-              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-secondary)', fontSize: 18, padding: '4px 10px', lineHeight: 1, transition: 'color 0.2s' }}
-              onMouseEnter={e => (e.currentTarget.style.color = 'var(--color-text-primary)')}
-              onMouseLeave={e => (e.currentTarget.style.color = 'var(--color-text-secondary)')}
-            >←</button>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <div style={{ fontSize: 12, color: 'var(--color-text-primary)', fontWeight: 500 }}>
+              title="Semana anterior"
+              aria-label="Semana anterior"
+              style={{ minWidth: 32, minHeight: 32 }}
+            >
+              <ChevronLeft size={14} strokeWidth={1.8} />
+            </button>
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 12,
+              padding: '6px 16px',
+              background: 'rgba(8, 12, 18, 0.55)',
+              border: '1px solid var(--color-ice-deep)',
+              clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%)',
+            }}>
+              <span style={{
+                fontFamily: 'var(--font-mono)',
+                fontSize: 9, fontWeight: 700,
+                color: 'var(--color-ice)',
+                letterSpacing: '0.22em', textTransform: 'uppercase',
+                marginRight: 4,
+              }}>//</span>
+              <div style={{
+                fontFamily: 'var(--font-display)',
+                fontSize: 13,
+                color: 'var(--color-ice-light)',
+                fontWeight: 600,
+                letterSpacing: '0.03em',
+                textTransform: 'uppercase',
+              }}>
                 {fmtDay(weekStart)} – {fmtDay(weekEnd)}
               </div>
               <button
                 onClick={() => setCurrentDate(new Date())}
                 disabled={isCurrentWeek}
                 style={{
-                  background: 'none', border: '1px solid var(--color-border)',
+                  background: isCurrentWeek
+                    ? 'rgba(8, 12, 18, 0.55)'
+                    : 'rgba(143, 191, 211, 0.14)',
+                  border: `1px solid ${isCurrentWeek ? 'var(--color-border)' : 'var(--color-ice)'}`,
                   cursor: isCurrentWeek ? 'default' : 'pointer',
-                  color: isCurrentWeek ? 'var(--color-text-muted)' : 'var(--color-text-secondary)',
-                  fontSize: 10, padding: '4px 10px', lineHeight: 1,
-                  textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 600,
-                  borderRadius: 3, transition: 'all 0.2s',
+                  color: isCurrentWeek ? 'var(--color-text-muted)' : 'var(--color-ice-light)',
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: 9, fontWeight: 700,
+                  padding: '4px 10px',
+                  letterSpacing: '0.22em', textTransform: 'uppercase',
+                  borderRadius: 0,
+                  clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 5px), calc(100% - 5px) 100%, 0 100%)',
+                  boxShadow: isCurrentWeek ? 'none' : '0 0 10px rgba(143, 191, 211, 0.22)',
                   opacity: isCurrentWeek ? 0.5 : 1,
+                  transition: 'all 0.2s',
                 }}
                 onMouseEnter={e => {
                   if (isCurrentWeek) return
-                  e.currentTarget.style.borderColor = 'var(--color-accent-light)'
-                  e.currentTarget.style.color = 'var(--color-accent-light)'
+                  e.currentTarget.style.background = 'rgba(143, 191, 211, 0.22)'
+                  e.currentTarget.style.boxShadow = '0 0 14px rgba(143, 191, 211, 0.45)'
                 }}
                 onMouseLeave={e => {
                   if (isCurrentWeek) return
-                  e.currentTarget.style.borderColor = 'var(--color-border)'
-                  e.currentTarget.style.color = 'var(--color-text-secondary)'
+                  e.currentTarget.style.background = 'rgba(143, 191, 211, 0.14)'
+                  e.currentTarget.style.boxShadow = '0 0 10px rgba(143, 191, 211, 0.22)'
                 }}
-              >esta semana</button>
+              >ESTA SEMANA</button>
             </div>
             <button
+              type="button"
+              className="hq-icon-btn"
               onClick={() => setCurrentDate(new Date(currentDate.getTime() + 604800000))}
-              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-secondary)', fontSize: 18, padding: '4px 10px', lineHeight: 1, transition: 'color 0.2s' }}
-              onMouseEnter={e => (e.currentTarget.style.color = 'var(--color-text-primary)')}
-              onMouseLeave={e => (e.currentTarget.style.color = 'var(--color-text-secondary)')}
-            >→</button>
+              title="Próxima semana"
+              aria-label="Próxima semana"
+              style={{ minWidth: 32, minHeight: 32 }}
+            >
+              <ChevronRight size={14} strokeWidth={1.8} />
+            </button>
           </div>
 
+          {/* Legend cyber chamfered (igual day view) */}
           <div style={{
-            display: 'flex',
-            gap: 20,
-            marginBottom: 16,
-            padding: '12px 8px',
-            fontSize: 11,
-            color: 'var(--color-text-tertiary)',
+            display: 'flex', gap: 6, marginBottom: 16,
+            flexWrap: 'wrap',
           }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <div style={{ width: 16, height: 16, background: 'var(--color-routine-block)', borderRadius: 2 }} />
-              <span>Rotinas</span>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <div style={{ width: 16, height: 16, background: 'var(--color-accent-light)', borderRadius: 2 }} />
-              <span>Quests</span>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <div style={{ width: 16, height: 16, background: 'rgba(107, 100, 96, 0.3)', border: '1px solid var(--color-text-muted)', borderRadius: 2 }} />
-              <span>Improdutivo</span>
-            </div>
+            {[
+              { label: 'RTN', name: 'ROTINAS', color: 'var(--color-success)' },
+              { label: 'QST', name: 'QUESTS', color: 'var(--color-ice)' },
+              { label: 'IMP', name: 'IMPRODUTIVO', color: 'var(--color-text-muted)' },
+            ].map(item => (
+              <div
+                key={item.label}
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 6,
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: 9, fontWeight: 700,
+                  color: 'var(--color-text-tertiary)',
+                  letterSpacing: '0.18em', textTransform: 'uppercase',
+                  padding: '4px 10px',
+                  background: 'rgba(8, 12, 18, 0.55)',
+                  border: '1px solid var(--color-border)',
+                  clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 5px), calc(100% - 5px) 100%, 0 100%)',
+                }}
+              >
+                <div style={{
+                  width: 6, height: 6,
+                  background: item.color, flexShrink: 0,
+                  boxShadow: `0 0 4px ${item.color}`,
+                }} />
+                <span style={{ color: item.color }}>{item.label}</span>
+                <span style={{ opacity: 0.7 }}>{item.name}</span>
+              </div>
+            ))}
           </div>
 
           <div style={{ overflow: 'auto', height: '85vh' }}>
@@ -1232,7 +1432,7 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger, on
               }}
               style={{ display: 'flex', gap: 0, overflow: 'auto' }}
           >
-            <div style={{ width: 50, flexShrink: 0, paddingTop: 40 }}>
+            <div style={{ width: 56, flexShrink: 0, paddingTop: 40 }}>
               {Array.from({ length: 24 }).map((_, hour) => (
                 <div
                   key={hour}
@@ -1241,10 +1441,12 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger, on
                     display: 'flex',
                     alignItems: 'flex-start',
                     justifyContent: 'flex-end',
-                    paddingRight: 8,
-                    fontSize: 9,
-                    color: 'var(--color-text-tertiary)',
-                    borderBottom: '1px solid var(--color-bg-primary)',
+                    paddingRight: 10,
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: 9, fontWeight: 700,
+                    color: 'var(--color-ice-light)',
+                    letterSpacing: '0.08em',
+                    borderBottom: '1px solid rgba(143, 191, 211, 0.10)',
                   }}
                 >
                   {String(hour).padStart(2, '0')}:00
@@ -1267,10 +1469,12 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger, on
                   style={{
                     flex: 1,
                     minWidth: 120,
-                    borderLeft: dayIdx === 0 ? '1px solid var(--color-border)' : '1px solid var(--color-bg-primary)',
-                    borderRight: dayIdx === 6 ? '1px solid var(--color-border)' : undefined,
+                    borderLeft: dayIdx === 0
+                      ? '1px solid var(--color-ice-deep)'
+                      : '1px solid rgba(143, 191, 211, 0.12)',
+                    borderRight: dayIdx === 6 ? '1px solid var(--color-ice-deep)' : undefined,
                     position: 'relative',
-                    background: isToday ? 'rgba(200, 169, 122, 0.03)' : 'transparent',
+                    background: isToday ? 'rgba(143, 191, 211, 0.04)' : 'transparent',
                   }}
                 >
                   <button
@@ -1280,37 +1484,76 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger, on
                       position: 'sticky',
                       top: 0,
                       width: '100%',
-                      background: isToday ? 'var(--color-accent-primary)' : 'var(--color-bg-tertiary)',
+                      background: isToday
+                        ? 'rgba(143, 191, 211, 0.14)'
+                        : 'rgba(8, 12, 18, 0.85)',
                       padding: '8px 4px',
                       border: 'none',
-                      borderBottom: '1px solid var(--color-border)',
+                      borderBottom: `1px solid ${isToday ? 'var(--color-ice)' : 'var(--color-ice-deep)'}`,
                       textAlign: 'center',
-                      fontSize: 10,
+                      fontFamily: 'var(--font-mono)',
+                      fontSize: 9,
                       color: isToday
-                        ? 'var(--color-bg-primary)'
-                        : 'var(--color-text-primary)',
-                      fontWeight: isToday ? 700 : 500,
+                        ? 'var(--color-ice-light)'
+                        : 'var(--color-text-secondary)',
+                      fontWeight: 700,
+                      letterSpacing: '0.18em',
+                      textTransform: 'uppercase',
                       zIndex: 10,
                       cursor: 'pointer',
-                      transition: 'opacity 0.15s',
+                      boxShadow: isToday ? '0 0 12px rgba(143, 191, 211, 0.25)' : 'none',
+                      transition: 'all 0.15s',
                     }}
                     onMouseEnter={e => (e.currentTarget.style.opacity = '0.85')}
                     onMouseLeave={e => (e.currentTarget.style.opacity = '1')}
                   >
-                    <div style={{ textTransform: 'uppercase', letterSpacing: '0.1em', lineHeight: 1 }}>
+                    <div style={{
+                      letterSpacing: '0.22em',
+                      lineHeight: 1,
+                      color: isToday ? 'var(--color-ice)' : 'var(--color-text-tertiary)',
+                    }}>
                       {dayName}
                     </div>
-                    <div>{dayNum}</div>
+                    <div style={{
+                      fontFamily: 'var(--font-display)',
+                      fontSize: 13,
+                      fontWeight: 600,
+                      letterSpacing: '0.04em',
+                      marginTop: 2,
+                      color: isToday ? 'var(--color-ice-light)' : 'var(--color-text-primary)',
+                      textShadow: isToday ? '0 0 6px rgba(143, 191, 211, 0.45)' : 'none',
+                    }}>
+                      {dayNum}
+                    </div>
                   </button>
 
                   {(() => {
                     const dayProjects = projects.filter(p => p.deadline === dayIso && !p.archived_at)
                     if (!dayProjects.length) return null
                     return (
-                      <div style={{ position: 'sticky', top: 40, zIndex: 10, background: 'var(--color-bg-tertiary)', padding: '1px 2px', borderBottom: '1px solid var(--color-border)', display: 'flex', flexDirection: 'column', gap: 1 }}>
+                      <div style={{
+                        position: 'sticky', top: 40, zIndex: 10,
+                        background: 'rgba(8, 12, 18, 0.85)',
+                        backdropFilter: 'blur(8px) saturate(140%)',
+                        WebkitBackdropFilter: 'blur(8px) saturate(140%)',
+                        padding: '2px 3px',
+                        borderBottom: '1px solid var(--color-ice-deep)',
+                        display: 'flex', flexDirection: 'column', gap: 2,
+                      }}>
                         {dayProjects.map(q => (
-                          <div key={q.id} style={{ fontSize: 11, color: 'var(--color-accent-light)', background: 'var(--color-bg-tertiary)', border: '1px solid var(--color-accent-light)33', borderRadius: 3, padding: '2px 5px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            📋 {q.title}
+                          <div key={q.id} style={{
+                            fontFamily: 'var(--font-mono)',
+                            fontSize: 9, fontWeight: 700,
+                            color: 'var(--color-ice-light)',
+                            letterSpacing: '0.12em', textTransform: 'uppercase',
+                            background: 'rgba(143, 191, 211, 0.08)',
+                            border: '1px solid rgba(143, 191, 211, 0.30)',
+                            clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 4px), calc(100% - 4px) 100%, 0 100%)',
+                            padding: '2px 6px',
+                            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                          }}>
+                            <span style={{ color: 'var(--color-ice)', marginRight: 4 }}>//</span>
+                            {q.title}
                           </div>
                         ))}
                       </div>
@@ -1344,13 +1587,13 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger, on
                       }}
                       style={{
                         height: 40 * timelineZoom,
-                        borderBottom: '1px solid var(--color-bg-primary)',
+                        borderBottom: '1px solid rgba(143, 191, 211, 0.10)',
                         position: 'relative',
                         cursor: 'pointer',
                         transition: 'background-color 0.2s',
                       }}
                       onMouseEnter={(e) => {
-                        e.currentTarget.style.backgroundColor = 'rgba(196, 106, 90, 0.05)'
+                        e.currentTarget.style.backgroundColor = 'rgba(143, 191, 211, 0.05)'
                       }}
                       onMouseLeave={(e) => {
                         e.currentTarget.style.backgroundColor = 'transparent'
@@ -1361,7 +1604,6 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger, on
                   {getAllBlockRangesForDay(unproductiveBlocks, dayDate).map((r, idx) => {
                     const topPercent = 40 + r.start * 40 * timelineZoom
                     const heightPercent = (r.end - r.start) * 40 * timelineZoom
-                    const bgColor = r.block.title.toLowerCase().includes('dorm') ? 'rgba(75, 85, 102, 0.3)' : 'rgba(107, 100, 96, 0.25)'
 
                     return (
                       <div
@@ -1378,30 +1620,31 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger, on
                           right: '0',
                           top: `${topPercent}px`,
                           height: `${Math.max(20, heightPercent)}px`,
-                          background: bgColor,
-                          borderLeft: `2px solid var(--color-text-muted)`,
+                          background: `repeating-linear-gradient(135deg, rgba(40, 50, 57, 0.55) 0, rgba(40, 50, 57, 0.55) 5px, rgba(28, 38, 48, 0.7) 5px, rgba(28, 38, 48, 0.7) 10px)`,
+                          borderLeft: '2px solid var(--color-text-muted)',
                           zIndex: 1,
                           cursor: 'pointer',
                           transition: 'all 0.2s',
                         }}
                         onMouseEnter={(e) => {
-                          e.currentTarget.style.background = bgColor.replace('0.3', '0.5').replace('0.25', '0.4')
-                          e.currentTarget.style.borderLeft = '2px solid var(--color-accent-light)'
+                          e.currentTarget.style.borderLeft = '2px solid var(--color-ice)'
+                          e.currentTarget.style.boxShadow = 'inset 0 0 0 1px rgba(143, 191, 211, 0.30)'
                         }}
                         onMouseLeave={(e) => {
-                          e.currentTarget.style.background = bgColor
                           e.currentTarget.style.borderLeft = '2px solid var(--color-text-muted)'
+                          e.currentTarget.style.boxShadow = 'none'
                         }}
                         title={`${r.block.title} - Clique para editar`}
                       >
                         {heightPercent > 20 && (
                           <div style={{
-                            fontSize: 7,
+                            fontFamily: 'var(--font-mono)',
+                            fontSize: 7, fontWeight: 700,
                             color: 'var(--color-text-muted)',
-                            padding: '1px 2px',
-                            fontStyle: 'italic',
-                            opacity: 0.6,
+                            letterSpacing: '0.15em', textTransform: 'uppercase',
+                            padding: '2px 4px',
                           }}>
+                            <span style={{ color: 'var(--color-text-tertiary)', marginRight: 3 }}>//</span>
                             {r.block.title}
                           </div>
                         )}
@@ -1414,14 +1657,22 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger, on
                       style={{
                         position: 'absolute',
                         top: `${40 + (currentTime.getHours() + currentTime.getMinutes() / 60) * 40 * timelineZoom}px`,
-                        left: 0,
-                        right: 0,
-                        height: '2px',
-                        background: 'var(--color-accent-light)',
+                        left: 0, right: 0,
+                        height: 1,
+                        background: 'linear-gradient(90deg, var(--color-ice), var(--color-ice-light) 50%, transparent)',
+                        boxShadow: '0 0 10px rgba(143, 191, 211, 0.55), 0 0 3px rgba(143, 191, 211, 0.85)',
                         zIndex: 100,
                         pointerEvents: 'none',
                       }}
-                    />
+                    >
+                      <div style={{
+                        position: 'absolute',
+                        left: -4, top: -3,
+                        width: 7, height: 7,
+                        background: 'var(--color-ice)',
+                        boxShadow: '0 0 8px var(--color-ice-glow)',
+                      }} />
+                    </div>
                   )}
 
                   {quests.map((quest) => {
@@ -1451,32 +1702,47 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger, on
                             right: '2px',
                             top: `${40 + topPercent}px`,
                             height: `${heightPercent}px`,
-                            background: getAreaColor(quest.area_slug, areas),
-                            borderTopLeftRadius: seg.crossesIn ? 0 : 2,
-                            borderTopRightRadius: seg.crossesIn ? 0 : 2,
-                            borderBottomLeftRadius: seg.crossesOut ? 0 : 2,
-                            borderBottomRightRadius: seg.crossesOut ? 0 : 2,
+                            background: `linear-gradient(135deg, ${getAreaColor(quest.area_slug, areas)}cc, ${getAreaColor(quest.area_slug, areas)}88)`,
+                            borderLeft: `2px solid ${getAreaColor(quest.area_slug, areas)}`,
+                            clipPath: seg.crossesIn || seg.crossesOut
+                              ? undefined
+                              : 'polygon(0 0, calc(100% - 4px) 0, 100% 4px, 100% 100%, 4px 100%, 0 calc(100% - 4px))',
                             padding: '2px',
                             overflow: 'hidden',
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
                             cursor: 'pointer',
-                            opacity: 0.85,
-                            transition: 'opacity 0.15s, box-shadow 0.15s',
-                            boxShadow: '0 2px 6px rgba(0,0,0,0.3)',
+                            opacity: 0.95,
+                            transition: 'opacity 0.15s, filter 0.15s, box-shadow 0.15s',
+                            boxShadow: `inset 0 0 0 1px rgba(255, 255, 255, 0.18), 0 0 6px ${getAreaColor(quest.area_slug, areas)}55`,
                           }}
                           onMouseEnter={e => {
                             e.currentTarget.style.opacity = '1'
-                            e.currentTarget.style.boxShadow = '0 3px 8px rgba(0,0,0,0.4)'
+                            e.currentTarget.style.filter = 'brightness(1.15)'
+                            e.currentTarget.style.boxShadow = `inset 0 0 0 1px rgba(255, 255, 255, 0.30), 0 0 12px ${getAreaColor(quest.area_slug, areas)}aa`
                           }}
                           onMouseLeave={e => {
-                            e.currentTarget.style.opacity = '0.85'
-                            e.currentTarget.style.boxShadow = '0 2px 6px rgba(0,0,0,0.3)'
+                            e.currentTarget.style.opacity = '0.95'
+                            e.currentTarget.style.filter = 'brightness(1)'
+                            e.currentTarget.style.boxShadow = `inset 0 0 0 1px rgba(255, 255, 255, 0.18), 0 0 6px ${getAreaColor(quest.area_slug, areas)}55`
                           }}
                           title={displayTitle}
                         >
-                          <div style={{ fontSize: 7, color: '#fff', textAlign: 'center', lineHeight: 1, padding: '1px' }}>
+                          <div style={{
+                            fontFamily: 'var(--font-display)',
+                            fontSize: 8, fontWeight: 600,
+                            color: '#fff',
+                            letterSpacing: '0.02em',
+                            textTransform: 'uppercase',
+                            textAlign: 'center',
+                            lineHeight: 1.1,
+                            padding: '1px',
+                            textShadow: '0 1px 2px rgba(0, 0, 0, 0.5)',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                          }}>
                             {displayTitle.substring(0, 20)}
                           </div>
                         </div>
@@ -1506,9 +1772,12 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger, on
                           right: '2px',
                           top: `${40 + topPercent}px`,
                           height: `${heightPercent}px`,
-                          background: 'var(--color-routine-block)',
-                          borderRadius: 2,
-                          border: '1px solid var(--color-routine-block-border)',
+                          background: routine.done
+                            ? 'rgba(40, 50, 57, 0.45)'
+                            : 'rgba(8, 12, 18, 0.55)',
+                          border: `1px dashed ${routine.done ? 'var(--color-text-muted)' : 'var(--color-success)'}`,
+                          borderLeft: `2px solid ${routine.done ? 'var(--color-text-muted)' : 'var(--color-success)'}`,
+                          clipPath: 'polygon(0 0, calc(100% - 4px) 0, 100% 4px, 100% 100%, 4px 100%, 0 calc(100% - 4px))',
                           padding: '2px',
                           overflow: 'hidden',
                           display: 'flex',
@@ -1516,34 +1785,54 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger, on
                           alignItems: 'center',
                           justifyContent: 'center',
                           cursor: 'pointer',
-                          opacity: routine.done ? 0.5 : 0.8,
-                          transition: 'opacity 0.15s, box-shadow 0.15s',
-                          boxShadow: '0 2px 6px rgba(0,0,0,0.2)',
+                          opacity: routine.done ? 0.55 : 0.95,
+                          transition: 'opacity 0.15s, background 0.15s, box-shadow 0.15s',
+                          boxShadow: routine.done ? 'none' : '0 0 6px rgba(94, 122, 82, 0.30)',
                         }}
                         onMouseEnter={e => {
-                          e.currentTarget.style.opacity = routine.done ? '0.6' : '1'
-                          e.currentTarget.style.boxShadow = '0 3px 8px rgba(0,0,0,0.4)'
+                          if (routine.done) {
+                            e.currentTarget.style.opacity = '0.7'
+                          } else {
+                            e.currentTarget.style.background = 'rgba(94, 122, 82, 0.10)'
+                            e.currentTarget.style.boxShadow = '0 0 12px rgba(94, 122, 82, 0.50)'
+                          }
                         }}
                         onMouseLeave={e => {
-                          e.currentTarget.style.opacity = routine.done ? '0.5' : '0.8'
-                          e.currentTarget.style.boxShadow = '0 2px 6px rgba(0,0,0,0.2)'
+                          if (routine.done) {
+                            e.currentTarget.style.opacity = '0.55'
+                          } else {
+                            e.currentTarget.style.background = 'rgba(8, 12, 18, 0.55)'
+                            e.currentTarget.style.boxShadow = '0 0 6px rgba(94, 122, 82, 0.30)'
+                          }
                         }}
                         title={routine.title}
                       >
                         <div style={{
-                          fontSize: 7,
-                          color: routine.done ? 'var(--color-text-secondary)' : 'var(--color-text-primary)',
+                          fontFamily: 'var(--font-display)',
+                          fontSize: 8, fontWeight: 600,
+                          color: routine.done ? 'var(--color-text-tertiary)' : 'var(--color-success-light)',
+                          letterSpacing: '0.02em',
+                          textTransform: 'uppercase',
                           textAlign: 'center',
                           textDecoration: routine.done ? 'line-through' : 'none',
                           lineHeight: 1.1,
-                          fontWeight: 500,
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                          maxWidth: '100%',
                         }}>
+                          <span style={{
+                            color: routine.done ? 'var(--color-text-muted)' : 'var(--color-success)',
+                            marginRight: 3, opacity: 0.85,
+                          }}>RTN</span>
                           {routine.title.substring(0, 20)}
                         </div>
                         {heightPercent > 18 && (
                           <div style={{
-                            fontSize: 6,
-                            color: routine.done ? 'var(--color-text-tertiary)' : 'var(--color-text-secondary)',
+                            fontFamily: 'var(--font-mono)',
+                            fontSize: 7, fontWeight: 700,
+                            color: routine.done ? 'var(--color-text-muted)' : 'var(--color-text-tertiary)',
+                            letterSpacing: '0.08em',
                             marginTop: 1,
                           }}>
                             {routine.start_time}–{routine.end_time}
@@ -1555,7 +1844,7 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger, on
                             if (confirm(`Excluir rotina "${routine.title}"?`)) {
                               deleteRoutine(routine.id)
                                 .then(() => setRoutines(rs => rs.filter(r => r.id !== routine.id)))
-                                .catch(() => alert('Erro ao excluir rotina'))
+                                .catch(() => alertDialog({ title: 'Erro', message: 'Erro ao excluir rotina', variant: 'danger' }))
                             }
                           }}
                           style={{
@@ -1593,21 +1882,63 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger, on
         <div>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
             <button
+              type="button"
+              className="hq-icon-btn"
               onClick={() => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1))}
-              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-secondary)', fontSize: 18, padding: '4px 10px', lineHeight: 1 }}
-            >←</button>
-            <div style={{ fontSize: 12, color: 'var(--color-text-primary)', fontWeight: 500 }}>
-              {MONTH_NAMES[currentDate.getMonth()]} {currentDate.getFullYear()}
+              title="Mês anterior"
+              aria-label="Mês anterior"
+              style={{ minWidth: 32, minHeight: 32 }}
+            >
+              <ChevronLeft size={14} strokeWidth={1.8} />
+            </button>
+            <div style={{
+              padding: '6px 16px',
+              background: 'rgba(8, 12, 18, 0.55)',
+              border: '1px solid var(--color-ice-deep)',
+              clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%)',
+              display: 'flex', alignItems: 'center', gap: 8,
+            }}>
+              <span style={{
+                fontFamily: 'var(--font-mono)',
+                fontSize: 9, fontWeight: 700,
+                color: 'var(--color-ice)',
+                letterSpacing: '0.22em', textTransform: 'uppercase',
+              }}>//</span>
+              <div style={{
+                fontFamily: 'var(--font-display)',
+                fontSize: 13,
+                color: 'var(--color-ice-light)',
+                fontWeight: 600,
+                letterSpacing: '0.03em',
+                textTransform: 'uppercase',
+              }}>
+                {MONTH_NAMES[currentDate.getMonth()]} {currentDate.getFullYear()}
+              </div>
             </div>
             <button
+              type="button"
+              className="hq-icon-btn"
               onClick={() => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1))}
-              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-secondary)', fontSize: 18, padding: '4px 10px', lineHeight: 1 }}
-            >→</button>
+              title="Próximo mês"
+              aria-label="Próximo mês"
+              style={{ minWidth: 32, minHeight: 32 }}
+            >
+              <ChevronRight size={14} strokeWidth={1.8} />
+            </button>
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4, marginBottom: 8 }}>
             {DAY_NAMES.map(d => (
-              <div key={d} style={{ textAlign: 'center', fontSize: 10, color: 'var(--color-text-tertiary)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.1em', padding: 8 }}>
+              <div key={d} style={{
+                textAlign: 'center',
+                fontFamily: 'var(--font-mono)',
+                fontSize: 9, fontWeight: 700,
+                color: 'var(--color-ice-light)',
+                letterSpacing: '0.22em', textTransform: 'uppercase',
+                padding: 8,
+                background: 'rgba(8, 12, 18, 0.55)',
+                border: '1px solid var(--color-ice-deep)',
+              }}>
                 {d}
               </div>
             ))}
@@ -1624,7 +1955,7 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger, on
 
               for (let i = 0; i < firstDay; i++) {
                 cells.push(
-                  <div key={`empty-${i}`} style={{ background: 'var(--color-bg-primary)', minHeight: 80, borderRadius: 4 }} />
+                  <div key={`empty-${i}`} style={{ background: 'rgba(8, 12, 18, 0.30)', minHeight: 80, border: '1px solid var(--color-divider)' }} />
                 )
               }
 
@@ -1636,32 +1967,67 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger, on
 
                 cells.push(
                   <div key={day} style={{
-                    padding: 8, background: 'var(--color-bg-secondary)', borderRadius: 4,
-                    border: isToday ? `1px solid var(--color-accent-light)` : '1px solid var(--color-border)',
-                    minHeight: 80, display: 'flex', flexDirection: 'column'
+                    padding: 8,
+                    background: isToday ? 'rgba(143, 191, 211, 0.08)' : 'rgba(8, 12, 18, 0.55)',
+                    border: isToday ? '1px solid var(--color-ice)' : '1px solid var(--color-border)',
+                    boxShadow: isToday ? '0 0 12px rgba(143, 191, 211, 0.18)' : 'none',
+                    clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%)',
+                    minHeight: 80, display: 'flex', flexDirection: 'column',
                   }}>
-                    <div style={{ fontSize: 10, color: 'var(--color-text-primary)', fontWeight: 500, marginBottom: 6 }}>
+                    <div style={{
+                      fontFamily: 'var(--font-mono)',
+                      fontSize: 11, fontWeight: 700,
+                      color: isToday ? 'var(--color-ice-light)' : 'var(--color-text-primary)',
+                      letterSpacing: '0.04em',
+                      marginBottom: 6,
+                      textShadow: isToday ? '0 0 6px rgba(143, 191, 211, 0.45)' : 'none',
+                    }}>
                       {day}
                     </div>
-                    <div style={{ flex: 1, fontSize: 8, color: 'var(--color-text-tertiary)', overflow: 'hidden' }}>
+                    <div style={{
+                      flex: 1,
+                      fontFamily: 'var(--font-mono)',
+                      fontSize: 8, fontWeight: 600,
+                      color: 'var(--color-text-tertiary)',
+                      letterSpacing: '0.05em',
+                      overflow: 'hidden',
+                    }}>
                       {dayQuests.length > 0 && (
                         <div style={{ marginBottom: 4 }}>
                           {dayQuests.slice(0, 2).map(q => (
-                            <div key={q.id} style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginBottom: 2 }}>
-                              📋 {q.title}
+                            <div key={q.id} style={{
+                              whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                              marginBottom: 2,
+                              color: 'var(--color-ice-light)',
+                            }}>
+                              <span style={{ color: 'var(--color-ice)', marginRight: 3 }}>QST</span>
+                              {q.title}
                             </div>
                           ))}
-                          {dayQuests.length > 2 && <div style={{ color: 'var(--color-border)' }}>+{dayQuests.length - 2}</div>}
+                          {dayQuests.length > 2 && (
+                            <div style={{ color: 'var(--color-text-muted)' }}>
+                              +{dayQuests.length - 2}
+                            </div>
+                          )}
                         </div>
                       )}
                       {dayRoutines.length > 0 && (
                         <div>
                           {dayRoutines.slice(0, 2).map(r => (
-                            <div key={r.id} style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginBottom: 2 }}>
-                              🔄 {r.title}
+                            <div key={r.id} style={{
+                              whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                              marginBottom: 2,
+                              color: 'var(--color-success-light)',
+                            }}>
+                              <span style={{ color: 'var(--color-success)', marginRight: 3 }}>RTN</span>
+                              {r.title}
                             </div>
                           ))}
-                          {dayRoutines.length > 2 && <div style={{ color: 'var(--color-border)' }}>+{dayRoutines.length - 2}</div>}
+                          {dayRoutines.length > 2 && (
+                            <div style={{ color: 'var(--color-text-muted)' }}>
+                              +{dayRoutines.length - 2}
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
@@ -1679,16 +2045,48 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger, on
         <div>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
             <button
+              type="button"
+              className="hq-icon-btn"
               onClick={() => setCurrentDate(new Date(currentDate.getFullYear() - 1, 0, 1))}
-              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-secondary)', fontSize: 18, padding: '4px 10px', lineHeight: 1 }}
-            >←</button>
-            <div style={{ fontSize: 12, color: 'var(--color-text-primary)', fontWeight: 500 }}>
-              {currentDate.getFullYear()}
+              title="Ano anterior"
+              aria-label="Ano anterior"
+              style={{ minWidth: 32, minHeight: 32 }}
+            >
+              <ChevronLeft size={14} strokeWidth={1.8} />
+            </button>
+            <div style={{
+              padding: '6px 16px',
+              background: 'rgba(8, 12, 18, 0.55)',
+              border: '1px solid var(--color-ice-deep)',
+              clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%)',
+              display: 'flex', alignItems: 'center', gap: 8,
+            }}>
+              <span style={{
+                fontFamily: 'var(--font-mono)',
+                fontSize: 9, fontWeight: 700,
+                color: 'var(--color-ice)',
+                letterSpacing: '0.22em', textTransform: 'uppercase',
+              }}>//</span>
+              <div style={{
+                fontFamily: 'var(--font-display)',
+                fontSize: 13,
+                color: 'var(--color-ice-light)',
+                fontWeight: 600,
+                letterSpacing: '0.03em',
+              }}>
+                {currentDate.getFullYear()}
+              </div>
             </div>
             <button
+              type="button"
+              className="hq-icon-btn"
               onClick={() => setCurrentDate(new Date(currentDate.getFullYear() + 1, 0, 1))}
-              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-secondary)', fontSize: 18, padding: '4px 10px', lineHeight: 1 }}
-            >→</button>
+              title="Próximo ano"
+              aria-label="Próximo ano"
+              style={{ minWidth: 32, minHeight: 32 }}
+            >
+              <ChevronRight size={14} strokeWidth={1.8} />
+            </button>
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
@@ -1707,18 +2105,37 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger, on
               })
               const totalDeadlines = monthQuests.length
 
+              const isCurrentMonth = currentDate.getMonth() === monthIdx
               return (
                 <div key={monthIdx} style={{
-                  padding: 12, background: 'var(--color-bg-secondary)', borderRadius: 4,
-                  border: currentDate.getMonth() === monthIdx ? '1px solid var(--color-accent-light)' : '1px solid var(--color-border)'
+                  padding: 12,
+                  background: isCurrentMonth ? 'rgba(143, 191, 211, 0.08)' : 'rgba(8, 12, 18, 0.55)',
+                  border: isCurrentMonth ? '1px solid var(--color-ice)' : '1px solid var(--color-ice-deep)',
+                  boxShadow: isCurrentMonth ? '0 0 12px rgba(143, 191, 211, 0.18)' : 'none',
+                  clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%)',
                 }}>
-                  <div style={{ fontSize: 11, color: 'var(--color-text-primary)', fontWeight: 600, marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.1em' }}>
+                  <div style={{
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: 10, fontWeight: 700,
+                    color: isCurrentMonth ? 'var(--color-ice-light)' : 'var(--color-text-secondary)',
+                    letterSpacing: '0.22em', textTransform: 'uppercase',
+                    marginBottom: 10,
+                    paddingBottom: 6,
+                    borderBottom: `1px solid ${isCurrentMonth ? 'var(--color-ice-deep)' : 'var(--color-divider)'}`,
+                  }}>
+                    <span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
                     {monthName}
                   </div>
 
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 2, marginBottom: 8 }}>
                     {DAY_NAMES.map(d => (
-                      <div key={d} style={{ fontSize: 7, color: 'var(--color-border)', textAlign: 'center', fontWeight: 600, lineHeight: 1 }}>
+                      <div key={d} style={{
+                        fontFamily: 'var(--font-mono)',
+                        fontSize: 8, fontWeight: 700,
+                        color: 'var(--color-ice-deep)',
+                        letterSpacing: '0.1em', textTransform: 'uppercase',
+                        textAlign: 'center', lineHeight: 1,
+                      }}>
                         {d[0]}
                       </div>
                     ))}
@@ -1738,10 +2155,13 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger, on
                         <div
                           key={day}
                           style={{
-                            fontSize: 8, textAlign: 'center', lineHeight: 1,
-                            color: hasDeadline ? 'var(--color-accent-light)' : 'var(--color-text-tertiary)',
-                            fontWeight: hasDeadline ? 600 : 400,
-                            padding: 2
+                            fontFamily: 'var(--font-mono)',
+                            fontSize: 9,
+                            textAlign: 'center', lineHeight: 1,
+                            color: hasDeadline ? 'var(--color-ice-light)' : 'var(--color-text-tertiary)',
+                            fontWeight: hasDeadline ? 700 : 500,
+                            textShadow: hasDeadline ? '0 0 6px rgba(143, 191, 211, 0.45)' : 'none',
+                            padding: 2,
                           }}
                         >
                           {day}
@@ -1751,8 +2171,16 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger, on
                   </div>
 
                   {totalDeadlines > 0 && (
-                    <div style={{ fontSize: 9, color: 'var(--color-accent-light)', borderTop: '1px solid var(--color-border)', paddingTop: 6 }}>
-                      {totalDeadlines} deadline{totalDeadlines !== 1 ? 's' : ''}
+                    <div style={{
+                      fontFamily: 'var(--font-mono)',
+                      fontSize: 9, fontWeight: 700,
+                      color: 'var(--color-ice-light)',
+                      letterSpacing: '0.18em', textTransform: 'uppercase',
+                      borderTop: '1px solid var(--color-ice-deep)',
+                      paddingTop: 6,
+                    }}>
+                      <span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
+                      {totalDeadlines} DEADLINE{totalDeadlines !== 1 ? 'S' : ''}
                     </div>
                   )}
                 </div>
@@ -1769,27 +2197,59 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger, on
           left: 0,
           right: 0,
           bottom: 0,
-          background: 'rgba(0,0,0,0.6)',
+          background: 'var(--color-overlay)',
+          backdropFilter: 'blur(8px)',
+          WebkitBackdropFilter: 'blur(8px)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
           zIndex: 1000,
         }}>
           <div style={{
-            background: 'var(--color-bg-secondary)',
-            border: '1px solid var(--color-border)',
-            borderRadius: 8,
-            padding: 24,
+            background: 'rgba(8, 12, 18, 0.92)',
+            border: '1px solid var(--color-ice-deep)',
+            borderRadius: 0,
+            clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 14px), calc(100% - 14px) 100%, 0 100%)',
+            padding: 0,
             width: '90%',
             maxWidth: 500,
             maxHeight: '90vh',
-            overflow: 'auto',
-            boxShadow: '0 20px 60px rgba(0,0,0,0.8)',
+            overflow: 'hidden',
+            boxShadow: '0 20px 60px rgba(0,0,0,0.85), 0 0 32px rgba(143, 191, 211, 0.18)',
+            display: 'flex', flexDirection: 'column',
           }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
-              <h2 style={{ fontSize: 18, fontWeight: 600, color: 'var(--color-text-primary)', margin: 0 }}>
-                {isCreatingBlock ? 'Novo Horário Improdutivo' : 'Editar Horário Improdutivo'}
-              </h2>
+            {/* Hairline ice elétrica no topo */}
+            <div className="hq-hairline-ice" />
+            {/* Header com atmosphere */}
+            <div style={{
+              padding: '16px 22px',
+              background: `
+                radial-gradient(ellipse 100% 80% at 0% 0%, rgba(143, 191, 211, 0.06), transparent 60%),
+                linear-gradient(180deg, rgba(40, 50, 57, 0.20), transparent)
+              `,
+              borderBottom: '1px solid var(--color-ice-deep)',
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              flexShrink: 0,
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div
+                  aria-hidden="true"
+                  style={{
+                    width: 8, height: 8,
+                    background: 'var(--color-ice)',
+                    boxShadow: '0 0 8px var(--color-ice-glow)',
+                  }}
+                />
+                <span style={{
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: 11, fontWeight: 700,
+                  color: 'var(--color-ice-light)',
+                  letterSpacing: '0.28em', textTransform: 'uppercase',
+                }}>
+                  <span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
+                  {isCreatingBlock ? 'NEW.UNPRODUCTIVE.BLOCK' : 'EDIT.UNPRODUCTIVE.BLOCK'}
+                </span>
+              </div>
               <button
                 onClick={() => {
                   setShowBlockModal(false)
@@ -1798,22 +2258,46 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger, on
                   setIsCreatingBlock(false)
                 }}
                 style={{
-                  background: 'none',
-                  border: 'none',
+                  background: 'rgba(8, 12, 18, 0.55)',
+                  border: '1px solid var(--color-border)',
                   cursor: 'pointer',
-                  fontSize: 20,
-                  color: 'var(--color-text-secondary)',
-                  padding: 0,
+                  color: 'var(--color-text-tertiary)',
+                  width: 28, height: 28, borderRadius: 0,
+                  clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 5px), calc(100% - 5px) 100%, 0 100%)',
+                  fontSize: 12,
+                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                  transition: 'all var(--motion-fast) var(--ease-smooth)',
+                }}
+                onMouseEnter={e => {
+                  e.currentTarget.style.color = 'var(--color-ice-light)'
+                  e.currentTarget.style.borderColor = 'rgba(143, 191, 211, 0.45)'
+                  e.currentTarget.style.background = 'rgba(143, 191, 211, 0.10)'
+                }}
+                onMouseLeave={e => {
+                  e.currentTarget.style.color = 'var(--color-text-tertiary)'
+                  e.currentTarget.style.borderColor = 'var(--color-border)'
+                  e.currentTarget.style.background = 'rgba(8, 12, 18, 0.55)'
                 }}
               >
                 ✕
               </button>
             </div>
+            <div style={{
+              padding: '20px 22px',
+              overflow: 'auto',
+            }}>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
               <div>
-                <label style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--color-text-tertiary)', fontWeight: 600, display: 'block', marginBottom: 6 }}>
-                  Título
+                <label style={{
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: 9, fontWeight: 700,
+                  color: 'var(--color-text-muted)',
+                  letterSpacing: '0.22em', textTransform: 'uppercase',
+                  display: 'block', marginBottom: 6,
+                }}>
+                  <span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
+                  TÍTULO
                 </label>
                 <input
                   type="text"
@@ -1836,7 +2320,13 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger, on
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                 <div>
-                  <label style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--color-text-tertiary)', fontWeight: 600, display: 'block', marginBottom: 6 }}>
+                  <label style={{
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: 9, fontWeight: 700,
+                  color: 'var(--color-text-muted)',
+                  letterSpacing: '0.22em', textTransform: 'uppercase',
+                  display: 'block', marginBottom: 6,
+                }}>
                     Início
                   </label>
                   <input
@@ -1861,7 +2351,13 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger, on
                   />
                 </div>
                 <div>
-                  <label style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--color-text-tertiary)', fontWeight: 600, display: 'block', marginBottom: 6 }}>
+                  <label style={{
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: 9, fontWeight: 700,
+                  color: 'var(--color-text-muted)',
+                  letterSpacing: '0.22em', textTransform: 'uppercase',
+                  display: 'block', marginBottom: 6,
+                }}>
                     Fim
                   </label>
                   <input
@@ -1898,7 +2394,13 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger, on
               )}
 
               <div>
-                <label style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--color-text-tertiary)', fontWeight: 600, display: 'block', marginBottom: 6 }}>
+                <label style={{
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: 9, fontWeight: 700,
+                  color: 'var(--color-text-muted)',
+                  letterSpacing: '0.22em', textTransform: 'uppercase',
+                  display: 'block', marginBottom: 6,
+                }}>
                   Recorrência
                 </label>
                 <select
@@ -2089,20 +2591,29 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger, on
                     }}
                     style={{
                       flex: 1,
-                      background: 'var(--color-error)',
-                      color: '#fff',
-                      border: 'none',
-                      borderRadius: 4,
+                      background: 'rgba(159, 18, 57, 0.14)',
+                      color: 'var(--color-accent-light)',
+                      border: '1px solid var(--color-accent-primary)',
+                      borderRadius: 0,
+                      clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%)',
                       padding: '10px 16px',
                       cursor: 'pointer',
-                      fontSize: 12,
-                      fontWeight: 600,
-                      transition: 'opacity 0.2s',
+                      fontFamily: 'var(--font-mono)',
+                      fontSize: 10, fontWeight: 700,
+                      letterSpacing: '0.22em', textTransform: 'uppercase',
+                      boxShadow: '0 0 12px rgba(159, 18, 57, 0.22)',
+                      transition: 'all 0.2s',
                     }}
-                    onMouseEnter={(e) => (e.currentTarget.style.opacity = '0.9')}
-                    onMouseLeave={(e) => (e.currentTarget.style.opacity = '1')}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = 'rgba(159, 18, 57, 0.22)'
+                      e.currentTarget.style.boxShadow = '0 0 18px rgba(159, 18, 57, 0.45)'
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = 'rgba(159, 18, 57, 0.14)'
+                      e.currentTarget.style.boxShadow = '0 0 12px rgba(159, 18, 57, 0.22)'
+                    }}
                   >
-                    Deletar
+                    ✕ DELETAR
                   </button>
                 )}
                 <button
@@ -2114,26 +2625,30 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger, on
                   }}
                   style={{
                     flex: 1,
-                    background: 'var(--color-bg-tertiary)',
-                    color: 'var(--color-text-primary)',
+                    background: 'rgba(8, 12, 18, 0.55)',
+                    color: 'var(--color-text-tertiary)',
                     border: '1px solid var(--color-border)',
-                    borderRadius: 4,
+                    borderRadius: 0,
+                    clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%)',
                     padding: '10px 16px',
                     cursor: 'pointer',
-                    fontSize: 12,
-                    fontWeight: 600,
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: 10, fontWeight: 700,
+                    letterSpacing: '0.22em', textTransform: 'uppercase',
                     transition: 'all 0.2s',
                   }}
                   onMouseEnter={(e) => {
-                    e.currentTarget.style.borderColor = 'var(--color-text-primary)'
-                    e.currentTarget.style.background = 'var(--color-bg-secondary)'
+                    e.currentTarget.style.borderColor = 'rgba(143, 191, 211, 0.45)'
+                    e.currentTarget.style.background = 'rgba(143, 191, 211, 0.10)'
+                    e.currentTarget.style.color = 'var(--color-ice-light)'
                   }}
                   onMouseLeave={(e) => {
                     e.currentTarget.style.borderColor = 'var(--color-border)'
-                    e.currentTarget.style.background = 'var(--color-bg-tertiary)'
+                    e.currentTarget.style.background = 'rgba(8, 12, 18, 0.55)'
+                    e.currentTarget.style.color = 'var(--color-text-tertiary)'
                   }}
                 >
-                  Cancelar
+                  CANCELAR
                 </button>
                 <button
                   onClick={() => {
@@ -2157,22 +2672,32 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger, on
                   }}
                   style={{
                     flex: 1,
-                    background: 'var(--color-accent-primary)',
-                    color: '#fff',
-                    border: 'none',
-                    borderRadius: 4,
+                    background: 'rgba(143, 191, 211, 0.14)',
+                    color: 'var(--color-ice-light)',
+                    border: '1px solid var(--color-ice)',
+                    borderRadius: 0,
+                    clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%)',
                     padding: '10px 16px',
                     cursor: 'pointer',
-                    fontSize: 12,
-                    fontWeight: 600,
-                    transition: 'opacity 0.2s',
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: 10, fontWeight: 700,
+                    letterSpacing: '0.22em', textTransform: 'uppercase',
+                    boxShadow: '0 0 14px rgba(143, 191, 211, 0.30)',
+                    transition: 'all 0.2s',
                   }}
-                  onMouseEnter={(e) => (e.currentTarget.style.opacity = '0.9')}
-                  onMouseLeave={(e) => (e.currentTarget.style.opacity = '1')}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = 'rgba(143, 191, 211, 0.22)'
+                    e.currentTarget.style.boxShadow = '0 0 20px rgba(143, 191, 211, 0.50)'
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = 'rgba(143, 191, 211, 0.14)'
+                    e.currentTarget.style.boxShadow = '0 0 14px rgba(143, 191, 211, 0.30)'
+                  }}
                 >
-                  {isCreatingBlock ? 'Criar' : 'Concluir'}
+                  ✓ {isCreatingBlock ? 'CRIAR' : 'CONCLUIR'}
                 </button>
               </div>
+            </div>
             </div>
           </div>
         </div>

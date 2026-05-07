@@ -7,6 +7,7 @@ import {
 } from '../api'
 import { RunnableControls } from './RunnableControls'
 import { BlockEditor, isBlockDocEmpty } from './BlockEditor'
+import { alertDialog } from '../lib/dialog'
 
 /**
  * Row usado dentro dos períodos (manhã/tarde/noite) da tela Dia.
@@ -89,54 +90,137 @@ export function PlannedItemRow({ item, areas, activeSession, onSessionUpdate, on
   const done = item.status === 'done' || item.done === true
   const typeLabel = isTask ? 'Tarefa' : isRoutine ? 'Rotina' : (item as Quest).area_slug
 
+  // Thumbnail content: type code (QST/TSK/RTN) + duração mono.
+  const typeCode = isRoutine ? 'RTN' : isTask ? 'TSK' : 'QST'
+  const typeAccent = isRoutine ? 'var(--color-success)'
+    : isTask ? 'var(--color-warning)'
+    : 'var(--color-ice)'
+  const durMin = isTask
+    ? (item.duration_minutes ?? 0)
+    : (item.estimated_minutes ?? 0)
+  const durLabel = durMin > 0
+    ? (durMin >= 60
+      ? `${Math.floor(durMin / 60)}H${durMin % 60 ? ` ${durMin % 60}M` : ''}`
+      : `${durMin}M`)
+    : '—'
+  const borderColor = done
+    ? 'rgba(255, 255, 255, 0.06)'
+    : 'rgba(143, 191, 211, 0.22)'
+
   return (
     <div
       style={{
-        background: 'var(--color-bg-tertiary)',
-        border: `1px solid ${itemColor}40`,
-        borderLeft: `3px solid ${itemColor}`,
-        borderRadius: 'var(--radius-sm)',
-        padding: 12,
-        // Layout em coluna: header em linha (título + breadcrumb + meta + controles)
-        // e a descrição expandida ocupa a largura total embaixo, sem espremer os
-        // controles ao lado dela.
-        display: 'flex', flexDirection: 'column', gap: 10,
+        // Wrapper externo: posiciona thumbnail + main side-by-side e
+        // permite description expandida ocupar largura total abaixo.
+        display: 'flex', flexDirection: 'column', gap: 0,
         width: '100%', boxSizing: 'border-box', minWidth: 0, maxWidth: '100%',
         opacity: done ? 0.5 : 1,
-        transition: 'border-color var(--motion-fast) var(--ease-smooth), background var(--motion-fast) var(--ease-smooth)',
+      }}
+    >
+    <div
+      style={{
+        display: 'flex', alignItems: 'stretch', gap: 6,
+        position: 'relative',
+        transition: 'transform var(--motion-fast) var(--ease-smooth)',
       }}
       onMouseEnter={e => {
         if (done) return
-        e.currentTarget.style.borderColor = `${itemColor}80`
-        e.currentTarget.style.background = 'var(--glass-bg-hover)'
+        e.currentTarget.style.transform = 'translateX(2px)'
       }}
       onMouseLeave={e => {
-        e.currentTarget.style.borderColor = `${itemColor}40`
-        e.currentTarget.style.background = 'var(--color-bg-tertiary)'
+        e.currentTarget.style.transform = 'translateX(0)'
       }}
     >
+      {/* THUMBNAIL — bloco esquerdo separado com type code + duração.
+          Top-left chamfer angular, bg gradient na cor do tipo/área. */}
+      <div
+        style={{
+          width: 64, flexShrink: 0,
+          background: `linear-gradient(135deg, ${itemColor}22, ${itemColor}08 60%, transparent)`,
+          border: `1px solid ${borderColor}`,
+          display: 'flex', flexDirection: 'column',
+          alignItems: 'center', justifyContent: 'center',
+          gap: 4,
+          clipPath: 'polygon(8px 0, 100% 0, 100% 100%, 0 100%, 0 8px)',
+          transition: 'border-color var(--motion-fast) var(--ease-smooth)',
+        }}
+      >
+        <div style={{
+          fontFamily: 'var(--font-mono)',
+          fontSize: 12, fontWeight: 700,
+          color: typeAccent,
+          letterSpacing: '0.12em',
+          lineHeight: 1,
+          textShadow: done ? 'none' : `0 0 6px ${typeAccent}55`,
+        }}>
+          {typeCode}
+        </div>
+        <div style={{
+          fontFamily: 'var(--font-mono)',
+          fontSize: 9, fontWeight: 700,
+          color: 'var(--color-text-muted)',
+          letterSpacing: '0.08em',
+          lineHeight: 1,
+        }}>
+          {durLabel}
+        </div>
+        {/* Dot da área (só pra quests) — micro reforço visual */}
+        {!isTask && !isRoutine && (
+          <div
+            aria-hidden="true"
+            style={{
+              width: 5, height: 5,
+              background: itemColor,
+              marginTop: 2,
+            }}
+          />
+        )}
+      </div>
+
+      {/* MAIN CARD — body principal com title + breadcrumb + controles.
+          Bottom-right chamfer assinatura CP2077. */}
+      <div
+        style={{
+          flex: 1, minWidth: 0,
+          background: 'rgba(8, 12, 18, 0.55)',
+          border: `1px solid ${borderColor}`,
+          borderRadius: 0,
+          clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%)',
+          padding: '10px 14px',
+          display: 'flex', flexDirection: 'column', gap: 6,
+          transition: 'border-color var(--motion-fast) var(--ease-smooth), background var(--motion-fast) var(--ease-smooth), box-shadow var(--motion-fast) var(--ease-smooth)',
+        }}
+        onMouseEnter={e => {
+          if (done) return
+          e.currentTarget.style.borderColor = 'rgba(143, 191, 211, 0.45)'
+          e.currentTarget.style.boxShadow = '0 0 12px rgba(143, 191, 211, 0.18)'
+        }}
+        onMouseLeave={e => {
+          e.currentTarget.style.borderColor = borderColor
+          e.currentTarget.style.boxShadow = 'none'
+        }}
+      >
       {/* Header em linha — título/breadcrumb à esquerda, controles à direita */}
       <div style={{
-        display: 'flex', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap',
+        display: 'flex', alignItems: 'flex-start', gap: 10, flexWrap: 'wrap',
         width: '100%', minWidth: 0,
       }}>
-        <div style={{
-          width: 10, height: 10, borderRadius: '50%',
-          background: itemColor, flexShrink: 0, marginTop: 4,
-        }} />
         <div style={{ flex: '1 1 180px', minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <div
               onClick={onOpen}
               title={onOpen ? 'Abrir projeto' : undefined}
               style={{
-                color: 'var(--color-text-primary)', fontWeight: 500, fontSize: 13,
+                fontFamily: 'var(--font-display)',
+                color: 'var(--color-text-primary)', fontWeight: 600, fontSize: 13,
+                letterSpacing: '0.03em',
+                textTransform: 'uppercase',
                 textDecoration: done ? 'line-through' : 'none',
                 overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                 cursor: onOpen ? 'pointer' : 'default',
                 transition: 'color 0.12s',
               }}
-              onMouseEnter={e => { if (onOpen) e.currentTarget.style.color = 'var(--color-accent-light)' }}
+              onMouseEnter={e => { if (onOpen) e.currentTarget.style.color = 'var(--color-ice-light)' }}
               onMouseLeave={e => { if (onOpen) e.currentTarget.style.color = 'var(--color-text-primary)' }}
             >
               {item.title}
@@ -149,62 +233,72 @@ export function PlannedItemRow({ item, areas, activeSession, onSessionUpdate, on
               title={item?.description ? (showDescription ? 'Ocultar descrição' : 'Ver descrição') : 'Adicionar descrição'}
               style={{
                 background: 'none', border: 'none', cursor: 'pointer',
-                color: item?.description ? 'var(--color-accent-light)' : 'var(--color-text-tertiary)',
-                fontSize: 10, padding: '2px 4px',
+                fontFamily: 'var(--font-mono)',
+                color: item?.description ? 'var(--color-ice-light)' : 'var(--color-text-muted)',
+                fontSize: 9, padding: '2px 4px',
+                fontWeight: 700,
+                letterSpacing: '0.18em',
                 display: 'inline-flex', alignItems: 'center', gap: 3,
                 transition: 'color 0.15s', flexShrink: 0,
-                opacity: item?.description ? 1 : 0.6,
+                opacity: item?.description ? 1 : 0.7,
               }}
-              onMouseEnter={e => (e.currentTarget.style.color = 'var(--color-accent-light)')}
-              onMouseLeave={e => (e.currentTarget.style.color = item?.description ? 'var(--color-accent-light)' : 'var(--color-text-tertiary)')}
+              onMouseEnter={e => (e.currentTarget.style.color = 'var(--color-ice-light)')}
+              onMouseLeave={e => (e.currentTarget.style.color = item?.description ? 'var(--color-ice-light)' : 'var(--color-text-muted)')}
             >
               <span style={{ fontSize: 9 }}>{showDescription ? '▼' : '▶'}</span>
-              <span style={{ fontSize: 9, letterSpacing: '0.05em', textTransform: 'uppercase' }}>info</span>
+              <span style={{ textTransform: 'uppercase' }}>INFO</span>
             </button>
           </div>
           {(parentTitle || deliverableTitle) && (
             <div style={{
-              fontSize: 9, color: 'var(--color-text-tertiary)',
-              marginTop: 2,
-              display: 'flex', gap: 5, alignItems: 'center', flexWrap: 'wrap',
+              fontFamily: 'var(--font-mono)',
+              fontSize: 9, color: 'var(--color-text-muted)',
+              letterSpacing: '0.15em',
+              textTransform: 'uppercase',
+              fontWeight: 600,
+              marginTop: 4,
+              display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap',
             }}>
               {parentTitle && <span>{parentTitle}</span>}
               {parentTitle && deliverableTitle && (
-                <span style={{ color: 'var(--color-text-muted)' }}>›</span>
+                <span style={{ opacity: 0.4 }}>·</span>
               )}
               {deliverableTitle && (
-                <span style={{ color: 'var(--color-accent-light)' }}>{deliverableTitle}</span>
+                <span style={{ color: 'var(--color-ice-light)' }}>{deliverableTitle}</span>
               )}
             </div>
           )}
-          <div style={{
-            fontSize: 10, color: 'var(--color-text-tertiary)',
-            display: 'flex', gap: 10, marginTop: 3, flexWrap: 'wrap',
-          }}>
-            <span style={{
-              color: isRoutine ? 'var(--color-success)'
-                : isTask ? 'var(--color-accent-light)'
-                : 'var(--color-text-tertiary)',
-              textTransform: 'uppercase', letterSpacing: '0.05em',
-            }}>{typeLabel}</span>
-            {item.estimated_minutes && <span>~{item.estimated_minutes}m</span>}
-            {item.duration_minutes && <span>~{item.duration_minutes}m</span>}
-            {(item.start_time && item.end_time) && (
-              <span style={{ fontFamily: 'monospace' }}>{item.start_time}–{item.end_time}</span>
-            )}
-            {migratedFromLabel && (
-              <span
-                title={`Migrado automaticamente da ${migratedFromLabel} porque o turno encerrou`}
-                style={{
-                  color: 'var(--color-text-muted)',
-                  fontStyle: 'italic',
-                  letterSpacing: '0.02em',
-                }}
-              >
-                ↑ veio da {migratedFromLabel}
-              </span>
-            )}
-          </div>
+          {/* Meta row — só extras (start/end time + migration label).
+              Type code e duração já vivem na thumbnail. */}
+          {((item.start_time && item.end_time) || migratedFromLabel || (!isTask && !isRoutine && (item as Quest).area_slug && !parentTitle)) && (
+            <div style={{
+              fontFamily: 'var(--font-mono)',
+              fontSize: 9, fontWeight: 700,
+              letterSpacing: '0.15em',
+              textTransform: 'uppercase',
+              color: 'var(--color-text-muted)',
+              display: 'flex', gap: 10, marginTop: 2, flexWrap: 'wrap',
+            }}>
+              {!isTask && !isRoutine && (item as Quest).area_slug && !parentTitle && (
+                <span style={{ color: 'var(--color-ice)' }}>{typeLabel}</span>
+              )}
+              {(item.start_time && item.end_time) && (
+                <span style={{ opacity: 0.85 }}>{item.start_time}–{item.end_time}</span>
+              )}
+              {migratedFromLabel && (
+                <span
+                  title={`Migrado automaticamente da ${migratedFromLabel} porque o turno encerrou`}
+                  style={{
+                    color: 'var(--color-ice-deep)',
+                    letterSpacing: '0.18em',
+                  }}
+                >
+                  <span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
+                  ↑ FROM {migratedFromLabel.toUpperCase()}
+                </span>
+              )}
+            </div>
+          )}
         </div>
         <RunnableControls
           runnableType={kind}
@@ -222,7 +316,7 @@ export function PlannedItemRow({ item, areas, activeSession, onSessionUpdate, on
               onSessionUpdate()
             } catch (err) {
               console.error('[runnable] reopen failed', { kind, id: item.id, err })
-              alert('Erro ao reabrir — veja o console (F12).')
+              alertDialog({ title: 'Erro', message: 'Erro ao reabrir — veja o console (F12).', variant: 'danger' })
             }
           }}
         />
@@ -231,29 +325,58 @@ export function PlannedItemRow({ item, areas, activeSession, onSessionUpdate, on
           title="remover do plano do dia"
           style={{
             background: 'none', border: 'none', cursor: 'pointer',
-            color: 'var(--color-text-tertiary)', fontSize: 14, padding: '0 6px',
-            opacity: 0.5, transition: 'opacity 0.15s, color 0.15s',
+            fontFamily: 'var(--font-mono)',
+            color: 'var(--color-text-muted)', fontSize: 12, padding: '0 6px',
+            opacity: 0.55, transition: 'opacity 0.15s, color 0.15s',
             alignSelf: 'flex-start',
+            lineHeight: 1,
           }}
           onMouseEnter={e => {
             e.currentTarget.style.opacity = '1'
             e.currentTarget.style.color = 'var(--color-accent-light)'
           }}
           onMouseLeave={e => {
-            e.currentTarget.style.opacity = '0.5'
-            e.currentTarget.style.color = 'var(--color-text-tertiary)'
+            e.currentTarget.style.opacity = '0.55'
+            e.currentTarget.style.color = 'var(--color-text-muted)'
           }}
         >
           ✕
         </button>
       </div>
+      </div>
+    </div>
 
-      {/* Descrição expandida — fora da coluna do header, ocupa a largura toda */}
-      {showDescription && (
-        <div
-          onClick={e => e.stopPropagation()}
-          style={{ width: '100%' }}
-        >
+    {/* Descrição expandida — wrapper cyber com header tech-label +
+        container border ice + chamfer-bl. Indented pra alinhar com main. */}
+    {showDescription && (
+      <div
+        onClick={e => e.stopPropagation()}
+        style={{
+          width: '100%',
+          paddingLeft: 70,
+          paddingTop: 6,
+        }}
+      >
+        <div style={{
+          background: 'rgba(8, 10, 14, 0.55)',
+          border: '1px solid rgba(143, 191, 211, 0.22)',
+          borderRadius: 0,
+          clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%)',
+          padding: '10px 14px',
+        }}>
+          {/* Header tech-label */}
+          <div style={{
+            fontFamily: 'var(--font-mono)',
+            fontSize: 8, fontWeight: 700,
+            color: 'var(--color-text-muted)',
+            letterSpacing: '0.22em', textTransform: 'uppercase',
+            marginBottom: 8,
+            paddingBottom: 6,
+            borderBottom: '1px solid var(--color-divider)',
+          }}>
+            <span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
+            DESCRIPTION
+          </div>
           <BlockEditor
             value={descDraft ?? item?.description ?? ''}
             onChange={setDescDraft}
@@ -261,7 +384,8 @@ export function PlannedItemRow({ item, areas, activeSession, onSessionUpdate, on
             minHeight={80}
           />
         </div>
-      )}
+      </div>
+    )}
     </div>
   )
 }
