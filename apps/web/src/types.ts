@@ -531,3 +531,200 @@ export interface FinRecurringBillStatusMonth {
   receita_total_recebido: number
   receita_total_pendente: number
 }
+
+// ─── /Build (Sistema de Metas) ───────────────────────────────────────────
+// Schema completo em docs/metas-de-vida/PLAN.md.
+
+export interface BuildPurpose {
+  texto: string
+  criado_em: string
+  revisado_em: string
+}
+
+export interface BuildPrinciple {
+  id: number
+  texto: string
+  ordem: number
+  arquivado: boolean
+  criado_em: string
+}
+
+export interface BuildVision {
+  id: number
+  texto: string
+  data_alvo: string | null
+  ativa: boolean
+  criada_em: string
+  arquivada_em: string | null
+  motivo_arquivamento: string | null
+}
+
+export interface BuildSettings {
+  max_metas_ativas: number
+  default_dependency_threshold_pct: number
+  metric_data_age_threshold_days: number
+  dashboard_card_visivel: boolean
+  atualizado_em: string
+}
+
+export type BuildGoalHorizon = 'anual' | 'trimestral'
+export type BuildGoalStatus = 'ativa' | 'concluida' | 'abandonada' | 'pausada'
+export type BuildGoalCriterionType = 'boolean' | 'numeric'
+
+export interface BuildGoalAreaLink {
+  area_slug: string
+  is_primary: boolean
+}
+
+export interface BuildGoal {
+  id: string
+  titulo: string
+  descricao: string | null
+  horizon: BuildGoalHorizon
+  data_inicio: string | null
+  data_alvo: string
+  status: BuildGoalStatus
+  criterion_type: BuildGoalCriterionType
+  criterion_target_value: number | null
+  criterion_current_value: number | null
+  criterion_metric_slug: string | null
+  criterion_metric_item_id: number | null
+  is_foundational: boolean
+  requires_threshold_pct: number
+  criada_em: string
+  atualizada_em: string
+  concluida_em: string | null
+  abandonada_em: string | null
+  areas: BuildGoalAreaLink[]
+}
+
+export interface BuildGoalCreate {
+  titulo: string
+  descricao?: string | null
+  horizon: BuildGoalHorizon
+  data_inicio?: string | null
+  data_alvo: string
+  criterion_type: BuildGoalCriterionType
+  criterion_target_value?: number | null
+  is_foundational?: boolean
+  requires_threshold_pct?: number | null
+  areas: BuildGoalAreaLink[]
+}
+
+export type BuildGoalUpdate = Partial<{
+  titulo: string
+  descricao: string | null
+  horizon: BuildGoalHorizon
+  data_inicio: string | null
+  data_alvo: string
+  status: BuildGoalStatus
+  criterion_type: BuildGoalCriterionType
+  criterion_target_value: number | null
+  is_foundational: boolean
+  requires_threshold_pct: number
+}>
+
+// Classificação de Projeto sem Meta (decisão #8 do PLAN). Drift = nem
+// vinculado nem classificado.
+export type BuildProjectClassification =
+  | 'manutencao'
+  | 'reativo'
+  | 'exploratorio'
+
+export type BuildAlignmentStatus = 'aligned' | 'classified' | 'drift'
+
+export interface BuildProjectAlignment {
+  id: string
+  title: string
+  area_slug: string
+  status: string
+  archived_at: string | null
+  classification: BuildProjectClassification | null
+  classified_at: string | null
+  goal_ids: string[]
+  alignment_status: BuildAlignmentStatus
+}
+
+export type BuildSprintStatus = 'planejado' | 'ativo' | 'concluido' | 'abandonado'
+
+export interface BuildSprint {
+  id: string
+  goal_id: string
+  numero: number
+  data_inicio: string
+  data_fim: string
+  foco: string | null
+  status: BuildSprintStatus
+  criado_em: string
+  atualizado_em: string
+}
+
+export interface BuildSprintCreate {
+  goal_id: string
+  numero?: number | null
+  data_inicio: string
+  data_fim: string
+  foco?: string | null
+  status?: BuildSprintStatus
+}
+
+export type BuildSprintUpdate = Partial<{
+  numero: number
+  data_inicio: string
+  data_fim: string
+  foco: string | null
+  status: BuildSprintStatus
+}>
+
+export interface BuildGoalDependency {
+  requires_goal_id: string
+  requires_titulo: string
+  requires_status: BuildGoalStatus
+  is_satisfied: boolean
+}
+
+export type BuildRitualCadencia = 'semanal' | 'mensal' | 'trimestral' | 'anual'
+
+// schedule_config tem formato dependente da cadência. Tipamos amplo aqui;
+// validação fina fica no backend e na UI de configuração.
+export type BuildRitualScheduleConfig = Record<string, unknown>
+
+export interface BuildRitual {
+  cadencia: BuildRitualCadencia
+  ativo: boolean
+  schedule_config: BuildRitualScheduleConfig
+  direcionamento_pensar: string
+  direcionamento_evitar: string
+  duracao_alvo_min: number
+  criado_em: string
+  atualizado_em: string
+  // Calculados pelo backend:
+  proxima_data: string | null
+  ultima_execucao: string | null
+  dias_atraso: number
+}
+
+export type BuildRitualUpdate = Partial<{
+  ativo: boolean
+  schedule_config: BuildRitualScheduleConfig
+  direcionamento_pensar: string
+  direcionamento_evitar: string
+  duracao_alvo_min: number
+}>
+
+export interface BuildRitualSession {
+  id: string
+  cadencia: BuildRitualCadencia
+  data_executado: string
+  duracao_min: number | null
+  notas: string | null
+  foco_proxima_periodo: string | null
+  criado_em: string
+}
+
+export interface BuildRitualSessionCreate {
+  data_executado?: string | null
+  duracao_min?: number | null
+  notas?: string | null
+  foco_proxima_periodo?: string | null
+}

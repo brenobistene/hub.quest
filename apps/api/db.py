@@ -22,7 +22,6 @@ AREAS = [
     ("faculdade",  "Faculdade",  "Matérias, atividades e projetos de ensino.", 2, "#4a9eff"),
     ("growth",     "Growth",     "Cursos, certificações e aprendizado contínuo.", 3, "#9d6cff"),
     ("work",       "Trabalho",   "Trabalho principal — empresa, cargo, projetos fixos.", 4, "#7fb069"),
-    ("health",     "Health",     "Sono, saúde e rotina física.", 5, "#f5a962"),
 ]
 
 # Seed inicial de categorias do Hub Finance. Aplicado só em DB sem nenhuma
@@ -394,7 +393,187 @@ def init_db() -> None:
             updated_at              TEXT DEFAULT (datetime('now'))
         );
         CREATE INDEX IF NOT EXISTS idx_fin_recurring_ativa ON fin_recurring_bill(ativa);
+
+        -- ─── /Build (Sistema de Metas) ────────────────────────────────────
+        -- Camada estratégica: Propósito → Visão → Meta → (Sprint) → Projeto
+        -- → Entregável → Quest. Tabelas com prefixo `build_`. Schema completo
+        -- em docs/metas-de-vida/PLAN.md.
+        --
+        -- v0 deste arquivo: tabelas estratégicas-texto (Propósito, Princípios,
+        -- Visão, Settings). Sem Meta/Sprint/Guardrail/Ritual ainda — entram
+        -- nos próximos passos de v0 → v1.5.
+
+        -- Propósito: linha única id=1. Atemporal, único por usuário.
+        -- Texto livre de 1-3 sentenças articulando o "arquétipo da build".
+        CREATE TABLE IF NOT EXISTS build_purpose (
+            id           INTEGER PRIMARY KEY CHECK (id = 1),
+            texto        TEXT NOT NULL DEFAULT '',
+            criado_em    TEXT DEFAULT (datetime('now')),
+            revisado_em  TEXT DEFAULT (datetime('now'))
+        );
+
+        -- Princípios negativos (anti-metas) vivem dentro do Propósito.
+        -- Não são entidade separada conceitualmente — são lista de strings
+        -- atreladas ao único Propósito do sistema.
+        CREATE TABLE IF NOT EXISTS build_purpose_principle (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            proposito_id  INTEGER NOT NULL DEFAULT 1 REFERENCES build_purpose(id) ON DELETE CASCADE,
+            texto         TEXT NOT NULL,
+            ordem         INTEGER DEFAULT 0,
+            arquivado     INTEGER NOT NULL DEFAULT 0,
+            criado_em     TEXT DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_build_purpose_principle_ordem
+            ON build_purpose_principle(proposito_id, arquivado, ordem);
+
+        -- Visão: 3 anos, versionada. Apenas UMA `ativa=1` por vez (regra
+        -- enforced no backend, não no schema). Quando muda, a antiga vira
+        -- ativa=0 + arquivada_em + motivo. Histórico preservado.
+        CREATE TABLE IF NOT EXISTS build_vision (
+            id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+            texto                 TEXT NOT NULL,
+            data_alvo             TEXT,                              -- YYYY-MM-DD
+            ativa                 INTEGER NOT NULL DEFAULT 1,
+            criada_em             TEXT DEFAULT (datetime('now')),
+            arquivada_em          TEXT,
+            motivo_arquivamento   TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_build_vision_ativa
+            ON build_vision(ativa) WHERE ativa = 1;
+
+        -- Settings do módulo /Build (linha única id=1). Tudo configurável,
+        -- nada hardcoded — limites, thresholds, visibilidade.
+        CREATE TABLE IF NOT EXISTS build_settings (
+            id                                  INTEGER PRIMARY KEY CHECK (id = 1),
+            max_metas_ativas                    INTEGER NOT NULL DEFAULT 5,
+            default_dependency_threshold_pct    INTEGER NOT NULL DEFAULT 80,
+            metric_data_age_threshold_days      INTEGER NOT NULL DEFAULT 60,
+            dashboard_card_visivel              INTEGER NOT NULL DEFAULT 1,
+            atualizado_em                       TEXT DEFAULT (datetime('now'))
+        );
+
+        -- Meta — outcome com prazo. Os "breakpoints" da build.
+        -- Schema completo em docs/metas-de-vida/PLAN.md §3.3.
+        --
+        -- v0 deste código: Meta com critério booleano OU numérico (digitado
+        -- manual). criterion_metric_slug/item_id ficam null no v0; entram
+        -- na v2 (pontes com Hub Health).
+        --
+        -- Limite duro de Metas ativas vem de build_settings.max_metas_ativas
+        -- (validado no router, não no schema — facilita override pelo usuário).
+        CREATE TABLE IF NOT EXISTS build_goal (
+            id                          TEXT PRIMARY KEY,
+            titulo                      TEXT NOT NULL,
+            descricao                   TEXT,
+            horizon                     TEXT NOT NULL,
+            data_inicio                 TEXT,
+            data_alvo                   TEXT NOT NULL,
+            status                      TEXT NOT NULL DEFAULT 'ativa',
+            criterion_type              TEXT NOT NULL,
+            criterion_target_value      REAL,
+            criterion_metric_slug       TEXT,
+            criterion_metric_item_id    INTEGER,
+            is_foundational             INTEGER NOT NULL DEFAULT 0,
+            requires_threshold_pct      INTEGER NOT NULL DEFAULT 80,
+            criada_em                   TEXT DEFAULT (datetime('now')),
+            atualizada_em               TEXT DEFAULT (datetime('now')),
+            concluida_em                TEXT,
+            abandonada_em               TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_build_goal_status ON build_goal(status);
+
+        -- Junção Meta ↔ Área (N:N com flag is_primary).
+        -- Regra (validada no router): cada goal_id deve ter exatamente 1
+        -- linha com is_primary=1.
+        CREATE TABLE IF NOT EXISTS build_goal_area (
+            goal_id     TEXT NOT NULL REFERENCES build_goal(id) ON DELETE CASCADE,
+            area_slug   TEXT NOT NULL REFERENCES areas(slug),
+            is_primary  INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (goal_id, area_slug)
+        );
+        CREATE INDEX IF NOT EXISTS idx_build_goal_area_goal ON build_goal_area(goal_id);
+
+        -- Junção Projeto ↔ Meta (N:N). Projeto = hipótese de caminho pra Meta.
+        -- Mesmo Projeto pode servir várias Metas (alavanca múltipla);
+        -- mesma Meta pode ter vários Projetos (hipóteses concorrentes).
+        --
+        -- Regra de drift: Projeto sem nenhuma linha aqui AND projects.classification
+        -- IS NULL → estado "drift" (alerta na /Build).
+        CREATE TABLE IF NOT EXISTS build_project_goal (
+            project_id  TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            goal_id     TEXT NOT NULL REFERENCES build_goal(id) ON DELETE CASCADE,
+            created_at  TEXT DEFAULT (datetime('now')),
+            PRIMARY KEY (project_id, goal_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_build_project_goal_goal ON build_project_goal(goal_id);
+
+        -- Sprint = sub-unidade de 12 semanas dentro de Meta longa (anual).
+        -- Meta trimestral NÃO usa Sprint — ela própria já é o sprint.
+        -- Validação no router: rejeita Sprint pra Meta com horizon='trimestral'.
+        CREATE TABLE IF NOT EXISTS build_sprint (
+            id              TEXT PRIMARY KEY,
+            goal_id         TEXT NOT NULL REFERENCES build_goal(id) ON DELETE CASCADE,
+            numero          INTEGER NOT NULL,
+            data_inicio     TEXT NOT NULL,
+            data_fim        TEXT NOT NULL,
+            foco            TEXT,
+            status          TEXT NOT NULL DEFAULT 'planejado',
+            criado_em       TEXT DEFAULT (datetime('now')),
+            atualizado_em   TEXT DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_build_sprint_goal ON build_sprint(goal_id);
+
+        -- Dependência sequencial entre Metas. goal_id depende de requires_goal_id.
+        -- Validação no router: rejeita ciclos (DFS).
+        -- "Satisfeita" no MVP v1: requires goal tem status='concluida'.
+        CREATE TABLE IF NOT EXISTS build_goal_dependency (
+            goal_id            TEXT NOT NULL REFERENCES build_goal(id) ON DELETE CASCADE,
+            requires_goal_id   TEXT NOT NULL REFERENCES build_goal(id) ON DELETE CASCADE,
+            created_at         TEXT DEFAULT (datetime('now')),
+            PRIMARY KEY (goal_id, requires_goal_id),
+            CHECK (goal_id != requires_goal_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_build_goal_dep_required ON build_goal_dependency(requires_goal_id);
+
+        -- Ritual: entidade de primeira classe (não é Quest, Task nem Routine).
+        -- Reflexão estratégica — 4 cadências canônicas, seedadas no boot.
+        -- schedule_config é JSON com formato dependente da cadência:
+        --   semanal:    {"dia_semana": 0..6}                       (0=domingo)
+        --   mensal:     {"modo": "primeiro_fim_de_semana"} OU
+        --               {"modo": "data_fixa", "dia": 1..31}
+        --   trimestral: {"modo": "marcos_padrao"} OU
+        --               {"modo": "datas_custom", "datas": ["MM-DD", ...]}
+        --   anual:      {"modo": "data_fixa", "data": "MM-DD"}
+        CREATE TABLE IF NOT EXISTS build_ritual (
+            cadencia                TEXT PRIMARY KEY,
+            ativo                   INTEGER NOT NULL DEFAULT 1,
+            schedule_config         TEXT NOT NULL,
+            direcionamento_pensar   TEXT NOT NULL DEFAULT '',
+            direcionamento_evitar   TEXT NOT NULL DEFAULT '',
+            duracao_alvo_min        INTEGER NOT NULL DEFAULT 10,
+            criado_em               TEXT DEFAULT (datetime('now')),
+            atualizado_em           TEXT DEFAULT (datetime('now'))
+        );
+
+        -- Histórico de execuções do ritual.
+        -- foco_proxima_periodo: só semanal preenche (decisão da semana seguinte).
+        CREATE TABLE IF NOT EXISTS build_ritual_session (
+            id                       TEXT PRIMARY KEY,
+            cadencia                 TEXT NOT NULL REFERENCES build_ritual(cadencia) ON DELETE CASCADE,
+            data_executado           TEXT NOT NULL,
+            duracao_min              INTEGER,
+            notas                    TEXT,
+            foco_proxima_periodo     TEXT,
+            criado_em                TEXT DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_build_ritual_session
+            ON build_ritual_session(cadencia, data_executado DESC);
         """)
+
+        # /Build — coluna criterion_current_value: progresso digitado manualmente
+        # em v1 (pré-Health). Em v2, quando Meta aponta pra metric_slug, esse
+        # valor passa a ser puxado automaticamente do Hub Health.
+        _try_add_column(conn, "ALTER TABLE build_goal ADD COLUMN criterion_current_value REAL")
 
         # Garante que existe 1 linha de profile. Nome default é piada — o usuário
         # edita pelo ProfileEditModal no primeiro uso. INSERT OR IGNORE =
@@ -403,6 +582,85 @@ def init_db() -> None:
             "INSERT OR IGNORE INTO user_profile(id, name, role, avatar_url) VALUES (1, ?, ?, ?)",
             ("John No Arms", "", ""),
         )
+
+        # /Build: Propósito (linha única vazia) e Settings (defaults). Ambos
+        # idempotentes — INSERT OR IGNORE não sobrescreve. Usuário edita
+        # texto do Propósito pela UI da página /build assim que articular.
+        conn.execute(
+            "INSERT OR IGNORE INTO build_purpose(id, texto) VALUES (1, '')"
+        )
+        conn.execute(
+            "INSERT OR IGNORE INTO build_settings(id) VALUES (1)"
+        )
+
+        # /Build: Rituais — 4 cadências canônicas. Seedadas com defaults
+        # sensatos. Idempotente: INSERT OR IGNORE preserva configurações
+        # editadas pelo usuário.
+        # Templates de direcionamento vêm da seção §3.8 do PLAN.md.
+        import json as _json
+        ritual_seeds = [
+            (
+                "semanal",
+                _json.dumps({"dia_semana": 0}),  # 0 = domingo (default)
+                "Quais Metas tiveram progresso essa semana? "
+                "Próxima semana: 1-2 Metas como foco explícito. "
+                "Apareceu Projeto reativo? Tem como evitar na próxima? "
+                "Entregáveis: o que foi entregue, o que atrasou?",
+                "Não revisar Visão nem Propósito. "
+                "Não criar nem matar Metas. "
+                "Não pivotar Projeto. "
+                "Sem reflexão filosófica — semanal é tática.",
+                7,
+            ),
+            (
+                "mensal",
+                _json.dumps({"modo": "primeiro_fim_de_semana"}),
+                "Cada Projeto ativo: avançou ou estagnou? "
+                "Projeto parado há 3+ semanas? Falta tempo ou hipótese errada? "
+                "% do mês foi reativo vs proativo? Passou de 30%? "
+                "Alguma Meta sem progresso nenhum esse mês?",
+                "Ainda não criar/matar Metas (trimestral). "
+                "Não revisitar Visão. "
+                "Não desenhar plano semanal.",
+                20,
+            ),
+            (
+                "trimestral",
+                _json.dumps({"modo": "marcos_padrao"}),
+                "Metas: quais ainda fazem sentido? Quais viraram passado? "
+                "Poda agressiva: Meta sem progresso há 6 meses → mata ou repensa. "
+                "Nova Meta entrando? (respeitando limite ativas) "
+                "Pivot de Projeto: hipótese morreu — tenta outra ou desiste? "
+                "Áreas: alguma vazia há 3 meses? "
+                "Meta de fundação ainda é fundação? "
+                "Visão: ajuste leve está chamando? (não rewrite — isso é anual)",
+                "Propósito (intocado, anual). "
+                "Mudança radical de Visão (anual). "
+                "Detalhes semanais — sai com diretrizes, não com to-do list.",
+                90,
+            ),
+            (
+                "anual",
+                _json.dumps({"modo": "data_fixa", "data": "01-01"}),
+                "Visão de 3 anos ainda é sua, ou virou eco? "
+                "Se mudou: versiona a antiga (histórico importa), escreve nova. "
+                "Propósito: continua honesto? Aconteceu algo no ano que revelou que tá fora? "
+                "Princípios negativos: algum foi violado consistentemente? "
+                "Áreas: estrutura ainda reflete a vida? Mudança estrutural? "
+                "Metas concluídas: o que aprendi sobre mim que não sabia?",
+                "Tarefas, semanas, planejamento operacional. "
+                "Comparação com outras pessoas.",
+                240,
+            ),
+        ]
+        for cadencia, schedule, pensar, evitar, duracao in ritual_seeds:
+            conn.execute(
+                "INSERT OR IGNORE INTO build_ritual"
+                "(cadencia, schedule_config, direcionamento_pensar, "
+                " direcionamento_evitar, duracao_alvo_min) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (cadencia, schedule, pensar, evitar, duracao),
+            )
 
         # Seed de áreas — só em instalação nova. Usamos `INSERT OR IGNORE`
         # antes, o que recriava áreas deletadas a cada boot. Agora: se a
@@ -601,6 +859,13 @@ def init_db() -> None:
         # ISO timestamp = arquivado naquele momento. Oculta da lista principal
         # sem apagar dado.
         _try_add_column(conn, "ALTER TABLE projects ADD COLUMN archived_at TEXT")
+        conn.commit()
+
+        # /Build: classificação do Projeto quando não está vinculado a Meta.
+        # NULL = drift (alerta). Valores válidos: 'manutencao', 'reativo',
+        # 'exploratorio'. Ver docs/metas-de-vida/PLAN.md §3.5.
+        _try_add_column(conn, "ALTER TABLE projects ADD COLUMN classification TEXT")
+        _try_add_column(conn, "ALTER TABLE projects ADD COLUMN classified_at TEXT")
         conn.commit()
 
         # One-shot cleanup: purge orphan subtasks (quest has parent but no

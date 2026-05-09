@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import { Sunrise, Sun, Moon, X, ArrowRight, Calendar as CalendarIcon, Trash2, AlertTriangle, Search } from 'lucide-react'
@@ -18,6 +18,7 @@ import { DayPeriodsEditModal } from '../components/DayPeriodsEditModal'
 import { PlannedItemRow } from '../components/PlannedItemRow'
 import { modalHeader } from './finance/components/styleHelpers'
 import { PageShell, TechId, DataReadoutFrame } from '../components/ui/CyberShell'
+import { RitualNextCard } from '../components/RitualNextCard'
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
 
@@ -206,11 +207,39 @@ export function DiaView({ projects, quests, areas, activeSession, onSessionUpdat
     return () => { cancelled = true }
   }, [quests.map(q => q.id + ':' + (q.deliverable_id ?? '') + ':' + (q.project_id ?? '')).join(',')])
 
+  // Midnight rollover guard: se a aba ficar aberta atravessando 00:00, o
+  // `dayPlanKey` muda (ontem→hoje) mas o estado em memória ainda é o de
+  // ontem. Sem guard, o save effect escreveria as atividades de ontem no
+  // slot de hoje. Solução: detectamos via useRef que a chave mudou,
+  // recarregamos do novo slot (vazio se nunca planejou) e PULAMOS o save
+  // nesse ciclo. Mesmo padrão pro `migratedFrom`.
+  const prevDayPlanKey = useRef(dayPlanKey)
   useEffect(() => {
+    if (prevDayPlanKey.current !== dayPlanKey) {
+      prevDayPlanKey.current = dayPlanKey
+      try {
+        const saved = localStorage.getItem(dayPlanKey)
+        setDayPlan(saved ? JSON.parse(saved) : { morning: [], afternoon: [], evening: [] })
+      } catch {
+        setDayPlan({ morning: [], afternoon: [], evening: [] })
+      }
+      return
+    }
     localStorage.setItem(dayPlanKey, JSON.stringify(dayPlan))
   }, [dayPlan, dayPlanKey])
 
+  const prevMigratedKey = useRef(migratedKey)
   useEffect(() => {
+    if (prevMigratedKey.current !== migratedKey) {
+      prevMigratedKey.current = migratedKey
+      try {
+        const saved = localStorage.getItem(migratedKey)
+        setMigratedFrom(saved ? JSON.parse(saved) : {})
+      } catch {
+        setMigratedFrom({})
+      }
+      return
+    }
     localStorage.setItem(migratedKey, JSON.stringify(migratedFrom))
   }, [migratedFrom, migratedKey])
 
@@ -715,6 +744,13 @@ export function DiaView({ projects, quests, areas, activeSession, onSessionUpdat
         </>
       }
     >
+
+      {/* Surface excepcional do estrategista no executor: só aparece quando
+          há ritual atrasado OU agendado pra hoje. Default sumido — operação
+          continua limpa. Decisão #15 de docs/metas-de-vida/PLAN.md. */}
+      <div style={{ marginBottom: 12 }}>
+        <RitualNextCard urgentOnly />
+      </div>
 
       {overdueTasks.length > 0 && (
         <OverdueTasksBanner

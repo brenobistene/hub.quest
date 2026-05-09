@@ -7,6 +7,7 @@ import { getAllBlockRangesForDay } from '../utils/blocks'
 import type { UnproductiveBlock } from '../utils/blocks'
 import { ProfileEditModal } from '../components/ProfileEditModal'
 import { AnimatedNumber, SkeletonBlock } from '../components/ui/Motion'
+import { RitualNextCard } from '../components/RitualNextCard'
 
 // ─── Tipos e constantes ────────────────────────────────────────────────────
 
@@ -688,6 +689,15 @@ export function DashboardView({ projects, quests, areas, profile, onProfileUpdat
           <WindowRangeSelector value={windowRange} onChange={setWindowRange} />
         </div>
       </header>
+
+      {/* Surface única do estrategista no executor: card "Próximo Ritual".
+          Decisão #15 de docs/metas-de-vida/PLAN.md — Ritual é a única coisa
+          estratégica com urgência real, então merece exceção à regra
+          "operações ficam limpas". Click → /build. */}
+      <div style={{ padding: 'var(--space-3) var(--space-6) 0' }}>
+        <RitualNextCard />
+      </div>
+
       {/* Body como cena CP2077 — panel opaco escuro com grid HUD, halos
           ice/fog atmosféricos por trás dos elementos hero, e contraste
           alto. Não é mais "vidro translúcido", é "monitor de console

@@ -35,6 +35,8 @@ import { FixasPage } from './pages/finance/FixasPage'
 import { DividasPage } from './pages/finance/DividasPage'
 import { FreelasPage } from './pages/finance/FreelasPage'
 import { CategoriasPage } from './pages/finance/CategoriasPage'
+import BuildPage from './pages/BuildPage'
+import { useRituals } from './lib/build-queries'
 
 /** Item de navegação cyber HUD. `label` aparece quando expandido; `abbr`
  *  (3 letras mono uppercase) aparece quando colapsado — vibe CP2077. */
@@ -61,6 +63,12 @@ const NAV_SECTIONS: NavSection[] = [
       { path: '/dia',         label: 'Dia',         abbr: 'DIA' },
       { path: '/calendario',  label: 'Calendário',  abbr: 'CAL' },
       { path: '/areas',       label: 'Áreas',       abbr: 'ARE' },
+    ],
+  },
+  {
+    label: 'STRATEGY',
+    items: [
+      { path: '/build',       label: '/Build',      abbr: 'BLD' },
     ],
   },
   {
@@ -433,6 +441,12 @@ export default function App() {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [location.pathname, navigate])
 
+  // Rituais atrasados → badge urgent na sidebar do /build. Surface única do
+  // estrategista no executor: se a /build é uma ilha (sem outras surfaces),
+  // o ritual atrasado é o que faz o usuário lembrar de visitar.
+  const { data: rituais = [] } = useRituals()
+  const ritualsAtrasados = rituais.filter(r => r.ativo && r.dias_atraso > 0).length
+
   // Contadores ao vivo pros badges do sidebar — sinal de "produto vivo"
   // (Linear/Cron mostram # de unread/overdue ao lado dos itens). Apenas
   // overdue de Tarefas (urgência real) e ativas de Quests (volume geral).
@@ -446,6 +460,7 @@ export default function App() {
     return {
       '/tarefas': { count: overdueTasks, urgent: true },
       '/arquivados': { count: archived, urgent: false },
+      '/build': { count: ritualsAtrasados, urgent: true },
     } as Record<string, { count: number; urgent: boolean }>
   })()
 
@@ -1143,6 +1158,7 @@ export default function App() {
           <Route path="/calendario" element={<CalendarView projects={projects} quests={quests} areas={areas} sessionUpdateTrigger={sessionUpdateTrigger} onSessionUpdate={onSessionUpdate} />} />
           <Route path="/rotinas" element={<RoutinesView />} />
           <Route path="/tarefas" element={<TasksView activeSession={activeSession} onSessionUpdate={onSessionUpdate} sessionUpdateTrigger={sessionUpdateTrigger} />} />
+          <Route path="/build" element={<BuildPage />} />
           {/* Hub Finance — layout com sub-rotas (visão geral, lançamentos, etc).
               `/hub-finance` redireciona pra `/hub-finance/visao-geral`. */}
           <Route path="/hub-finance" element={<HubFinanceLayout />}>

@@ -20,6 +20,7 @@ from db import init_db
 from routers import (
     active_session,
     areas,
+    build,
     calendar,
     deliverables,
     finance,
@@ -74,6 +75,7 @@ app.include_router(profile.router)
 app.include_router(micro_tasks.router)
 app.include_router(calendar.router)
 app.include_router(finance.router)
+app.include_router(build.router)
 
 
 def _service_flags() -> dict:

@@ -7,6 +7,12 @@ import type {
   FinRecurringBill, FinRecurringBillStatusMonth,
   FinMonthCommitments,
   FinAccountType, FinAccountOrigin, FinCategoryType,
+  BuildPurpose, BuildPrinciple, BuildVision, BuildSettings,
+  BuildGoal, BuildGoalCreate, BuildGoalUpdate, BuildGoalAreaLink, BuildGoalStatus,
+  BuildProjectAlignment, BuildProjectClassification,
+  BuildSprint, BuildSprintCreate, BuildSprintUpdate, BuildGoalDependency,
+  BuildRitual, BuildRitualCadencia, BuildRitualUpdate, BuildRitualSession,
+  BuildRitualSessionCreate,
 } from './types'
 
 // URL base do backend. Default aponta pro backend local padrão; pode ser
@@ -1121,3 +1127,215 @@ export async function importNubankCsv(file: File, contaId: string): Promise<FinI
   }
   return res.json()
 }
+
+// ─── /Build (Sistema de Metas) ─────────────────────────────────────────────
+// Endpoints documentados em docs/metas-de-vida/PLAN.md §7.
+
+async function jsonFetch<T>(path: string, init: RequestInit): Promise<T> {
+  const res = await fetch(`${BASE}${path}`, {
+    ...init,
+    headers: { 'Content-Type': 'application/json', ...(init.headers || {}) },
+  })
+  if (!res.ok) {
+    let detail = `API error ${res.status}`
+    try { detail = (await res.json())?.detail ?? detail } catch {}
+    throw new Error(detail)
+  }
+  if (res.status === 204) return undefined as T
+  return res.json()
+}
+
+// Propósito
+export const fetchBuildPurpose = () => get<BuildPurpose>('/api/build/purpose')
+export const updateBuildPurpose = (texto: string) =>
+  jsonFetch<BuildPurpose>('/api/build/purpose', {
+    method: 'PUT',
+    body: JSON.stringify({ texto }),
+  })
+
+// Princípios negativos
+export const fetchBuildPrinciples = (includeArchived = false) =>
+  get<BuildPrinciple[]>(`/api/build/principles${includeArchived ? '?include_archived=true' : ''}`)
+
+export const createBuildPrinciple = (texto: string, ordem?: number) =>
+  jsonFetch<BuildPrinciple>('/api/build/principles', {
+    method: 'POST',
+    body: JSON.stringify({ texto, ordem }),
+  })
+
+export const updateBuildPrinciple = (
+  id: number,
+  patch: Partial<Pick<BuildPrinciple, 'texto' | 'ordem' | 'arquivado'>>,
+) =>
+  jsonFetch<BuildPrinciple>(`/api/build/principles/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(patch),
+  })
+
+export const deleteBuildPrinciple = (id: number) =>
+  jsonFetch<void>(`/api/build/principles/${id}`, { method: 'DELETE' })
+
+// Visão (versionada — uma ativa)
+export const fetchBuildVision = () => get<BuildVision | null>('/api/build/vision')
+export const fetchBuildVisionHistory = () => get<BuildVision[]>('/api/build/vision/history')
+
+export const versionBuildVision = (
+  texto: string,
+  dataAlvo: string | null,
+  motivoArquivamento?: string,
+) =>
+  jsonFetch<BuildVision>('/api/build/vision/version', {
+    method: 'POST',
+    body: JSON.stringify({
+      texto,
+      data_alvo: dataAlvo,
+      motivo_arquivamento: motivoArquivamento ?? null,
+    }),
+  })
+
+export const updateBuildVision = (patch: { texto?: string; data_alvo?: string | null }) =>
+  jsonFetch<BuildVision>('/api/build/vision', {
+    method: 'PATCH',
+    body: JSON.stringify(patch),
+  })
+
+// Settings
+export const fetchBuildSettings = () => get<BuildSettings>('/api/build/settings')
+export const updateBuildSettings = (patch: Partial<BuildSettings>) =>
+  jsonFetch<BuildSettings>('/api/build/settings', {
+    method: 'PATCH',
+    body: JSON.stringify(patch),
+  })
+
+// Metas
+export const fetchBuildGoals = (status?: BuildGoalStatus) =>
+  get<BuildGoal[]>(`/api/build/goals${status ? `?status=${status}` : ''}`)
+
+export const fetchBuildGoal = (id: string) => get<BuildGoal>(`/api/build/goals/${id}`)
+
+export const createBuildGoal = (body: BuildGoalCreate) =>
+  jsonFetch<BuildGoal>('/api/build/goals', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+
+export const updateBuildGoal = (id: string, patch: BuildGoalUpdate) =>
+  jsonFetch<BuildGoal>(`/api/build/goals/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(patch),
+  })
+
+export const deleteBuildGoal = (id: string) =>
+  jsonFetch<void>(`/api/build/goals/${id}`, { method: 'DELETE' })
+
+export const replaceBuildGoalAreas = (id: string, areas: BuildGoalAreaLink[]) =>
+  jsonFetch<BuildGoal>(`/api/build/goals/${id}/areas`, {
+    method: 'PUT',
+    body: JSON.stringify({ areas }),
+  })
+
+// Alinhamento Projeto ↔ Meta + classificação + drift
+export const fetchProjectsAlignment = (params?: {
+  driftOnly?: boolean
+  goalId?: string
+  includeArchived?: boolean
+}) => {
+  const q = new URLSearchParams()
+  if (params?.driftOnly) q.set('drift_only', 'true')
+  if (params?.goalId) q.set('goal_id', params.goalId)
+  if (params?.includeArchived) q.set('include_archived', 'true')
+  const qs = q.toString()
+  return get<BuildProjectAlignment[]>(
+    `/api/build/projects/alignment${qs ? `?${qs}` : ''}`,
+  )
+}
+
+export const linkProjectToGoal = (projectId: string, goalId: string) =>
+  jsonFetch<BuildProjectAlignment>(
+    `/api/build/projects/${projectId}/goals`,
+    { method: 'POST', body: JSON.stringify({ goal_id: goalId }) },
+  )
+
+export const unlinkProjectFromGoal = (projectId: string, goalId: string) =>
+  jsonFetch<BuildProjectAlignment>(
+    `/api/build/projects/${projectId}/goals/${goalId}`,
+    { method: 'DELETE' },
+  )
+
+export const classifyProject = (
+  projectId: string,
+  classification: BuildProjectClassification | null,
+) =>
+  jsonFetch<BuildProjectAlignment>(
+    `/api/build/projects/${projectId}/classification`,
+    { method: 'PATCH', body: JSON.stringify({ classification }) },
+  )
+
+// Sprints
+export const fetchBuildSprints = (goalId?: string) =>
+  get<BuildSprint[]>(`/api/build/sprints${goalId ? `?goal_id=${goalId}` : ''}`)
+
+export const createBuildSprint = (body: BuildSprintCreate) =>
+  jsonFetch<BuildSprint>('/api/build/sprints', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+
+export const updateBuildSprint = (id: string, patch: BuildSprintUpdate) =>
+  jsonFetch<BuildSprint>(`/api/build/sprints/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(patch),
+  })
+
+export const deleteBuildSprint = (id: string) =>
+  jsonFetch<void>(`/api/build/sprints/${id}`, { method: 'DELETE' })
+
+// Dependências entre Metas
+export const fetchGoalDependencies = (goalId: string) =>
+  get<BuildGoalDependency[]>(`/api/build/goals/${goalId}/dependencies`)
+
+export const addGoalDependency = (goalId: string, requiresGoalId: string) =>
+  jsonFetch<BuildGoalDependency>(`/api/build/goals/${goalId}/dependencies`, {
+    method: 'POST',
+    body: JSON.stringify({ requires_goal_id: requiresGoalId }),
+  })
+
+export const removeGoalDependency = (goalId: string, requiresGoalId: string) =>
+  jsonFetch<void>(
+    `/api/build/goals/${goalId}/dependencies/${requiresGoalId}`,
+    { method: 'DELETE' },
+  )
+
+// Progresso (v1 — manual; v2 vem de Health)
+export const updateGoalProgress = (id: string, value: number) =>
+  jsonFetch<BuildGoal>(`/api/build/goals/${id}/progress`, {
+    method: 'PATCH',
+    body: JSON.stringify({ criterion_current_value: value }),
+  })
+
+// Rituais (v1.5)
+export const fetchBuildRituals = () => get<BuildRitual[]>('/api/build/rituals')
+
+export const fetchBuildRitual = (cadencia: BuildRitualCadencia) =>
+  get<BuildRitual>(`/api/build/rituals/${cadencia}`)
+
+export const updateBuildRitual = (
+  cadencia: BuildRitualCadencia,
+  patch: BuildRitualUpdate,
+) =>
+  jsonFetch<BuildRitual>(`/api/build/rituals/${cadencia}`, {
+    method: 'PATCH',
+    body: JSON.stringify(patch),
+  })
+
+export const fetchBuildRitualSessions = (cadencia: BuildRitualCadencia) =>
+  get<BuildRitualSession[]>(`/api/build/rituals/${cadencia}/sessions`)
+
+export const createBuildRitualSession = (
+  cadencia: BuildRitualCadencia,
+  body: BuildRitualSessionCreate,
+) =>
+  jsonFetch<BuildRitualSession>(`/api/build/rituals/${cadencia}/sessions`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
