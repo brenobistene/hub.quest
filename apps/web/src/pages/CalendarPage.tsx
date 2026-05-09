@@ -9,6 +9,7 @@ import type { UnproductiveBlock } from '../utils/blocks'
 import { getAllBlockRangesForDay } from '../utils/blocks'
 import { Card } from '../components/ui/Primitives'
 import { alertDialog } from '../lib/dialog'
+import { RitualNextCard } from '../components/RitualNextCard'
 
 const MONTH_NAMES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
                      'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro']
@@ -303,6 +304,11 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger, on
 
   return (
     <div style={{ color: 'var(--color-text-primary)' }}>
+      {/* Surface excepcional do estrategista no executor — só aparece quando
+          há ritual atrasado OU agendado pra hoje. Decisão #15 do PLAN /Build. */}
+      <div style={{ marginBottom: 12 }}>
+        <RitualNextCard urgentOnly />
+      </div>
     <Card padding="none" style={{
       animation: 'hq-fade-up var(--motion-base) var(--ease-emphasis) both',
     }}>
