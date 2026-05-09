@@ -50,6 +50,7 @@ import {
   useUpdatePurpose,
   useVersionVision,
   useVision,
+  useVisionHistory,
   useUpdateVision,
 } from '../lib/build-queries'
 import { useHealthMetricsCatalog, useHealthItems } from '../lib/health-queries'
@@ -67,6 +68,7 @@ import type {
   BuildRitual,
   BuildRitualCadencia,
   BuildSprint,
+  BuildVision,
   HealthMetricMeta,
 } from '../types'
 
@@ -3678,6 +3680,202 @@ function PrinciplesSection() {
 
 // ─── Painel da Visão ──────────────────────────────────────────────────────
 
+function VisionHistoryBtn() {
+  const { data: history = [], isLoading } = useVisionHistory()
+  const [open, setOpen] = useState(false)
+
+  if (isLoading || history.length === 0) return null
+
+  return (
+    <>
+      <ActionBtn
+        onClick={() => setOpen(true)}
+        icon={<Archive size={13} />}
+        label={`Histórico (${history.length})`}
+        variant="muted"
+      />
+      {open && (
+        <VisionHistoryModal
+          versions={history}
+          onClose={() => setOpen(false)}
+        />
+      )}
+    </>
+  )
+}
+
+function VisionHistoryModal({
+  versions,
+  onClose,
+}: {
+  versions: BuildVision[]
+  onClose: () => void
+}) {
+  return (
+    <div
+      role="dialog"
+      style={{
+        position: 'fixed',
+        inset: 0,
+        background: 'rgba(0,0,0,0.85)',
+        zIndex: 1000,
+        display: 'flex',
+        alignItems: 'flex-start',
+        justifyContent: 'center',
+        padding: '40px 20px',
+        overflowY: 'auto',
+      }}
+      onClick={onClose}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: '100%',
+          maxWidth: 720,
+          background: NEO.panel,
+          border: `1px solid ${NEO.accent}`,
+          padding: '28px 32px',
+          position: 'relative',
+        }}
+      >
+        <CornerBracket position="tl" />
+        <CornerBracket position="tr" />
+        <CornerBracket position="bl" />
+        <CornerBracket position="br" />
+
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: 6,
+          }}
+        >
+          <div
+            style={{
+              fontSize: 11,
+              letterSpacing: '0.32em',
+              color: NEO.accent,
+              fontWeight: 700,
+            }}
+          >
+            ❰ HISTÓRICO DE VISÕES
+          </div>
+          <button
+            onClick={onClose}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: NEO.textSecondary,
+              cursor: 'pointer',
+              padding: 4,
+            }}
+          >
+            <X size={16} />
+          </button>
+        </div>
+        <div
+          style={{
+            fontSize: 10,
+            color: NEO.textMuted,
+            marginBottom: 24,
+            letterSpacing: '0.1em',
+            textTransform: 'uppercase',
+          }}
+        >
+          // {versions.length} {versions.length === 1 ? 'versão arquivada' : 'versões arquivadas'} · ordem cronológica reversa
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          {versions.map((v) => (
+            <div
+              key={v.id}
+              style={{
+                background: NEO.bg,
+                border: `1px solid ${NEO.border}`,
+                borderLeft: `2px solid ${NEO.textMuted}`,
+                padding: '14px 16px',
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 9,
+                  color: NEO.textMuted,
+                  letterSpacing: '0.2em',
+                  textTransform: 'uppercase',
+                  marginBottom: 8,
+                  display: 'flex',
+                  gap: 12,
+                  flexWrap: 'wrap',
+                }}
+              >
+                <span>criada: {fmtDate(v.criada_em)}</span>
+                {v.arquivada_em && (
+                  <span>arquivada: {fmtDate(v.arquivada_em)}</span>
+                )}
+                {v.data_alvo && <span>alvo era: {fmtDate(v.data_alvo)}</span>}
+              </div>
+              <p
+                style={{
+                  margin: 0,
+                  fontSize: 13,
+                  color: NEO.textPrimary,
+                  lineHeight: 1.6,
+                  whiteSpace: 'pre-wrap',
+                }}
+              >
+                {v.texto}
+              </p>
+              {v.motivo_arquivamento && (
+                <div
+                  style={{
+                    marginTop: 10,
+                    padding: '8px 10px',
+                    borderLeft: `2px solid ${NEO.borderHot}`,
+                    background: `${NEO.accent}05`,
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: 9,
+                      color: NEO.accent,
+                      letterSpacing: '0.2em',
+                      textTransform: 'uppercase',
+                      marginBottom: 4,
+                      fontWeight: 700,
+                    }}
+                  >
+                    motivo de arquivar
+                  </div>
+                  <div
+                    style={{
+                      fontSize: 12,
+                      color: NEO.textPrimary,
+                      fontStyle: 'italic',
+                      lineHeight: 1.5,
+                    }}
+                  >
+                    {v.motivo_arquivamento}
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+
+        <div style={{ marginTop: 20, display: 'flex', justifyContent: 'flex-end' }}>
+          <ActionBtn
+            onClick={onClose}
+            icon={<X size={14} />}
+            label="Fechar"
+            variant="muted"
+          />
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function VisionPanel() {
   const { data: vision, isLoading } = useVision()
   const versionVision = useVersionVision()
@@ -3850,6 +4048,7 @@ function VisionPanel() {
               label="Versionar"
               variant="accent"
             />
+            <VisionHistoryBtn />
           </div>
         </>
       ) : (
