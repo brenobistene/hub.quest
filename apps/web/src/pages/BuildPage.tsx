@@ -218,6 +218,7 @@ function GoalRow({ goal }: { goal: BuildGoal }) {
   })
   const { data: linkedProjects = [] } = useProjectsAlignment({ goalId: goal.id })
   const updateGoal = useUpdateGoal()
+  const [editing, setEditing] = useState(false)
 
   const primary = goal.areas.find((a) => a.is_primary)
   const secondaries = goal.areas.filter((a) => !a.is_primary)
@@ -343,6 +344,7 @@ function GoalRow({ goal }: { goal: BuildGoal }) {
 
       {/* Ações rápidas */}
       <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+        <MicroBtn onClick={() => setEditing(true)} label="✎ editar" />
         <MicroBtn
           onClick={() =>
             updateGoal.mutate({ id: goal.id, patch: { status: 'concluida' } })
@@ -362,6 +364,10 @@ function GoalRow({ goal }: { goal: BuildGoal }) {
           label="× abandonar"
         />
       </div>
+
+      {editing && (
+        <GoalEditModal goal={goal} onClose={() => setEditing(false)} />
+      )}
     </div>
   )
 }
@@ -2831,6 +2837,414 @@ function GoalCreateModal({ onClose }: { onClose: () => void }) {
             label="Criar Meta"
             variant="accent"
             disabled={!canSubmit || createGoal.isPending}
+          />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Modal de edição de Meta ──────────────────────────────────────────────
+
+function GoalEditModal({
+  goal,
+  onClose,
+}: {
+  goal: BuildGoal
+  onClose: () => void
+}) {
+  const updateGoal = useUpdateGoal()
+  const [titulo, setTitulo] = useState(goal.titulo)
+  const [descricao, setDescricao] = useState(goal.descricao ?? '')
+  const [horizon, setHorizon] = useState<BuildGoalHorizon>(goal.horizon)
+  const [dataAlvo, setDataAlvo] = useState(goal.data_alvo)
+  const [criterionTarget, setCriterionTarget] = useState(
+    goal.criterion_target_value !== null ? String(goal.criterion_target_value) : '',
+  )
+  const [isFoundational, setIsFoundational] = useState(goal.is_foundational)
+  const [valorOrigem, setValorOrigem] = useState<'manual' | 'health'>(
+    goal.criterion_metric_slug ? 'health' : 'manual',
+  )
+  const [metricSlug, setMetricSlug] = useState(goal.criterion_metric_slug ?? '')
+  const [metricItemId, setMetricItemId] = useState(
+    goal.criterion_metric_item_id !== null
+      ? String(goal.criterion_metric_item_id)
+      : '',
+  )
+  const [error, setError] = useState<string | null>(null)
+
+  const { data: metricsCatalog = [] } = useHealthMetricsCatalog()
+  const selectedMetric: HealthMetricMeta | undefined = metricsCatalog.find(
+    (m) => m.slug === metricSlug,
+  )
+  const { data: metricItems = [] } = useHealthItems(
+    selectedMetric?.domain_slug ?? '',
+    false,
+  )
+  const groupedMetrics = useMemo(() => {
+    const g: Record<string, HealthMetricMeta[]> = {}
+    for (const m of metricsCatalog) {
+      if (!g[m.domain_slug]) g[m.domain_slug] = []
+      g[m.domain_slug].push(m)
+    }
+    return g
+  }, [metricsCatalog])
+
+  const isNumeric = goal.criterion_type === 'numeric'
+
+  function submit() {
+    if (!titulo.trim() || !dataAlvo) {
+      setError('Título e data alvo são obrigatórios')
+      return
+    }
+    if (isNumeric && !criterionTarget.trim()) {
+      setError('Critério numérico exige valor alvo')
+      return
+    }
+    if (isNumeric && valorOrigem === 'health') {
+      if (!metricSlug) {
+        setError('Escolha uma Métrica de Hub Health')
+        return
+      }
+      if (selectedMetric?.precisa_item && !metricItemId) {
+        setError('Essa Métrica precisa de um item específico')
+        return
+      }
+    }
+    setError(null)
+
+    // Monta patch só com o que mudou (evita writes desnecessários)
+    const patch: Record<string, unknown> = {}
+    if (titulo.trim() !== goal.titulo) patch.titulo = titulo.trim()
+    if ((descricao.trim() || null) !== goal.descricao)
+      patch.descricao = descricao.trim() || null
+    if (horizon !== goal.horizon) patch.horizon = horizon
+    if (dataAlvo !== goal.data_alvo) patch.data_alvo = dataAlvo
+    if (isFoundational !== goal.is_foundational)
+      patch.is_foundational = isFoundational
+
+    if (isNumeric) {
+      const newTarget = Number(criterionTarget)
+      if (newTarget !== goal.criterion_target_value)
+        patch.criterion_target_value = newTarget
+
+      // Origem do valor: comparar estado novo vs goal atual
+      if (valorOrigem === 'health') {
+        if (metricSlug !== goal.criterion_metric_slug)
+          patch.criterion_metric_slug = metricSlug
+        const newItemId = selectedMetric?.precisa_item ? Number(metricItemId) : null
+        if (newItemId !== goal.criterion_metric_item_id)
+          patch.criterion_metric_item_id = newItemId
+      } else {
+        // Manual: desvincula se estava vinculado
+        if (goal.criterion_metric_slug !== null) {
+          patch.criterion_metric_slug = ''
+          patch.criterion_metric_item_id = null
+        }
+      }
+    }
+
+    if (Object.keys(patch).length === 0) {
+      onClose()
+      return
+    }
+
+    updateGoal.mutate(
+      { id: goal.id, patch: patch as any },
+      {
+        onSuccess: () => onClose(),
+        onError: (err) => setError(err instanceof Error ? err.message : 'Erro'),
+      },
+    )
+  }
+
+  return (
+    <div
+      role="dialog"
+      style={{
+        position: 'fixed',
+        inset: 0,
+        background: 'rgba(0,0,0,0.85)',
+        zIndex: 1000,
+        display: 'flex',
+        alignItems: 'flex-start',
+        justifyContent: 'center',
+        padding: '40px 20px',
+        overflowY: 'auto',
+      }}
+      onClick={onClose}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: '100%',
+          maxWidth: 640,
+          background: NEO.panel,
+          border: `1px solid ${NEO.accent}`,
+          padding: '28px 32px',
+          position: 'relative',
+        }}
+      >
+        <CornerBracket position="tl" />
+        <CornerBracket position="tr" />
+        <CornerBracket position="bl" />
+        <CornerBracket position="br" />
+
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: 8,
+          }}
+        >
+          <div
+            style={{
+              fontSize: 11,
+              letterSpacing: '0.32em',
+              color: NEO.accent,
+              fontWeight: 700,
+            }}
+          >
+            ❰ EDITAR META
+          </div>
+          <button
+            onClick={onClose}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: NEO.textSecondary,
+              cursor: 'pointer',
+              padding: 4,
+            }}
+          >
+            <X size={16} />
+          </button>
+        </div>
+        <div
+          style={{
+            fontSize: 10,
+            color: NEO.textMuted,
+            marginBottom: 24,
+            letterSpacing: '0.1em',
+            textTransform: 'uppercase',
+          }}
+        >
+          // áreas e dependências têm fluxo próprio. critério (booleano/numérico) não muda.
+        </div>
+
+        <Label>TÍTULO</Label>
+        <input
+          value={titulo}
+          onChange={(e) => setTitulo(e.target.value)}
+          style={{ ...inputBlockStyle, marginTop: 4, marginBottom: 12 }}
+        />
+
+        <Label>DESCRIÇÃO (OPCIONAL)</Label>
+        <textarea
+          value={descricao}
+          onChange={(e) => setDescricao(e.target.value)}
+          rows={2}
+          style={{ ...textareaStyle, marginTop: 4, marginBottom: 12, fontSize: 12 }}
+        />
+
+        <div style={{ display: 'flex', gap: 12, marginBottom: 12 }}>
+          <div style={{ flex: 1 }}>
+            <Label>HORIZONTE</Label>
+            <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+              <RadioOpt
+                checked={horizon === 'anual'}
+                onClick={() => setHorizon('anual')}
+                label="Anual"
+                sub="1+ ano"
+              />
+              <RadioOpt
+                checked={horizon === 'trimestral'}
+                onClick={() => setHorizon('trimestral')}
+                label="Trimestral"
+                sub="12 semanas"
+              />
+            </div>
+          </div>
+          <div style={{ width: 200 }}>
+            <Label>DATA ALVO</Label>
+            <input
+              type="date"
+              value={dataAlvo}
+              onChange={(e) => setDataAlvo(e.target.value)}
+              style={{ ...inputBlockStyle, marginTop: 4 }}
+            />
+          </div>
+        </div>
+
+        {isNumeric && (
+          <>
+            <Label>VALOR ALVO</Label>
+            <input
+              type="number"
+              value={criterionTarget}
+              onChange={(e) => setCriterionTarget(e.target.value)}
+              step="any"
+              style={{
+                ...inputBlockStyle,
+                marginTop: 4,
+                marginBottom: 14,
+                width: 220,
+              }}
+            />
+
+            <Label>DE ONDE VEM O VALOR ATUAL</Label>
+            <div style={{ display: 'flex', gap: 12, marginTop: 4, marginBottom: 8 }}>
+              <RadioOpt
+                checked={valorOrigem === 'manual'}
+                onClick={() => setValorOrigem('manual')}
+                label="Eu digito"
+                sub="atualizo manualmente"
+              />
+              <RadioOpt
+                checked={valorOrigem === 'health'}
+                onClick={() => setValorOrigem('health')}
+                label="Vem de Hub Health"
+                sub="puxa de uma Métrica"
+              />
+            </div>
+
+            {valorOrigem === 'health' && (
+              <div
+                style={{
+                  marginBottom: 14,
+                  padding: 10,
+                  border: `1px solid ${NEO.cyanDim}`,
+                  background: `${NEO.cyan}05`,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 8,
+                }}
+              >
+                <select
+                  value={metricSlug}
+                  onChange={(e) => {
+                    setMetricSlug(e.target.value)
+                    setMetricItemId('')
+                  }}
+                  style={{
+                    background: NEO.bg,
+                    color: NEO.textPrimary,
+                    border: `1px solid ${NEO.cyanDim}`,
+                    padding: '6px 10px',
+                    fontFamily: MONO,
+                    fontSize: 12,
+                    outline: 'none',
+                  }}
+                >
+                  <option value="">— escolha uma Métrica —</option>
+                  {Object.entries(groupedMetrics).map(([domain, metrics]) => (
+                    <optgroup key={domain} label={domain}>
+                      {metrics.map((m) => (
+                        <option key={m.slug} value={m.slug}>
+                          {m.nome}
+                          {m.precisa_item ? ' (precisa item)' : ''}
+                        </option>
+                      ))}
+                    </optgroup>
+                  ))}
+                </select>
+                {selectedMetric?.precisa_item && (
+                  <select
+                    value={metricItemId}
+                    onChange={(e) => setMetricItemId(e.target.value)}
+                    style={{
+                      background: NEO.bg,
+                      color: NEO.textPrimary,
+                      border: `1px solid ${NEO.cyanDim}`,
+                      padding: '6px 10px',
+                      fontFamily: MONO,
+                      fontSize: 12,
+                      outline: 'none',
+                    }}
+                  >
+                    <option value="">— item de {selectedMetric.domain_slug} —</option>
+                    {metricItems.map((it) => (
+                      <option key={it.id} value={it.id}>
+                        {it.nome}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+            )}
+          </>
+        )}
+
+        <div
+          style={{
+            padding: '10px 12px',
+            background: isFoundational ? `${NEO.accent}15` : 'transparent',
+            border: `1px solid ${isFoundational ? NEO.accent : NEO.border}`,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+          }}
+        >
+          <input
+            type="checkbox"
+            id={`is-foundational-edit-${goal.id}`}
+            checked={isFoundational}
+            onChange={(e) => setIsFoundational(e.target.checked)}
+            style={{ accentColor: NEO.accent, width: 14, height: 14 }}
+          />
+          <label
+            htmlFor={`is-foundational-edit-${goal.id}`}
+            style={{ fontSize: 12, color: NEO.textPrimary, cursor: 'pointer', flex: 1 }}
+          >
+            Meta de <strong>fundação</strong> (pré-requisito de outras)
+          </label>
+          <Star
+            size={13}
+            color={NEO.accent}
+            fill={isFoundational ? NEO.accent : 'transparent'}
+          />
+        </div>
+
+        {error && (
+          <div
+            style={{
+              marginTop: 14,
+              padding: '8px 12px',
+              border: `1px solid ${NEO.accent}`,
+              background: `${NEO.accent}15`,
+              color: NEO.accent,
+              fontSize: 12,
+              display: 'flex',
+              gap: 8,
+              alignItems: 'flex-start',
+            }}
+          >
+            <AlertTriangle size={14} style={{ flexShrink: 0, marginTop: 1 }} />
+            <span>{error}</span>
+          </div>
+        )}
+
+        <div
+          style={{
+            marginTop: 24,
+            display: 'flex',
+            gap: 8,
+            justifyContent: 'flex-end',
+          }}
+        >
+          <ActionBtn
+            onClick={onClose}
+            icon={<X size={14} />}
+            label="Cancelar"
+            variant="muted"
+          />
+          <ActionBtn
+            onClick={submit}
+            icon={<Check size={14} />}
+            label="Salvar"
+            variant="accent"
+            disabled={updateGoal.isPending}
           />
         </div>
       </div>
