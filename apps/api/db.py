@@ -568,6 +568,84 @@ def init_db() -> None:
         );
         CREATE INDEX IF NOT EXISTS idx_build_ritual_session
             ON build_ritual_session(cadencia, data_executado DESC);
+
+        -- ─── Hub Health ───────────────────────────────────────────────────
+        -- Módulo de saúde como prática contínua observada. Tabelas com
+        -- prefixo `health_`. Schema em docs/hub-health/PLAN.md §3.
+        --
+        -- Estrutura: Domínio → (Item) → Registro → Métrica.
+        -- Métrica é cidadã de primeira classe (calculada lazy on-read,
+        -- conversa com /Build via slugs estáveis).
+
+        -- Domínios cadastráveis. 5 defaults sugeridos no primeiro boot
+        -- (Sono, Exercício, Alimentação, Vícios, Medidas Corporais).
+        -- usuário pode adicionar/remover. `template` define os campos do
+        -- Registro daquele domínio.
+        CREATE TABLE IF NOT EXISTS health_domain (
+            slug                       TEXT PRIMARY KEY,
+            nome                       TEXT NOT NULL,
+            cor                        TEXT,
+            icone                      TEXT,
+            template                   TEXT NOT NULL,
+            usa_itens                  INTEGER NOT NULL DEFAULT 0,
+            lembrete_ativo             INTEGER NOT NULL DEFAULT 0,
+            ausencia_threshold_dias    INTEGER,
+            ordem                      INTEGER DEFAULT 0,
+            ativo                      INTEGER NOT NULL DEFAULT 1,
+            criado_em                  TEXT DEFAULT (datetime('now')),
+            atualizado_em              TEXT DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_health_domain_ativo ON health_domain(ativo, ordem);
+
+        -- Itens dentro de domínios (Vícios, Exercício, Alimentação, Medidas).
+        -- Sono não usa itens. Soft-delete via flag `arquivado` preserva
+        -- registros históricos.
+        CREATE TABLE IF NOT EXISTS health_item (
+            id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+            domain_slug         TEXT NOT NULL REFERENCES health_domain(slug) ON DELETE CASCADE,
+            nome                TEXT NOT NULL,
+            unidade             TEXT,
+            horario_esperado    TEXT,
+            descricao           TEXT,
+            cor                 TEXT,
+            arquivado           INTEGER NOT NULL DEFAULT 0,
+            arquivado_em        TEXT,
+            ordem               INTEGER DEFAULT 0,
+            criado_em           TEXT DEFAULT (datetime('now')),
+            atualizado_em       TEXT DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_health_item_domain ON health_item(domain_slug, arquivado, ordem);
+
+        -- Registros: eventos do template de cada domínio. Payload em JSON
+        -- (string TEXT — SQLite suporta json_extract pra filtros se preciso).
+        -- Decisão: JSON no MVP evita 20 colunas nullable; migrar pra colunas
+        -- dedicadas só se performance virar problema.
+        --
+        -- Campos universais (data, horario, item_id, notas) ficam em colunas
+        -- pra permitir índices e filtros eficientes.
+        CREATE TABLE IF NOT EXISTS health_record (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            domain_slug     TEXT NOT NULL REFERENCES health_domain(slug) ON DELETE CASCADE,
+            item_id         INTEGER REFERENCES health_item(id) ON DELETE SET NULL,
+            data            TEXT NOT NULL,
+            horario         TEXT,
+            payload         TEXT NOT NULL DEFAULT '{}',
+            notas           TEXT,
+            criado_em       TEXT DEFAULT (datetime('now')),
+            atualizado_em   TEXT DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_health_record_domain_data
+            ON health_record(domain_slug, data DESC);
+        CREATE INDEX IF NOT EXISTS idx_health_record_item_data
+            ON health_record(item_id, data DESC);
+
+        -- Settings do módulo (linha única id=1).
+        CREATE TABLE IF NOT EXISTS health_settings (
+            id                              INTEGER PRIMARY KEY CHECK (id = 1),
+            lembrete_horas_apos_acordar     INTEGER NOT NULL DEFAULT 4,
+            dashboard_card_visivel          INTEGER NOT NULL DEFAULT 1,
+            atualizado_em                   TEXT DEFAULT (datetime('now'))
+        );
         """)
 
         # /Build — coluna criterion_current_value: progresso digitado manualmente
@@ -661,6 +739,65 @@ def init_db() -> None:
                 "VALUES (?, ?, ?, ?, ?)",
                 (cadencia, schedule, pensar, evitar, duracao),
             )
+
+        # Hub Health: 5 domínios default + Settings + itens iniciais.
+        # Idempotente — INSERT OR IGNORE preserva edições do usuário.
+        # Domínios cadastráveis (slug, template, ausência threshold, etc).
+        health_domain_seeds = [
+            # (slug, nome, cor, icone, template, usa_itens, lembrete_ativo, ausencia_dias, ordem)
+            ("sono",          "Sono",              None, "moon",     "janela_qualidade", 0, 1, 2,    1),
+            ("exercicio",     "Exercício",         None, "dumbbell", "atividade_tipo",   1, 0, 7,    2),
+            ("alimentacao",   "Alimentação",       None, "utensils", "refeicao_2modos",  1, 1, 1,    3),
+            ("vicios",        "Vícios",            None, "alert-triangle", "consumo_vontade", 1, 0, None, 4),
+            ("medidas",       "Medidas Corporais", None, "scale",    "metrica_simples",  1, 0, None, 5),
+        ]
+        for slug, nome, cor, icone, template, usa_itens, lembrete, ausencia, ordem in health_domain_seeds:
+            conn.execute(
+                "INSERT OR IGNORE INTO health_domain"
+                "(slug, nome, cor, icone, template, usa_itens, lembrete_ativo,"
+                " ausencia_threshold_dias, ordem) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (slug, nome, cor, icone, template, usa_itens, lembrete, ausencia, ordem),
+            )
+
+        # Itens default. Vícios não tem seed (decisão filosófica §3.5 RASCUNHO).
+        # Seed de todos os itens de um domínio só se o domínio ainda não tem
+        # nenhum item — evita ressuscitar itens deletados pelo usuário.
+        health_item_seeds = {
+            "exercicio": [
+                # (nome, unidade, horario_esperado, descricao, ordem)
+                ("Cardio",      None, None, None, 1),
+                ("Musculação",  None, None, None, 2),
+                ("Alongamento", None, None, None, 3),
+            ],
+            "alimentacao": [
+                ("Café da manhã", None, "07:00", None, 1),
+                ("Almoço",         None, "12:00", None, 2),
+                ("Lanche",         None, "16:00", None, 3),
+                ("Jantar",         None, "19:00", None, 4),
+            ],
+            "medidas": [
+                ("Peso", "kg", None, None, 1),
+            ],
+        }
+        for domain_slug, items in health_item_seeds.items():
+            existing = conn.execute(
+                "SELECT 1 FROM health_item WHERE domain_slug = ? LIMIT 1",
+                (domain_slug,),
+            ).fetchone()
+            if existing:
+                continue  # domínio já tem itens, não recria
+            for nome, unidade, horario, descricao, ordem in items:
+                conn.execute(
+                    "INSERT INTO health_item"
+                    "(domain_slug, nome, unidade, horario_esperado, descricao, ordem) "
+                    "VALUES (?, ?, ?, ?, ?, ?)",
+                    (domain_slug, nome, unidade, horario, descricao, ordem),
+                )
+
+        conn.execute(
+            "INSERT OR IGNORE INTO health_settings(id) VALUES (1)"
+        )
 
         # Seed de áreas — só em instalação nova. Usamos `INSERT OR IGNORE`
         # antes, o que recriava áreas deletadas a cada boot. Agora: se a

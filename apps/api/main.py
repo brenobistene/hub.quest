@@ -30,6 +30,7 @@ from routers import (
     projects,
     quests,
     routines,
+    status,
     tasks,
 )
 from services.calendar_state import (
@@ -63,7 +64,7 @@ app.add_middleware(
 
 
 # Ordem importa só pra docs/OpenAPI; em runtime o FastAPI resolve por path.
-app.include_router(health.router)
+app.include_router(status.router)  # healthcheck do servidor (/api/status)
 app.include_router(areas.router)
 app.include_router(projects.router)
 app.include_router(deliverables.router)
@@ -76,6 +77,7 @@ app.include_router(micro_tasks.router)
 app.include_router(calendar.router)
 app.include_router(finance.router)
 app.include_router(build.router)
+app.include_router(health.router)  # Hub Health (/api/health/*)
 
 
 def _service_flags() -> dict:
