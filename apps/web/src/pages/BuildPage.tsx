@@ -42,6 +42,7 @@ import {
   usePurpose,
   useRemoveGoalDependency,
   useRituals,
+  useRitualSessions,
   useSprints,
   useUpdateGoal,
   useUpdateGoalProgress,
@@ -1386,11 +1387,13 @@ function RitualReviewModal({
   onClose: () => void
 }) {
   const createSession = useCreateRitualSession()
+  const { data: pastSessions = [] } = useRitualSessions(cadencia)
   const today = new Date().toISOString().slice(0, 10)
   const [dataExecutado, setDataExecutado] = useState(today)
   const [duracao, setDuracao] = useState('')
   const [notas, setNotas] = useState('')
   const [focoProx, setFocoProx] = useState('')
+  const [showHistory, setShowHistory] = useState(false)
 
   function submit() {
     createSession.mutate(
@@ -1610,6 +1613,143 @@ function RitualReviewModal({
               rows={2}
               style={{ ...textareaStyle, marginTop: 4 }}
             />
+          </div>
+        )}
+
+        {/* Histórico recente — colapsado por default */}
+        {pastSessions.length > 0 && (
+          <div
+            style={{
+              marginTop: 14,
+              paddingTop: 12,
+              borderTop: `1px dashed ${NEO.border}`,
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => setShowHistory((s) => !s)}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: NEO.textSecondary,
+                cursor: 'pointer',
+                padding: 0,
+                fontFamily: MONO,
+                fontSize: 10,
+                letterSpacing: '0.2em',
+                textTransform: 'uppercase',
+                fontWeight: 700,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+              }}
+            >
+              {showHistory ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+              Histórico recente ({pastSessions.length})
+            </button>
+            {showHistory && (
+              <div
+                style={{
+                  marginTop: 10,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 8,
+                  maxHeight: 280,
+                  overflowY: 'auto',
+                  paddingRight: 4,
+                }}
+              >
+                {pastSessions.slice(0, 10).map((s) => (
+                  <div
+                    key={s.id}
+                    style={{
+                      background: NEO.bg,
+                      border: `1px solid ${NEO.border}`,
+                      borderLeft: `2px solid ${NEO.cyanDim}`,
+                      padding: '8px 10px',
+                      fontSize: 11,
+                      color: NEO.textSecondary,
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: 'flex',
+                        gap: 10,
+                        alignItems: 'center',
+                        marginBottom: s.notas || s.foco_proxima_periodo ? 6 : 0,
+                      }}
+                    >
+                      <span
+                        style={{
+                          color: NEO.cyan,
+                          fontWeight: 700,
+                          letterSpacing: '0.1em',
+                        }}
+                      >
+                        {fmtDate(s.data_executado)}
+                      </span>
+                      {s.duracao_min !== null && (
+                        <span style={{ color: NEO.textMuted, fontSize: 10 }}>
+                          {s.duracao_min} min
+                        </span>
+                      )}
+                    </div>
+                    {s.notas && (
+                      <div
+                        style={{
+                          color: NEO.textPrimary,
+                          fontSize: 12,
+                          lineHeight: 1.5,
+                          whiteSpace: 'pre-wrap',
+                        }}
+                      >
+                        {s.notas}
+                      </div>
+                    )}
+                    {s.foco_proxima_periodo && (
+                      <div
+                        style={{
+                          marginTop: 6,
+                          paddingTop: 6,
+                          borderTop: `1px dashed ${NEO.border}`,
+                          fontSize: 11,
+                          color: NEO.textMuted,
+                        }}
+                      >
+                        <span
+                          style={{
+                            color: NEO.cyan,
+                            letterSpacing: '0.15em',
+                            fontSize: 9,
+                            fontWeight: 700,
+                            textTransform: 'uppercase',
+                            marginRight: 6,
+                          }}
+                        >
+                          foco próx.:
+                        </span>
+                        <span style={{ color: NEO.textPrimary, fontStyle: 'italic' }}>
+                          {s.foco_proxima_periodo}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                ))}
+                {pastSessions.length > 10 && (
+                  <div
+                    style={{
+                      fontSize: 10,
+                      color: NEO.textMuted,
+                      fontStyle: 'italic',
+                      textAlign: 'center',
+                      padding: 4,
+                    }}
+                  >
+                    + {pastSessions.length - 10} sessões mais antigas
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
 
