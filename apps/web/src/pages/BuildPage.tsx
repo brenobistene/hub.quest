@@ -318,13 +318,40 @@ function GoalRow({ goal }: { goal: BuildGoal }) {
           style={{
             fontSize: 14,
             fontWeight: 700,
-            color: NEO.textPrimary,
+            color:
+              goal.status === 'ativa'
+                ? NEO.textPrimary
+                : goal.status === 'concluida'
+                ? NEO.cyan
+                : NEO.textMuted,
             letterSpacing: '0.02em',
+            textDecoration:
+              goal.status === 'abandonada' || goal.status === 'concluida'
+                ? 'line-through'
+                : 'none',
             flex: 1,
           }}
         >
           {goal.titulo}
         </span>
+        {goal.status !== 'ativa' && (
+          <span
+            style={{
+              fontSize: 9,
+              padding: '1px 6px',
+              border: `1px solid ${
+                goal.status === 'concluida' ? NEO.cyanDim : NEO.borderHot
+              }`,
+              color:
+                goal.status === 'concluida' ? NEO.cyan : NEO.textMuted,
+              letterSpacing: '0.18em',
+              textTransform: 'uppercase',
+              fontWeight: 700,
+            }}
+          >
+            {goal.status}
+          </span>
+        )}
         <span
           style={{
             fontSize: 9,
@@ -410,37 +437,68 @@ function GoalRow({ goal }: { goal: BuildGoal }) {
       <DependenciesInline goal={goal} />
       <GuardrailsInline goal={goal} />
 
-      {/* Ações rápidas */}
-      <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+      {/* Ações rápidas — contextuais ao status atual */}
+      <div style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
         <MicroBtn onClick={() => setEditing(true)} label="✎ editar" />
-        <MicroBtn
-          onClick={() =>
-            updateGoal.mutate({ id: goal.id, patch: { status: 'concluida' } })
-          }
-          label="✓ concluir"
-        />
-        <MicroBtn
-          onClick={() =>
-            updateGoal.mutate({ id: goal.id, patch: { status: 'pausada' } })
-          }
-          label="∥ pausar"
-        />
-        <MicroBtn
-          onClick={async () => {
-            const ok = await confirmDialog({
-              title: 'Abandonar Meta',
-              message:
-                `Vai abandonar "${goal.titulo}"? A Meta sai da lista de ativas mas o ` +
-                'histórico fica preservado (não deleta nada). Você pode reativá-la ' +
-                'depois editando o status.',
-              confirmLabel: 'ABANDONAR',
-              danger: true,
-            })
-            if (!ok) return
-            updateGoal.mutate({ id: goal.id, patch: { status: 'abandonada' } })
-          }}
-          label="× abandonar"
-        />
+
+        {/* Reativar — só pra status diferente de ativa */}
+        {goal.status !== 'ativa' && (
+          <MicroBtn
+            onClick={async () => {
+              const ok = await confirmDialog({
+                title: 'Reativar Meta',
+                message:
+                  `Reativar "${goal.titulo}" (status atual: ${goal.status})? ` +
+                  `Ela volta pra lista de Metas ativas, sujeita ao limite duro ` +
+                  `(default 5 ativas).`,
+                confirmLabel: 'REATIVAR',
+              })
+              if (!ok) return
+              updateGoal.mutate({ id: goal.id, patch: { status: 'ativa' } })
+            }}
+            label="↻ reativar"
+          />
+        )}
+
+        {/* Concluir — só faz sentido pra ativa ou pausada */}
+        {(goal.status === 'ativa' || goal.status === 'pausada') && (
+          <MicroBtn
+            onClick={() =>
+              updateGoal.mutate({ id: goal.id, patch: { status: 'concluida' } })
+            }
+            label="✓ concluir"
+          />
+        )}
+
+        {/* Pausar — só pra ativa */}
+        {goal.status === 'ativa' && (
+          <MicroBtn
+            onClick={() =>
+              updateGoal.mutate({ id: goal.id, patch: { status: 'pausada' } })
+            }
+            label="∥ pausar"
+          />
+        )}
+
+        {/* Abandonar — não faz sentido pra Meta já abandonada/concluida */}
+        {goal.status !== 'abandonada' && goal.status !== 'concluida' && (
+          <MicroBtn
+            onClick={async () => {
+              const ok = await confirmDialog({
+                title: 'Abandonar Meta',
+                message:
+                  `Vai abandonar "${goal.titulo}"? A Meta sai da lista de ativas mas o ` +
+                  'histórico fica preservado (não deleta nada). Você pode reativá-la ' +
+                  'depois editando o status.',
+                confirmLabel: 'ABANDONAR',
+                danger: true,
+              })
+              if (!ok) return
+              updateGoal.mutate({ id: goal.id, patch: { status: 'abandonada' } })
+            }}
+            label="× abandonar"
+          />
+        )}
       </div>
 
       {editing && (
