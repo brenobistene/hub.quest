@@ -1028,7 +1028,28 @@ function DependenciesInline({ goal }: { goal: BuildGoal }) {
 
 function DriftPanel() {
   const { data: drift = [], isLoading } = useProjectsAlignment({ driftOnly: true })
+  const { data: areasList = [] } = useQuery({
+    queryKey: ['areas-list'],
+    queryFn: fetchAreas,
+    staleTime: 5 * 60 * 1000,
+  })
   const [expanded, setExpanded] = useState(false)
+  const [areaFilter, setAreaFilter] = useState<string | 'all'>('all')
+
+  // Conta por área (só áreas que têm drift) — pra mostrar count nos chips
+  const countByArea = useMemo(() => {
+    const m: Record<string, number> = {}
+    for (const p of drift) m[p.area_slug] = (m[p.area_slug] ?? 0) + 1
+    return m
+  }, [drift])
+
+  const filtered = useMemo(
+    () => (areaFilter === 'all' ? drift : drift.filter((p) => p.area_slug === areaFilter)),
+    [drift, areaFilter],
+  )
+
+  // Lista só de áreas que têm pelo menos 1 drift
+  const areasWithDrift = areasList.filter((a) => countByArea[a.slug] > 0)
 
   return (
     <Panel
@@ -1082,21 +1103,93 @@ function DriftPanel() {
             projetos esperando classificação ou vínculo com Meta
           </button>
           {expanded && (
-            <div
-              style={{
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 8,
-                marginTop: 8,
-                maxHeight: 480,
-                overflowY: 'auto',
-                paddingRight: 4,
-              }}
-            >
-              {drift.map((p) => (
-                <DriftRow key={p.id} project={p} />
-              ))}
-            </div>
+            <>
+              {/* Filtro por área — chips coloridos com count */}
+              {areasWithDrift.length > 1 && (
+                <div
+                  style={{
+                    display: 'flex',
+                    gap: 4,
+                    flexWrap: 'wrap',
+                    marginBottom: 8,
+                    paddingTop: 4,
+                  }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => setAreaFilter('all')}
+                    style={{
+                      background: areaFilter === 'all' ? NEO.accent : 'transparent',
+                      color: areaFilter === 'all' ? '#000' : NEO.textSecondary,
+                      border: `1px solid ${
+                        areaFilter === 'all' ? NEO.accent : NEO.border
+                      }`,
+                      padding: '2px 8px',
+                      fontFamily: MONO,
+                      fontSize: 10,
+                      fontWeight: 700,
+                      letterSpacing: '0.15em',
+                      textTransform: 'uppercase',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Todas ({drift.length})
+                  </button>
+                  {areasWithDrift.map((a) => {
+                    const active = areaFilter === a.slug
+                    return (
+                      <button
+                        key={a.slug}
+                        type="button"
+                        onClick={() => setAreaFilter(a.slug)}
+                        style={{
+                          background: active ? `${a.color}25` : 'transparent',
+                          color: active ? a.color : NEO.textSecondary,
+                          border: `1px solid ${active ? a.color : NEO.border}`,
+                          padding: '2px 8px',
+                          fontFamily: MONO,
+                          fontSize: 10,
+                          fontWeight: 700,
+                          letterSpacing: '0.15em',
+                          textTransform: 'uppercase',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        {a.name} ({countByArea[a.slug]})
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+
+              <div
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 8,
+                  marginTop: 8,
+                  maxHeight: 480,
+                  overflowY: 'auto',
+                  paddingRight: 4,
+                }}
+              >
+                {filtered.map((p) => (
+                  <DriftRow key={p.id} project={p} />
+                ))}
+                {filtered.length === 0 && (
+                  <div
+                    style={{
+                      color: NEO.textMuted,
+                      fontSize: 12,
+                      fontStyle: 'italic',
+                      padding: '8px 0',
+                    }}
+                  >
+                    Nenhum drift nessa área.
+                  </div>
+                )}
+              </div>
+            </>
           )}
         </>
       )}
