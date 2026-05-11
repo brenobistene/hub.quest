@@ -65,6 +65,7 @@ import type {
   BuildGoalCreate,
   BuildGoalCriterionType,
   BuildGoalHorizon,
+  BuildGoalStatus,
   BuildGuardrailEvaluation,
   BuildGuardrailOperador,
   BuildPrinciple,
@@ -164,15 +165,71 @@ export default function BuildPage() {
 
 // ─── Painel das Metas ─────────────────────────────────────────────────────
 
+const STATUS_TABS: Array<{
+  value: BuildGoalStatus | 'all'
+  label: string
+}> = [
+  { value: 'ativa', label: 'Ativas' },
+  { value: 'concluida', label: 'Concluídas' },
+  { value: 'pausada', label: 'Pausadas' },
+  { value: 'abandonada', label: 'Abandonadas' },
+  { value: 'all', label: 'Todas' },
+]
+
 function GoalsPanel() {
-  const { data: goals = [], isLoading } = useGoals('ativa')
+  const [filter, setFilter] = useState<BuildGoalStatus | 'all'>('ativa')
+  const { data: goals = [], isLoading } = useGoals(
+    filter === 'all' ? undefined : filter,
+  )
   const [creating, setCreating] = useState(false)
+
+  const subtitle =
+    filter === 'ativa'
+      ? `${goals.length} ${goals.length === 1 ? 'breakpoint' : 'breakpoints'} no caminho`
+      : filter === 'all'
+      ? `${goals.length} Metas no histórico total`
+      : `${goals.length} Metas — filtro: ${filter}`
 
   return (
     <Panel
-      title="METAS ATIVAS"
-      subtitle={`${goals.length} ${goals.length === 1 ? 'breakpoint' : 'breakpoints'} no caminho`}
+      title="METAS"
+      subtitle={subtitle}
     >
+      {/* Tabs de filtro de status */}
+      <div
+        style={{
+          display: 'flex',
+          gap: 4,
+          marginBottom: 14,
+          flexWrap: 'wrap',
+        }}
+      >
+        {STATUS_TABS.map((tab) => {
+          const isActive = filter === tab.value
+          return (
+            <button
+              key={tab.value}
+              type="button"
+              onClick={() => setFilter(tab.value)}
+              style={{
+                background: isActive ? NEO.accent : 'transparent',
+                color: isActive ? '#000' : NEO.textSecondary,
+                border: `1px solid ${isActive ? NEO.accent : NEO.border}`,
+                padding: '3px 10px',
+                fontFamily: MONO,
+                fontSize: 10,
+                fontWeight: 700,
+                letterSpacing: '0.15em',
+                textTransform: 'uppercase',
+                cursor: 'pointer',
+              }}
+            >
+              {tab.label}
+            </button>
+          )
+        })}
+      </div>
+
       {isLoading ? (
         <div style={{ color: NEO.textMuted, fontSize: 13 }}>Carregando…</div>
       ) : (
@@ -187,7 +244,9 @@ function GoalsPanel() {
                 lineHeight: 1.6,
               }}
             >
-              Nenhuma Meta ativa. Meta = outcome com prazo (não ação). Ex.: "ter 5k/mês fixo até dez/2027" — não "fazer curso X".
+              {filter === 'ativa'
+                ? 'Nenhuma Meta ativa. Meta = outcome com prazo (não ação). Ex.: "ter 5k/mês fixo até dez/2027" — não "fazer curso X".'
+                : `Nenhuma Meta com status "${filter}".`}
             </p>
           )}
 
@@ -199,14 +258,16 @@ function GoalsPanel() {
             </div>
           )}
 
-          <div style={{ marginTop: 16 }}>
-            <ActionBtn
-              onClick={() => setCreating(true)}
-              icon={<Plus size={13} />}
-              label="Nova Meta"
-              variant="accent"
-            />
-          </div>
+          {filter === 'ativa' && (
+            <div style={{ marginTop: 16 }}>
+              <ActionBtn
+                onClick={() => setCreating(true)}
+                icon={<Plus size={13} />}
+                label="Nova Meta"
+                variant="accent"
+              />
+            </div>
+          )}
         </>
       )}
 
