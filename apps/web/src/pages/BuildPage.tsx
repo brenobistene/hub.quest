@@ -25,6 +25,7 @@ import { fetchAreas } from '../api'
 import { confirmDialog } from '../lib/dialog'
 import {
   useAddGoalDependency,
+  useBuildSettings,
   useClassifyProject,
   useCreateGoal,
   useCreateGoalGuardrail,
@@ -3878,6 +3879,15 @@ function RadioOpt({
 // ─── Header ───────────────────────────────────────────────────────────────
 
 function Header() {
+  // Stats globais — visão imediata da camada estratégica
+  const { data: activeGoals = [] } = useGoals('ativa')
+  const { data: drift = [] } = useProjectsAlignment({ driftOnly: true })
+  const { data: rituals = [] } = useRituals()
+  const { data: settings } = useBuildSettings()
+
+  const maxMetas = settings?.max_metas_ativas ?? 5
+  const ritualsAtrasados = rituals.filter((r) => r.ativo && r.dias_atraso > 0).length
+
   return (
     <div
       style={{
@@ -3949,6 +3959,83 @@ function Header() {
         }}
       >
         camada estratégica · propósito → visão → metas
+      </div>
+
+      {/* Stats bar — visão imediata do estado da camada estratégica */}
+      <div
+        style={{
+          marginTop: 14,
+          display: 'flex',
+          gap: 14,
+          flexWrap: 'wrap',
+        }}
+      >
+        <HeaderStat
+          label="metas ativas"
+          value={`${activeGoals.length}/${maxMetas}`}
+          color={
+            activeGoals.length >= maxMetas
+              ? NEO.accent
+              : activeGoals.length === 0
+              ? NEO.textMuted
+              : NEO.textPrimary
+          }
+        />
+        <HeaderStat
+          label="drift"
+          value={String(drift.length)}
+          color={drift.length > 0 ? NEO.accent : NEO.textMuted}
+        />
+        <HeaderStat
+          label="rituais atrasados"
+          value={String(ritualsAtrasados)}
+          color={ritualsAtrasados > 0 ? NEO.accent : NEO.cyan}
+        />
+      </div>
+    </div>
+  )
+}
+
+function HeaderStat({
+  label,
+  value,
+  color,
+}: {
+  label: string
+  value: string
+  color: string
+}) {
+  return (
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 2,
+        minWidth: 80,
+      }}
+    >
+      <div
+        style={{
+          fontSize: 9,
+          letterSpacing: '0.22em',
+          color: NEO.textMuted,
+          fontWeight: 700,
+          textTransform: 'uppercase',
+        }}
+      >
+        {label}
+      </div>
+      <div
+        style={{
+          fontSize: 22,
+          fontWeight: 800,
+          color,
+          letterSpacing: '0.04em',
+          lineHeight: 1,
+          fontFamily: MONO,
+        }}
+      >
+        {value}
       </div>
     </div>
   )
