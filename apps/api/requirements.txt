@@ -11,3 +11,8 @@ tzdata>=2024.1
 # Necessário pro FastAPI processar multipart/form-data (upload de CSV no
 # Hub Finance — endpoint /api/finance/import/nubank-csv).
 python-multipart>=0.0.7
+# Schema migrations. Projeto usa sqlite3 puro (sem SQLAlchemy ORM), então
+# migrations são escritas em SQL raw via op.execute(). Baseline em
+# alembic/versions/0001_baseline.py marca o estado atual do DB criado por
+# init_db(); novas migrations daqui em diante. Ver alembic/README.md.
+alembic>=1.13
