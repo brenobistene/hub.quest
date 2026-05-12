@@ -1,7 +1,9 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronLeft, ChevronRight, Target } from 'lucide-react'
 import type { Area, Deliverable, Project, Quest, Routine, Task } from '../types'
-import { fetchAllRoutines, fetchSessions, fetchTasks, fetchTaskSessions, fetchRoutineSessions, fetchDeliverables, deleteRoutine, reportApiError } from '../api'
+import { fetchSessions, fetchTasks, fetchTaskSessions, fetchRoutineSessions, fetchDeliverables, deleteRoutine, reportApiError } from '../api'
+import { useRoutines, useAppInvalidator } from '../lib/app-queries'
+import { tabSync } from '../lib/tabsync'
 import { parseIsoAsUtc } from '../utils/datetime'
 import { effectiveQuestDeadline, getAreaColor } from '../utils/quests'
 import { SessionHistoryModal } from '../components/SessionHistoryModal'
@@ -118,7 +120,13 @@ function routineMatchesDay(r: Routine, jsDay: number): boolean {
  * bloco improdutivo.
  */
 export function CalendarView({ projects, quests, areas, sessionUpdateTrigger, onSessionUpdate }: { projects: Project[]; quests: Quest[]; areas: Area[]; sessionUpdateTrigger: number; onSessionUpdate?: () => void }) {
-  const [routines, setRoutines] = useState<Routine[]>([])
+  // Routines via React Query — substituiu useState + fetchAllRoutines manual.
+  // Agora compartilha cache com /rotinas, /dia, /build via prefixo de
+  // appKeys.routines(), e escuta tabSync.on('routines') via listener
+  // central no App.tsx.
+  const appInv = useAppInvalidator()
+  const routinesQ = useRoutines()
+  const routines: Routine[] = routinesQ.data ?? []
   const [viewMode, setViewMode] = useState<'dia' | 'semana' | 'mês' | 'ano'>('dia')
   const [currentDate, setCurrentDate] = useState(new Date())
   const [allSessions, setAllSessions] = useState<Map<string, any[]>>(new Map())
@@ -203,10 +211,6 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger, on
   useEffect(() => {
     localStorage.setItem('hq-unproductive-blocks', JSON.stringify(unproductiveBlocks))
   }, [unproductiveBlocks])
-
-  useEffect(() => {
-    fetchAllRoutines().then(setRoutines).catch(err => reportApiError('CalendarPage', err))
-  }, [])
 
   // Fetch dos deliverables por projeto. Pool de project_ids vem das quests.
   // Reusa fetchDeliverables (um GET por projeto) — paralelizado e tolerante
@@ -1307,7 +1311,7 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger, on
                               e.stopPropagation()
                               if (confirm(`Excluir rotina "${routine.title}"?`)) {
                                 deleteRoutine(routine.id)
-                                  .then(() => setRoutines(rs => rs.filter(r => r.id !== routine.id)))
+                                  .then(() => { appInv.routines(); tabSync.emit('routines') })
                                   .catch(() => alertDialog({ title: 'Erro', message: 'Erro ao excluir rotina', variant: 'danger' }))
                               }
                             }}
@@ -1916,7 +1920,7 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger, on
                             e.stopPropagation()
                             if (confirm(`Excluir rotina "${routine.title}"?`)) {
                               deleteRoutine(routine.id)
-                                .then(() => setRoutines(rs => rs.filter(r => r.id !== routine.id)))
+                                .then(() => { appInv.routines(); tabSync.emit('routines') })
                                 .catch(() => alertDialog({ title: 'Erro', message: 'Erro ao excluir rotina', variant: 'danger' }))
                             }
                           }}

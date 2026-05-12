@@ -11,6 +11,8 @@ import {
   modalShell, modalHairline, modalHeader, modalBody,
 } from './styleHelpers'
 import { BackfillConfirmModal } from './BackfillConfirmModal'
+import { useFinanceInvalidator } from '../../../lib/finance-queries'
+import { tabSync } from '../../../lib/tabsync'
 import { confirmDialog, alertDialog } from '../../../lib/dialog'
 
 export function RulesModal({ categories, accounts, onClose }: {
@@ -18,6 +20,10 @@ export function RulesModal({ categories, accounts, onClose }: {
   accounts: FinAccount[]
   onClose: () => void
 }) {
+  // Invalidator pro backfill — quando uma regra é aplicada retroativamente,
+  // ela altera N transações no DB. Sem invalidar, a aba /lancamentos
+  // continua mostrando elas sem categoria até F5.
+  const finInv = useFinanceInvalidator()
   const [rules, setRules] = useState<FinCategorizationRule[]>([])
   const [loading, setLoading] = useState(true)
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -336,6 +342,9 @@ export function RulesModal({ categories, accounts, onClose }: {
                 message: `${updated} ${updated === 1 ? 'transação foi categorizada' : 'transações foram categorizadas'} retroativamente.`,
                 variant: 'success',
               })
+              // Backfill mexeu em N transações — invalida cache pro
+              // /lancamentos e sumários refletirem.
+              finInv.all(); tabSync.emit('finance')
             }
             refresh()
           }}

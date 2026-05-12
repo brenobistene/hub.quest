@@ -2,21 +2,28 @@
  * Hub Finance — context compartilhado entre as sub-páginas (Visão Geral,
  * Lançamentos, Cartões, Dívidas, Freelas, Categorias).
  *
- * Centraliza state + fetches pra evitar N requests por página e duplicação
- * de lógica. Cada sub-página chama `useHubFinance()` e usa só o que precisa.
+ * Implementação usa React Query internamente via os hooks de
+ * `lib/finance-queries.ts`. O context permanece como wrapper pra duas
+ * razões:
+ *  1. Compatibilidade: ~10 páginas consumiam `useHubFinance()` com uma
+ *     API específica (accounts, transactions, refreshAll, etc). Mantida
+ *     intacta — zero alteração nos consumers.
+ *  2. selectedMonth: estado compartilhado entre páginas (você seleciona
+ *     o mês na VisãoGeral e a aba Lançamentos reflete). Continua no
+ *     context (não é cache de servidor).
  *
  * Doc autoritativa do módulo: docs/hub-finance/PLAN.md
  */
 import { createContext, useContext, useEffect, useState } from 'react'
 import {
-  fetchFinAccounts, fetchFinCategories, fetchFinTransactions, fetchFinSummary,
-  fetchFinMonthlySummary, fetchFinHourlyRateStats,
-  fetchFinDebts, fetchFinClients, fetchFinInvoices,
-  fetchFinFreelaProjects,
-  fetchFinRecurringBills, fetchFinRecurringBillsStatus,
-  fetchFinMonthCommitments,
-  reportApiError,
-} from '../../api'
+  useFinAccounts, useFinCategories, useFinSummary, useFinDebts,
+  useFinClients, useFinHourlyStats, useFinInvoices, useFinFreelaProjects,
+  useFinRecurringBills,
+  useFinMonthlySummary, useFinTransactions, useFinRecurringBillsStatus,
+  useFinMonthCommitments,
+  useFinanceInvalidator,
+} from '../../lib/finance-queries'
+import { tabSync } from '../../lib/tabsync'
 import type {
   FinAccount, FinCategory, FinTransaction, FinSummary, FinMonthlySummary,
   FinDebt, FinClient, FinHourlyRateStats, FinInvoice, FinFreelaProject,
@@ -69,20 +76,6 @@ export function useHubFinance(): HubFinanceContextValue {
 }
 
 export function HubFinanceProvider({ children }: { children: React.ReactNode }) {
-  const [accounts, setAccounts] = useState<FinAccount[]>([])
-  const [categories, setCategories] = useState<FinCategory[]>([])
-  const [transactions, setTransactions] = useState<FinTransaction[]>([])
-  const [summary, setSummary] = useState<FinSummary | null>(null)
-  const [monthlySummary, setMonthlySummary] = useState<FinMonthlySummary | null>(null)
-  const [debts, setDebts] = useState<FinDebt[]>([])
-  const [clients, setClients] = useState<FinClient[]>([])
-  const [hourlyStats, setHourlyStats] = useState<FinHourlyRateStats | null>(null)
-  const [invoices, setInvoices] = useState<FinInvoice[]>([])
-  const [freelaProjects, setFreelaProjects] = useState<FinFreelaProject[]>([])
-  const [recurringBills, setRecurringBills] = useState<FinRecurringBill[]>([])
-  const [recurringBillsStatus, setRecurringBillsStatus] = useState<FinRecurringBillStatusMonth | null>(null)
-  const [monthCommitments, setMonthCommitments] = useState<FinMonthCommitments | null>(null)
-  const [loading, setLoading] = useState(true)
   const [selectedMonth, setSelectedMonth] = useState<{ year: number; month: number }>(() => {
     const now = new Date()
     return { year: now.getFullYear(), month: now.getMonth() + 1 }
@@ -94,7 +87,6 @@ export function HubFinanceProvider({ children }: { children: React.ReactNode }) 
   const [privateMode, setPrivateMode] = useState<boolean>(() => {
     try {
       const v = localStorage.getItem('hq-finance-private')
-      // null (primeira vez) → ON. '0' explícito (usuário desligou) → OFF.
       return v === null ? true : v === '1'
     } catch { return true }
   })
@@ -106,61 +98,60 @@ export function HubFinanceProvider({ children }: { children: React.ReactNode }) 
     })
   }
 
-  function refreshGlobal() {
-    Promise.all([
-      fetchFinAccounts(),
-      fetchFinCategories(),
-      fetchFinSummary(),
-      fetchFinDebts(),
-      fetchFinClients(),
-      fetchFinHourlyRateStats(),
-      fetchFinInvoices(),
-      fetchFinFreelaProjects(),
-      fetchFinRecurringBills(),
-    ])
-      .then(([a, c, s, d, cl, hs, inv, fp, rb]) => {
-        setAccounts(a); setCategories(c); setSummary(s); setDebts(d)
-        setClients(cl); setHourlyStats(hs); setInvoices(inv); setFreelaProjects(fp)
-        setRecurringBills(rb)
-      })
-      .catch(err => reportApiError('HubFinance.refreshGlobal', err))
-      .finally(() => setLoading(false))
-  }
+  // Queries globais
+  const qAccounts = useFinAccounts()
+  const qCategories = useFinCategories()
+  const qSummary = useFinSummary()
+  const qDebts = useFinDebts()
+  const qClients = useFinClients()
+  const qHourlyStats = useFinHourlyStats()
+  const qInvoices = useFinInvoices()
+  const qFreelaProjects = useFinFreelaProjects()
+  const qRecurringBills = useFinRecurringBills()
 
-  function refreshForMonth() {
-    const { year, month } = selectedMonth
-    const lastDay = new Date(year, month, 0).getDate()
-    const dataDe = `${year}-${String(month).padStart(2, '0')}-01`
-    const dataAte = `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`
-    Promise.all([
-      fetchFinMonthlySummary(year, month),
-      fetchFinTransactions({ data_de: dataDe, data_ate: dataAte, limit: 500 }),
-      fetchFinRecurringBillsStatus(year, month),
-      fetchFinMonthCommitments(year, month),
-    ])
-      .then(([ms, txs, rbs, mc]) => {
-        setMonthlySummary(ms); setTransactions(txs)
-        setRecurringBillsStatus(rbs)
-        setMonthCommitments(mc)
-      })
-      .catch(err => reportApiError('HubFinance.refreshForMonth', err))
-  }
+  // Queries do mês — refetcham automaticamente quando selectedMonth muda
+  // porque ano/mês fazem parte da query key.
+  const qMonthlySummary = useFinMonthlySummary(selectedMonth.year, selectedMonth.month)
+  const qTransactions = useFinTransactions(selectedMonth.year, selectedMonth.month)
+  const qRecurringBillsStatus = useFinRecurringBillsStatus(selectedMonth.year, selectedMonth.month)
+  const qMonthCommitments = useFinMonthCommitments(selectedMonth.year, selectedMonth.month)
 
-  function refreshAll() { refreshGlobal(); refreshForMonth() }
+  const invalidator = useFinanceInvalidator()
 
-  useEffect(() => { refreshGlobal() }, [])
-  useEffect(() => { refreshForMonth() },
+  // Sync entre abas: quando uma aba muta finance, outras invalidam cache.
+  useEffect(() => {
+    return tabSync.on('finance', () => { invalidator.all() })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [selectedMonth.year, selectedMonth.month])
+  }, [])
+
+  // Loading global: true até as queries-base resolverem na primeira vez.
+  const loading = qAccounts.isPending || qCategories.isPending || qSummary.isPending
 
   const value: HubFinanceContextValue = {
-    accounts, categories, transactions, summary, monthlySummary,
-    debts, clients, hourlyStats, invoices, freelaProjects,
-    recurringBills, recurringBillsStatus, monthCommitments,
-    selectedMonth, setSelectedMonth,
+    accounts: qAccounts.data ?? [],
+    categories: qCategories.data ?? [],
+    summary: qSummary.data ?? null,
+    debts: qDebts.data ?? [],
+    clients: qClients.data ?? [],
+    hourlyStats: qHourlyStats.data ?? null,
+    invoices: qInvoices.data ?? [],
+    freelaProjects: qFreelaProjects.data ?? [],
+    recurringBills: qRecurringBills.data ?? [],
+    transactions: qTransactions.data ?? [],
+    monthlySummary: qMonthlySummary.data ?? null,
+    recurringBillsStatus: qRecurringBillsStatus.data ?? null,
+    monthCommitments: qMonthCommitments.data ?? null,
+    selectedMonth,
+    setSelectedMonth,
     loading,
-    refreshAll, refreshGlobal, refreshForMonth,
-    privateMode, togglePrivate,
+    refreshAll: () => { invalidator.all(); tabSync.emit('finance') },
+    refreshGlobal: () => { invalidator.global(); tabSync.emit('finance') },
+    refreshForMonth: () => {
+      invalidator.forMonth(selectedMonth.year, selectedMonth.month)
+      tabSync.emit('finance')
+    },
+    privateMode,
+    togglePrivate,
   }
 
   return <HubFinanceContext.Provider value={value}>{children}</HubFinanceContext.Provider>

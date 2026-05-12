@@ -5,6 +5,8 @@ import {
   patchQuest, updateTask, updateRoutine, toggleRoutine,
   reportApiError,
 } from '../api'
+import { useAppInvalidator } from '../lib/app-queries'
+import { tabSync } from '../lib/tabsync'
 import { RunnableControls } from './RunnableControls'
 import { BlockEditor, isBlockDocEmpty } from './BlockEditor'
 import { alertDialog } from '../lib/dialog'
@@ -32,6 +34,7 @@ export function PlannedItemRow({ item, areas, activeSession, onSessionUpdate, on
 }) {
   const [showDescription, setShowDescription] = useState(false)
   const [descDraft, setDescDraft] = useState<string | null>(null)
+  const appInv = useAppInvalidator()
   const isRoutine = !!item?.isRoutine
   const isTask = !!item?.isTask
   const kind: 'quest' | 'task' | 'routine' = isRoutine ? 'routine' : isTask ? 'task' : 'quest'
@@ -39,6 +42,9 @@ export function PlannedItemRow({ item, areas, activeSession, onSessionUpdate, on
   // Auto-save da descrição com debounce de 800ms. Cada tipo tem endpoint
   // próprio: quests via patchQuest, tasks via updateTask, routines via
   // updateRoutine. Doc-vazio do BlockEditor é gravado como null.
+  // Invalida cache + emite tabSync depois do save pra outras views da mesma
+  // entidade (no /tarefas, /rotinas, /areas/*) verem a descrição atualizada
+  // sem F5.
   useEffect(() => {
     if (descDraft === null) return
     const current = item?.description ?? null
@@ -51,9 +57,16 @@ export function PlannedItemRow({ item, areas, activeSession, onSessionUpdate, on
         : kind === 'task'
           ? updateTask(item.id, { description: newVal })
           : updateRoutine(item.id, { description: newVal })
-      save.catch(err => reportApiError(`PlannedItemRow.save(${kind})`, err))
+      save
+        .then(() => {
+          if (kind === 'quest') { appInv.quests(); tabSync.emit('quests') }
+          else if (kind === 'task') { appInv.tasks(); tabSync.emit('tasks') }
+          else { appInv.routines(); tabSync.emit('routines') }
+        })
+        .catch(err => reportApiError(`PlannedItemRow.save(${kind})`, err))
     }, 800)
     return () => clearTimeout(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [descDraft, item?.description, item?.id, kind])
 
   const itemColor = isTask
@@ -313,6 +326,9 @@ export function PlannedItemRow({ item, areas, activeSession, onSessionUpdate, on
               if (kind === 'quest') await patchQuest(item.id, { status: 'doing' })
               else if (kind === 'task') await updateTask(item.id, { done: false })
               else await toggleRoutine(item.id)
+              if (kind === 'quest') { appInv.quests(); tabSync.emit('quests') }
+              else if (kind === 'task') { appInv.tasks(); tabSync.emit('tasks') }
+              else { appInv.routines(); tabSync.emit('routines') }
               onSessionUpdate()
             } catch (err) {
               console.error('[runnable] reopen failed', { kind, id: item.id, err })

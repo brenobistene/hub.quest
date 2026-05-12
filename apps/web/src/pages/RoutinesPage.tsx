@@ -1,6 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import type { Routine } from '../types'
-import { fetchAllRoutines, createRoutine, updateRoutine, deleteRoutine, reportApiError } from '../api'
+import { createRoutine, updateRoutine, deleteRoutine, reportApiError } from '../api'
+import { useRoutines, useAppInvalidator } from '../lib/app-queries'
+import { tabSync } from '../lib/tabsync'
 import { RoutineEditor } from '../components/RoutineEditor'
 import { PageShell, TechId } from '../components/ui/CyberShell'
 import { alertDialog, confirmDialog } from '../lib/dialog'
@@ -12,8 +14,11 @@ import { Pencil } from 'lucide-react'
  * no ✎ de uma rotina abre o `RoutineEditor` inline.
  */
 export function RoutinesView() {
-  const [routines, setRoutines] = useState<Routine[]>([])
-  const [loading, setLoading] = useState(true)
+  // Routines via React Query — substituiu useState + fetchAllRoutines manual.
+  const routinesQ = useRoutines()
+  const routines: Routine[] = routinesQ.data ?? []
+  const loading = routinesQ.isPending
+  const appInv = useAppInvalidator()
   const [editingId, setEditingId] = useState<string | null>(null)
   const [formData, setFormData] = useState<Partial<Routine>>({
     title: '',
@@ -25,15 +30,6 @@ export function RoutinesView() {
     estimated_minutes: null,
     priority: 'critical',
   })
-
-  useEffect(() => {
-    loadRoutines()
-  }, [])
-
-  const loadRoutines = () => {
-    setLoading(true)
-    fetchAllRoutines().then(setRoutines).catch(err => reportApiError('RoutinesPage', err)).finally(() => setLoading(false))
-  }
 
   const handleNewRoutine = () => {
     setEditingId('new')
@@ -69,12 +65,11 @@ export function RoutinesView() {
 
     try {
       if (editingId === 'new') {
-        const newRoutine = await createRoutine(formData as any)
-        setRoutines([...routines, newRoutine])
+        await createRoutine(formData as any)
       } else {
-        const updated = await updateRoutine(editingId!, formData)
-        setRoutines(rs => rs.map(r => r.id === editingId ? updated : r))
+        await updateRoutine(editingId!, formData)
       }
+      appInv.routines(); tabSync.emit('routines')
       setEditingId(null)
     } catch (err) {
       reportApiError('RoutinesPage.save', err)
@@ -86,7 +81,7 @@ export function RoutinesView() {
     if (!editingId || editingId === 'new') return
     try {
       await deleteRoutine(editingId)
-      setRoutines(rs => rs.filter(r => r.id !== editingId))
+      appInv.routines(); tabSync.emit('routines')
       setEditingId(null)
     } catch (err) {
       reportApiError('RoutinesPage.delete', err)
@@ -234,7 +229,7 @@ export function RoutinesView() {
               })
               if (!ok) return
               deleteRoutine(r.id).then(() => {
-                setRoutines(rs => rs.filter(rot => rot.id !== r.id))
+                appInv.routines(); tabSync.emit('routines')
               }).catch(() => alertDialog({ title: 'Erro', message: 'Erro ao excluir rotina', variant: 'danger' }))
             }
 

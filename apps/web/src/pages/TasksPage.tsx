@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import type { ActiveSession, Task } from '../types'
-import { fetchTasks, createTask, updateTask, toggleTask, deleteTask, reportApiError } from '../api'
+import { createTask, updateTask, toggleTask, deleteTask } from '../api'
+import { useTasks, useAppInvalidator } from '../lib/app-queries'
+import { tabSync } from '../lib/tabsync'
 import type { DateRange } from '../utils/dateRange'
 import { computeRange, isInRange } from '../utils/dateRange'
 import { DateRangeFilter } from '../components/DateRangeFilter'
@@ -43,7 +45,10 @@ export function TasksView({ activeSession, onSessionUpdate, sessionUpdateTrigger
   onSessionUpdate?: () => void
   sessionUpdateTrigger?: number
 }) {
-  const [tasks, setTasks] = useState<Task[]>([])
+  // Tasks via React Query — substituiu useState + fetchTasks manual.
+  const tasksQ = useTasks()
+  const tasks: Task[] = tasksQ.data ?? []
+  const appInv = useAppInvalidator()
   const [filter, setFilter] = useState<TaskFilter>('all')
   const [newTitle, setNewTitle] = useState('')
   const todayYmd = (() => {
@@ -59,13 +64,12 @@ export function TasksView({ activeSession, onSessionUpdate, sessionUpdateTrigger
   const [showDone, setShowDone] = useState(false)
   const [doneRange, setDoneRange] = useState<DateRange>(() => computeRange('7d'))
 
-  useEffect(() => {
-    fetchTasks().then(setTasks).catch(err => reportApiError('TasksPage', err))
-  }, [])
-
+  // Quando sessão muda no resto do app, invalida tasks pra refletir mudança
+  // de `done` ou duração agregada. (Fetch inicial é feito pelo useTasks.)
   useEffect(() => {
     if (!sessionUpdateTrigger) return
-    fetchTasks().then(setTasks).catch(err => reportApiError('TasksPage', err))
+    appInv.tasks()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionUpdateTrigger])
 
   const todayIso = todayYmd
@@ -97,7 +101,7 @@ export function TasksView({ activeSession, onSessionUpdate, sessionUpdateTrigger
       return
     }
     try {
-      const created = await createTask({
+      await createTask({
         title,
         priority: newPriority,
         scheduled_date: newDate || null,
@@ -105,7 +109,7 @@ export function TasksView({ activeSession, onSessionUpdate, sessionUpdateTrigger
         end_time: newEndTime || null,
         duration_minutes: hasDuration ? parsedDuration : null,
       })
-      setTasks(prev => [...prev, created])
+      appInv.tasks(); tabSync.emit('tasks')
       setNewTitle('')
       setNewDate(todayYmd)
       setNewStartTime('')
@@ -120,8 +124,8 @@ export function TasksView({ activeSession, onSessionUpdate, sessionUpdateTrigger
 
   async function handleToggle(id: string) {
     try {
-      const updated = await toggleTask(id)
-      setTasks(prev => prev.map(t => t.id === id ? updated : t))
+      await toggleTask(id)
+      appInv.tasks(); tabSync.emit('tasks')
       // Avisa o App pra refazer o fetch da sessão ativa — sem isso o banner
       // continua mostrando esta task como "pausada" até o próximo polling de
       // 15s, mesmo após ser marcada como done.
@@ -131,8 +135,8 @@ export function TasksView({ activeSession, onSessionUpdate, sessionUpdateTrigger
 
   async function handleUpdate(id: string, patch: Partial<Task>) {
     try {
-      const updated = await updateTask(id, patch as any)
-      setTasks(prev => prev.map(t => t.id === id ? updated : t))
+      await updateTask(id, patch as any)
+      appInv.tasks(); tabSync.emit('tasks')
     } catch {
       alertDialog({ title: 'Erro', message: 'Erro ao atualizar tarefa', variant: 'danger' })
     }
@@ -141,7 +145,7 @@ export function TasksView({ activeSession, onSessionUpdate, sessionUpdateTrigger
   async function handleDelete(id: string) {
     try {
       await deleteTask(id)
-      setTasks(prev => prev.filter(t => t.id !== id))
+      appInv.tasks(); tabSync.emit('tasks')
     } catch {
       alertDialog({ title: 'Erro', message: 'Erro ao deletar tarefa', variant: 'danger' })
     }

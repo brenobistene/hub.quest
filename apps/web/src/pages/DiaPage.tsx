@@ -3,7 +3,9 @@ import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import { Sunrise, Sun, Moon, X, ArrowRight, Calendar as CalendarIcon, Trash2, AlertTriangle, Search } from 'lucide-react'
 import type { ActiveSession, Area, Deliverable, Project, Quest, Routine, Task } from '../types'
-import { fetchAllRoutines, fetchTasks, fetchQuests, fetchDeliverables, fetchRoutinesForDate, updateTask, deleteTask, reportApiError } from '../api'
+import { fetchDeliverables, updateTask, deleteTask, reportApiError } from '../api'
+import { useTasks, useRoutines, useRoutinesForDate, useAppInvalidator } from '../lib/app-queries'
+import { tabSync } from '../lib/tabsync'
 import { confirmDialog } from '../lib/dialog'
 import { isoToLocalYmd } from '../utils/datetime'
 import { effectiveQuestDeadline } from '../utils/quests'
@@ -94,7 +96,10 @@ export function DiaView({ projects, quests, areas, activeSession, onSessionUpdat
   onSelectProject: (id: string | null) => void
 }) {
   const navigate = useNavigate()
-  const [routines, setRoutines] = useState<Routine[]>([])
+  const appInv = useAppInvalidator()
+  // Routines via React Query — substituiu useState + fetchAllRoutines.
+  const routinesQ = useRoutines()
+  const routines: Routine[] = routinesQ.data ?? []
   const [showPlanner, setShowPlanner] = useState(false)
   const [plannerRange, setPlannerRange] = useState<DateRange>(() => computeRange('7d'))
   const [plannerTypes, setPlannerTypes] = useState<Set<'quest' | 'task' | 'routine'>>(
@@ -145,17 +150,10 @@ export function DiaView({ projects, quests, areas, activeSession, onSessionUpdat
     } catch { return {} }
   })
   const [draggedItem, setDraggedItem] = useState<any>(null)
-  const [allTasks, setAllTasks] = useState<Task[]>([])
-  const [doneRoutineIds, setDoneRoutineIds] = useState<Set<string>>(new Set())
+  // Tasks via React Query.
+  const allTasksQ = useTasks()
+  const allTasks: Task[] = allTasksQ.data ?? []
   const [delivsByProject, setDelivsByProject] = useState<Record<string, Deliverable[]>>({})
-  // Flags de "fonte-de-done já carregou pelo menos uma vez". Sem isso, no
-  // mount inicial os 4 fetches (quests/routines/allTasks/doneRoutineIds)
-  // chegam fora de ordem e a migração de turno encerrado roda com Set vazio
-  // → trata items DONE como pendentes → joga eles pro próximo turno.
-  // Bug user-visible: rotinas/tasks/quests finalizadas migrando.
-  const [routinesLoaded, setRoutinesLoaded] = useState(false)
-  const [doneRoutineIdsLoaded, setDoneRoutineIdsLoaded] = useState(false)
-  const [allTasksLoaded, setAllTasksLoaded] = useState(false)
 
   const todayIsoForTasks = (() => {
     const d = new Date()
@@ -165,30 +163,30 @@ export function DiaView({ projects, quests, areas, activeSession, onSessionUpdat
     weekday: 'long', day: 'numeric', month: 'long',
   })
 
-  function refreshAllTasks() {
-    fetchTasks()
-      .then(list => { setAllTasks(list); setAllTasksLoaded(true) })
-      .catch(err => reportApiError('DiaPage', err))
-  }
-  function refreshDoneRoutines() {
-    fetchRoutinesForDate(todayIsoForTasks)
-      .then(list => {
-        setDoneRoutineIds(new Set(list.filter(r => r.done).map(r => r.id)))
-        setDoneRoutineIdsLoaded(true)
-      })
-      .catch(err => reportApiError('refreshDoneRoutines', err))
-  }
+  // Rotinas resolvidas pra hoje (com `done` já marcado pelo backend) — usado
+  // pra construir o Set de doneRoutineIds.
+  const routinesForTodayQ = useRoutinesForDate(todayIsoForTasks)
+  const doneRoutineIds: Set<string> = new Set(
+    (routinesForTodayQ.data ?? []).filter(r => r.done).map(r => r.id)
+  )
 
+  // Gate de "tudo carregou pelo menos uma vez". Sem isso, mount inicial roda
+  // a migração de turno com dados vazios → itens DONE caem como pendentes →
+  // são jogados pro próximo turno. Bug user-visible.
+  // React Query expõe `isFetched` que vira true após o primeiro fetch
+  // (sucesso ou erro), exatamente a semântica que precisamos.
+  const routinesLoaded = routinesQ.isFetched
+  const allTasksLoaded = allTasksQ.isFetched
+  const doneRoutineIdsLoaded = routinesForTodayQ.isFetched
+
+  // Re-invalida tasks e rotinas-do-dia quando sessão ativa muda — finalização
+  // via banner marca como done no backend, mas o cache local não atualiza
+  // sozinho até a próxima leitura. (Fetch inicial é feito pelos hooks.)
   useEffect(() => {
-    fetchAllRoutines()
-      .then(list => { setRoutines(list); setRoutinesLoaded(true) })
-      .catch(err => reportApiError('DiaPage', err))
-  }, [])
-  // Recarrega tasks quando a sessão ativa muda — finalização via banner
-  // marca a task como done no backend, mas o estado local não atualiza sem
-  // refetch.
-  useEffect(() => { refreshAllTasks() }, [activeSession?.type, activeSession?.id, activeSession?.started_at, activeSession?.ended_at])
-  useEffect(() => { refreshDoneRoutines() }, [todayIsoForTasks, activeSession?.type, activeSession?.id, activeSession?.started_at, activeSession?.ended_at])
+    appInv.tasks()
+    appInv.routines()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeSession?.type, activeSession?.id, activeSession?.started_at, activeSession?.ended_at])
 
   useEffect(() => {
     const projectIds = Array.from(new Set(quests.filter(q => q.project_id).map(q => q.project_id!)))
@@ -478,13 +476,13 @@ export function DiaView({ projects, quests, areas, activeSession, onSessionUpdat
 
   function handleTaskToToday(t: Task) {
     updateTask(t.id, { scheduled_date: todayIsoForTasks })
-      .then(() => refreshAllTasks())
+      .then(() => { appInv.tasks(); tabSync.emit('tasks') })
       .catch(err => reportApiError('DiaPage', err))
   }
   function handleTaskReschedule(t: Task, newDate: string) {
     if (!newDate) return
     updateTask(t.id, { scheduled_date: newDate })
-      .then(() => refreshAllTasks())
+      .then(() => { appInv.tasks(); tabSync.emit('tasks') })
       .catch(err => reportApiError('DiaPage', err))
   }
   async function handleTaskDiscard(t: Task) {
@@ -496,7 +494,7 @@ export function DiaView({ projects, quests, areas, activeSession, onSessionUpdat
     })
     if (!ok) return
     deleteTask(t.id)
-      .then(() => refreshAllTasks())
+      .then(() => { appInv.tasks(); tabSync.emit('tasks') })
       .catch(err => reportApiError('DiaPage', err))
   }
 
@@ -927,10 +925,12 @@ export function DiaView({ projects, quests, areas, activeSession, onSessionUpdat
             migratedFrom={migratedFrom}
             onSessionUpdate={() => {
               onSessionUpdate()
-              refreshAllTasks()
-              fetchAllRoutines().then(setRoutines).catch(err => reportApiError('DiaPage', err))
-              refreshDoneRoutines()
-              fetchQuests().then(() => {}).catch(err => reportApiError('DiaPage', err))
+              // Invalida tudo que pode ter mudado quando uma sessão fecha:
+              // task `done`, rotina `done` do dia, quest `status`, durações.
+              appInv.tasks()
+              appInv.routines()
+              appInv.quests()
+              tabSync.emit('session')
             }}
             onRemoveFromPlan={(itemId) => {
               setDayPlan(prev => ({

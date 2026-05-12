@@ -1,11 +1,12 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { Area, Project } from '../types'
 import {
-  fetchMicroTasks, createMicroTask, deleteMicroTask,
+  createMicroTask, deleteMicroTask,
   createTask, createRoutine,
-  reportApiError,
 } from '../api'
+import { useMicroTasks, useAppInvalidator } from '../lib/app-queries'
+import { tabSync } from '../lib/tabsync'
 import { parseTimeToMinutes } from '../utils/datetime'
 import { PageShell, TechId } from '../components/ui/CyberShell'
 import { CyberDatePicker } from '../components/ui/CyberDatePicker'
@@ -87,8 +88,13 @@ function ConvertButton({ label, onClick }: { label: string; onClick: () => void 
   )
 }
 export function MicroDumpView({ areas, projects, onArchive }: { areas: Area[]; projects: Project[]; onArchive: (idea: any) => void }) {
+  // MicroTasks via React Query — substituiu useState + fetchMicroTasks manual.
+  // Invalidator pro convert-flow (ideia → task/rotina). Sem isso, /tarefas
+  // e /rotinas ficavam stale até F5 depois de promover uma ideia.
+  const appInv = useAppInvalidator()
+  const microTasksQ = useMicroTasks()
+  const microTasks = microTasksQ.data ?? []
   const navigate = useNavigate()
-  const [microTasks, setMicroTasks] = useState<any[]>([])
   const [microTaskInput, setMicroTaskInput] = useState('')
   const [modalMode, setModalMode] = useState<'tarefa' | 'quest' | 'rotina' | null>(null)
   const [selectedMicroTask, setSelectedMicroTask] = useState<any | null>(null)
@@ -101,12 +107,8 @@ export function MicroDumpView({ areas, projects, onArchive }: { areas: Area[]; p
 
   async function consumeMicroTask(id: string) {
     try { await deleteMicroTask(id) } catch {}
-    setMicroTasks(prev => prev.filter(t => t.id !== id))
+    appInv.microTasks()
   }
-
-  useEffect(() => {
-    fetchMicroTasks().then(setMicroTasks).catch(err => reportApiError('MicroDumpPage', err))
-  }, [])
 
   return (
     <PageShell
@@ -166,8 +168,8 @@ export function MicroDumpView({ areas, projects, onArchive }: { areas: Area[]; p
               e.preventDefault()
               if (!microTaskInput.trim()) return
               createMicroTask(microTaskInput)
-                .then(task => {
-                  setMicroTasks([task, ...microTasks])
+                .then(() => {
+                  appInv.microTasks()
                   setMicroTaskInput('')
                 })
                 .catch(() => alertDialog({ title: 'Erro', message: 'Erro ao criar micro tarefa', variant: 'danger' }))
@@ -325,7 +327,7 @@ export function MicroDumpView({ areas, projects, onArchive }: { areas: Area[]; p
                   <button
                     onClick={() => {
                       deleteMicroTask(task.id)
-                        .then(() => setMicroTasks(microTasks.filter(t => t.id !== task.id)))
+                        .then(() => appInv.microTasks())
                         .catch(() => alertDialog({ title: 'Erro', message: 'Erro ao deletar', variant: 'danger' }))
                     }}
                     title="Deletar ideia"
@@ -734,6 +736,7 @@ export function MicroDumpView({ areas, projects, onArchive }: { areas: Area[]; p
                         end_time: formData.end_time || null,
                         duration_minutes: formData.duration_minutes || null,
                       })
+                      appInv.tasks(); tabSync.emit('tasks')
                     } else if (modalMode === 'rotina') {
                       const temHorario = formData.start_time && formData.end_time
                       const temDuracao = formData.estimated_minutes
@@ -760,6 +763,7 @@ export function MicroDumpView({ areas, projects, onArchive }: { areas: Area[]; p
                         routineData.estimated_minutes = formData.estimated_minutes
                       }
                       await createRoutine(routineData)
+                      appInv.routines(); tabSync.emit('routines')
                     }
 
                     await consumeMicroTask(selectedMicroTask.id)

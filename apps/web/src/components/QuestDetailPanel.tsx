@@ -11,6 +11,9 @@ import {
   fetchFinClients, fetchFinHourlyRateStats,
   reportApiError,
 } from '../api'
+import { useAppInvalidator } from '../lib/app-queries'
+import { useFinanceInvalidator } from '../lib/finance-queries'
+import { tabSync } from '../lib/tabsync'
 import { parseIsoAsUtc, sumClosedSessionsSeconds, formatHMS, parseTimeToMinutes, minutesToHmm, isValidDateInput } from '../utils/datetime'
 import { formatDateBR } from '../utils/quests'
 import { InlineText } from './ui/InlineText'
@@ -70,6 +73,11 @@ export function QuestDetailPanel({
   // não usados diretamente aqui (herdados de quando o painel suportava
   // subtarefas inline).
   void area; void onSessionUpdate;
+  // Invalidator pra propagar mutações pro cache global. Sem isso, criar/editar
+  // entregável aqui não refletia em outras páginas que consomem os mesmos
+  // hooks (DiaPage, Build) até F5. FinanceBlock instancia seu próprio
+  // finInv pra parcelas (Hub Finance).
+  const appInv = useAppInvalidator()
   // Subtasks carregadas do backend (escopadas ao projeto). Usamos estado
   // local pra UI ser responsiva — updates otimistas refletem aqui antes do
   // refetch.
@@ -213,6 +221,7 @@ export function QuestDetailPanel({
         setNewQuestByDeliv(prev => ({ ...prev, [delivId]: '' }))
         setNewQuestEstByDeliv(prev => ({ ...prev, [delivId]: '' }))
         if (onQuestCreate) onQuestCreate(q)
+        appInv.quests(); appInv.deliverablesByProject(project.id); tabSync.emit('quests')
       })
       .catch((err: any) => {
         console.error('Erro ao criar quest:', err)
@@ -236,6 +245,7 @@ export function QuestDetailPanel({
       .then(() => {
         setSubtasks(s => s.filter(st => st.id !== id))
         if (onQuestDelete) onQuestDelete(id)
+        appInv.quests(); appInv.deliverablesByProject(project.id); tabSync.emit('quests')
       })
       .catch(err => reportApiError('QuestDetailPanel', err))
   }
@@ -255,6 +265,7 @@ export function QuestDetailPanel({
         setNewDeliverableTitle('')
         setNewDeliverableDeadline('')
         setCreatingDeliverable(false)
+        appInv.deliverablesByProject(project.id); tabSync.emit('quests')
       })
       .catch(err => {
         console.error('Erro ao criar entregável:', err)
@@ -267,6 +278,7 @@ export function QuestDetailPanel({
     updateDeliverable(id, { done: !deliv.done })
       .then(updated => {
         setDeliverables(prev => prev.map(d => d.id === id ? updated : d))
+        appInv.deliverablesByProject(project.id); tabSync.emit('quests')
       })
       .catch(err => reportApiError('QuestDetailPanel', err))
   }
@@ -276,7 +288,10 @@ export function QuestDetailPanel({
     const prev = deliverables
     setDeliverables(prev.map(d => d.id === id ? { ...d, ...patch } : d))
     updateDeliverable(id, patch)
-      .then(updated => setDeliverables(curr => curr.map(d => d.id === id ? updated : d)))
+      .then(updated => {
+        setDeliverables(curr => curr.map(d => d.id === id ? updated : d))
+        appInv.deliverablesByProject(project.id); tabSync.emit('quests')
+      })
       .catch(() => setDeliverables(prev))
   }
 
@@ -289,7 +304,10 @@ export function QuestDetailPanel({
     })
     if (!ok) return
     deleteDeliverable(id)
-      .then(() => setDeliverables(prev => prev.filter(d => d.id !== id)))
+      .then(() => {
+        setDeliverables(prev => prev.filter(d => d.id !== id))
+        appInv.deliverablesByProject(project.id); tabSync.emit('quests')
+      })
       .catch((err: any) => {
         // 409 quando ainda tem quests amarradas
         alertDialog({
@@ -387,7 +405,9 @@ export function QuestDetailPanel({
     setHasManualOrder(true)
     setDraggedId(null)
     setDragOverId(null)
-    reorderDeliverables(project.id, list.map(d => d.id)).catch(err => reportApiError('QuestDetailPanel.reorderDeliverables', err))
+    reorderDeliverables(project.id, list.map(d => d.id))
+      .then(() => { appInv.deliverablesByProject(project.id); tabSync.emit('quests') })
+      .catch(err => reportApiError('QuestDetailPanel.reorderDeliverables', err))
   }
 
   function handleDragEnd() {
@@ -1055,9 +1075,6 @@ export function QuestDetailPanel({
                 ? Math.min(100, Math.round((executed / estimated) * 100))
                 : 0
             const over = estimated > 0 && executed > estimated
-            const barColor = over
-              ? 'var(--color-accent-primary)'
-              : 'var(--color-success)'
             const deadlineOverdue = !!d.deadline && !d.done && d.deadline < todayYmd
 
             const accentColor = d.done ? 'var(--color-success)' : 'var(--color-ice-light)'
@@ -1689,6 +1706,10 @@ function FinanceBlock({ project, totalExecutedMin, onUpdateValor, onUpdateClient
   onUpdateValor: (valor: number | null) => void
   onUpdateCliente: (clienteId: string | null) => void
 }) {
+  // Invalidator pro Hub Finance — parcelas afetam rollup de freela project,
+  // sumário mensal, hourlyStats. Sem invalidação aqui, criar/editar parcela
+  // não atualizava /finance/freelas até F5.
+  const finInv = useFinanceInvalidator()
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState<string>(
     project.valor_acordado != null ? String(project.valor_acordado) : ''
@@ -1737,6 +1758,9 @@ function FinanceBlock({ project, totalExecutedMin, onUpdateValor, onUpdateClient
     fetchFinParcelas(project.id)
       .then(setParcelas)
       .catch(err => reportApiError('FinanceBlock.refreshParcelas', err))
+    // Propaga pro Hub Finance — qualquer mutação em parcela aqui (criar,
+    // editar, deletar) afeta sumário de freelas, hourlyStats, sumário mensal.
+    finInv.all(); tabSync.emit('finance')
   }
 
   const valor = project.valor_acordado
@@ -1783,6 +1807,7 @@ function FinanceBlock({ project, totalExecutedMin, onUpdateValor, onUpdateClient
       const list = await applyFinParcelaTemplate(project.id, { template, data_inicio: dataInicio })
       setParcelas(list)
       setShowTemplateModal(false)
+      finInv.all(); tabSync.emit('finance')
     } catch (err: any) {
       reportApiError('applyTemplate', err)
       alertDialog({

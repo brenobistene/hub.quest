@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import {
-  ChevronsLeft, ChevronsRight, Pause, Play, CheckCircle2,
+  ChevronsLeft, ChevronsRight, Pause, Play, CheckCircle2, Menu,
 } from 'lucide-react'
 import { version as APP_VERSION } from '../package.json'
 /* Phosphor duotone — substitui os Lucide simples do sidebar pra dar
@@ -8,13 +8,18 @@ import { version as APP_VERSION } from '../package.json'
    ativo). Vibe Hell Is Us / Cron Calendar / Things 3. */
 import { Routes, Route, NavLink, Navigate, useNavigate, useLocation } from 'react-router-dom'
 import {
-  fetchQuests, fetchProjects, fetchAreas, fetchProfile, fetchActiveSession, fetchTasks,
+  fetchActiveSession,
   patchQuest, patchProject,
   fetchSessions, pauseSession, resumeSession,
   fetchTaskSessions, pauseTaskSession, resumeTaskSession, stopTaskSession,
   fetchRoutineSessions, pauseRoutineSession, resumeRoutineSession, stopRoutineSession,
   reportApiError,
 } from './api'
+import {
+  useProjects, useQuests, useTasks, useAreas, useProfile, useAppInvalidator,
+} from './lib/app-queries'
+import { tabSync } from './lib/tabsync'
+import { useBreakpoint } from './lib/useBreakpoint'
 import type { Project, Quest, Area, ActiveSession, Profile, Task } from './types'
 import { parseIsoAsUtc, sumClosedSessionsSeconds, formatHMS } from './utils/datetime'
 import { SessionHistoryModal } from './components/SessionHistoryModal'
@@ -107,11 +112,31 @@ const NAV_SECTIONS: NavSection[] = [
 export default function App() {
   const navigate = useNavigate()
   const location = useLocation()
-  const [projects, setProjects] = useState<Project[]>([])
-  const [quests, setQuests] = useState<Quest[]>([])
-  const [tasks, setTasks] = useState<Task[]>([])
-  const [areas, setAreas] = useState<Area[]>([])
-  const [profile, setProfile] = useState<Profile>({ name: '', role: '', avatar_url: '' })
+  // Entidades globais via React Query — substituiu o pool de useState
+  // que precisava de `sessionUpdateTrigger` pra forçar refetch. Cada hook
+  // tem cache + invalidação granular via `appInv.X()`.
+  const projectsQ = useProjects()
+  const projects: Project[] = projectsQ.data ?? []
+  const questsQ = useQuests()
+  const quests: Quest[] = questsQ.data ?? []
+  const tasksQ = useTasks()
+  const tasks: Task[] = tasksQ.data ?? []
+  const areasQ = useAreas()
+  const areas: Area[] = areasQ.data ?? []
+  const profileQ = useProfile()
+  const profile: Profile = profileQ.data ?? { name: '', role: '', avatar_url: '' }
+  const appInv = useAppInvalidator()
+  // Shim setters: child components passam `set*` como callback (onCreate,
+  // onDelete, etc) e fazem `setX(prev => prev.map(...))` pra updates locais.
+  // Aqui o argumento é descartado e disparamos invalidação + tabSync —
+  // React Query refetch retorna a verdade do servidor, e outras abas vêem
+  // o update via BroadcastChannel. Trade-off: perde optimistic UI
+  // momentâneo, ganha consistência sem código de cache manual.
+  type Updater<T> = T | ((prev: T) => T)
+  const setProjects = (_v: Updater<Project[]>) => { void _v; appInv.projects(); tabSync.emit('quests') }
+  const setQuests = (_v: Updater<Quest[]>) => { void _v; appInv.quests(); tabSync.emit('quests') }
+  const setAreas = (_v: Updater<Area[]>) => { void _v; appInv.areas(); tabSync.emit('quests') }
+  const setProfile = (_v: Updater<Profile>) => { void _v; appInv.profile(); tabSync.emit('profile') }
   const [archivedIdeas, setArchivedIdeas] = useState<Array<{ id: string; title: string; created_at: string }>>(() => {
     try {
       const saved = localStorage.getItem('hq-archived-ideas')
@@ -152,10 +177,21 @@ export default function App() {
     return () => window.removeEventListener('hq-select-project', handler)
   }, [])
   const [sessionUpdateTrigger, setSessionUpdateTrigger] = useState(0)
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+  const [sidebarCollapsedRaw, setSidebarCollapsed] = useState(() => {
     const saved = localStorage.getItem('hq-sidebar-collapsed')
     return saved ? JSON.parse(saved) : false
   })
+  // Mobile/desktop branching. Em mobile o sidebar vira drawer (escondido por
+  // padrão, abre via hambúrguer). `sidebarOpen` é só pra mobile — desktop
+  // sempre mostra (pinned), só alterna `sidebarCollapsed` pra largura.
+  const { isCompact } = useBreakpoint()
+  // Em mobile o drawer SEMPRE mostra a versão expandida (com labels);
+  // o estado `collapsed` só existe pra desktop. Override centralizado pra
+  // evitar polluir toda condicional `sidebarCollapsed ? ... : ...`.
+  const sidebarCollapsed = isCompact ? false : sidebarCollapsedRaw
+  const [sidebarOpen, setSidebarOpen] = useState(false)
+  // Fecha o drawer ao navegar pra outra rota (UX padrão de mobile).
+  useEffect(() => { if (isCompact) setSidebarOpen(false) }, [location.pathname, isCompact])
   const [activeSession, setActiveSession] = useState<ActiveSession | null>(null)
   // Lifecycle do banner — controla a cutscene de materialize/dematerialize.
   // - `session`: sessão renderizada (lag em relação a activeSession durante exit)
@@ -216,6 +252,22 @@ export default function App() {
     refreshActiveSession()
   }, [])
 
+  // Cross-tab sync: quando outra aba muta dados do app, invalida cache local.
+  // Cobre o caso "criei tarefa numa aba, a outra mostra stale até F5".
+  // 'session' também dispara refreshActiveSession pro banner sincronizar.
+  useEffect(() => {
+    const offQuests = tabSync.on('quests', () => {
+      appInv.quests(); appInv.projects(); appInv.areas()
+    })
+    const offTasks = tabSync.on('tasks', () => { appInv.tasks() })
+    const offRoutines = tabSync.on('routines', () => { appInv.routines() })
+    const offProfile = tabSync.on('profile', () => { appInv.profile() })
+    const offSession = tabSync.on('session', () => { refreshActiveSession() })
+    const offAll = tabSync.on('all', () => { appInv.all() })
+    return () => { offQuests(); offTasks(); offRoutines(); offProfile(); offSession(); offAll() }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   // Sincroniza bannerLifecycle com activeSession — triggers cutscene de
   // entering quando aparece, exiting quando some. Updates de mesma sessão
   // (pause/resume → is_active flip) só atualizam os campos sem re-animar.
@@ -251,12 +303,21 @@ export default function App() {
     }
   }, [bannerLifecycle.stage])
 
-  // Fetch active session + refresh quests/projects when update is triggered
+  // Fetch active session + refresh quests/projects/tasks/routines when an
+  // update is triggered. Mudança de sessão (start/pause/stop) afeta `done`,
+  // contadores e duração agregada — invalidamos tudo pra os hooks refetcharem.
+  // Inclui routines: REABRIR uma rotina FEITO no /dia chama toggle que muta
+  // routine_logs; sem invalidar useRoutinesForDate, o `doneRoutineIds` Set
+  // continua mostrando a rotina como done e o botão play não aparece.
   useEffect(() => {
     refreshActiveSession()
-    fetchQuests().then(setQuests).catch(err => reportApiError('App', err))
-    fetchProjects().then(setProjects).catch(err => reportApiError('App', err))
-    fetchTasks().then(setTasks).catch(err => reportApiError('App', err))
+    if (sessionUpdateTrigger > 0) {
+      appInv.quests()
+      appInv.projects()
+      appInv.tasks()
+      appInv.routines()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionUpdateTrigger])
 
   // Mantém o banner sincronizado com a sessão ativa do backend.
@@ -408,8 +469,8 @@ export default function App() {
 
   // Persist sidebar state
   useEffect(() => {
-    localStorage.setItem('hq-sidebar-collapsed', JSON.stringify(sidebarCollapsed))
-  }, [sidebarCollapsed])
+    localStorage.setItem('hq-sidebar-collapsed', JSON.stringify(sidebarCollapsedRaw))
+  }, [sidebarCollapsedRaw])
 
   // URL is now the source of truth for surface (via React Router).
   // We still persist selected quest id so drilling back into an area restores it.
@@ -424,12 +485,8 @@ export default function App() {
   }, [archivedIdeas])
 
   useEffect(() => {
-    fetchQuests().then(setQuests).catch(err => reportApiError('App', err))
-    fetchProjects().then(setProjects).catch(err => reportApiError('App', err))
-    fetchTasks().then(setTasks).catch(err => reportApiError('App', err))
-    fetchAreas().then(setAreas).catch(err => reportApiError('App', err))
-    fetchProfile().then(setProfile).catch(err => reportApiError('App', err))
-    fetchTasks().then(setTasks).catch(err => reportApiError('App', err))
+    // Hooks (useProjects/useQuests/etc) fazem o fetch inicial automaticamente
+    // — não precisa de fetchX().then(setX) aqui.
 
     // Inject CSS animations
     const style = document.createElement('style')
@@ -494,13 +551,36 @@ export default function App() {
     } as Record<string, { count: number; urgent: boolean; tone?: 'amber' }>
   })()
 
+  // Resolve a largura efetiva do sidebar — em mobile vira drawer de 280px,
+  // em desktop fica 72 (collapsed) ou 220 (expanded).
+  const sidebarWidth = isCompact ? 280 : (sidebarCollapsed ? 72 : 220)
+  // Em mobile, o sidebar é escondido por padrão (translateX negativo);
+  // só fica visível quando `sidebarOpen=true` via hambúrguer.
+  const sidebarTransform = isCompact && !sidebarOpen
+    ? `translateX(-${sidebarWidth}px)`
+    : 'translateX(0)'
+
   return (
     <div style={{ display: 'flex', minHeight: '100vh' }}>
+      {/* Backdrop pro drawer mobile — clique fecha. Só renderiza quando
+          sidebar tá aberto em mobile (não ocupa pintura no desktop). */}
+      {isCompact && sidebarOpen && (
+        <div
+          onClick={() => setSidebarOpen(false)}
+          style={{
+            position: 'fixed', inset: 0,
+            background: 'rgba(0, 0, 0, 0.55)',
+            backdropFilter: 'blur(2px)',
+            zIndex: 99,
+            animation: 'hq-fade-in 0.2s ease',
+          }}
+        />
+      )}
       <aside
         className="hq-grain"
         style={{
           position: 'fixed', left: 0, top: 0, bottom: 0,
-          width: sidebarCollapsed ? 72 : 220,
+          width: sidebarWidth,
           flexShrink: 0,
           borderRight: '1px solid var(--color-border)',
           padding: 'var(--space-4) 0 var(--space-3)',
@@ -508,7 +588,8 @@ export default function App() {
           background: 'rgba(8, 12, 18, 0.62)',
           backdropFilter: 'blur(28px) saturate(180%)',
           WebkitBackdropFilter: 'blur(28px) saturate(180%)',
-          transition: 'width var(--motion-base) var(--ease-emphasis)',
+          transform: sidebarTransform,
+          transition: 'width var(--motion-base) var(--ease-emphasis), transform var(--motion-base) var(--ease-emphasis)',
           height: '100vh', overflowY: 'auto', overflowX: 'hidden',
           zIndex: 100, boxSizing: 'border-box',
         }}
@@ -566,8 +647,9 @@ export default function App() {
                   TACTICAL.SYS
                 </span>
               </div>
-              {/* Toggle collapse — botão angular CP2077 com chevron duplo */}
-              <button
+              {/* Toggle collapse — botão angular CP2077 com chevron duplo.
+                  Escondido em mobile: drawer fecha via backdrop ou nav. */}
+              {!isCompact && <button
                 onClick={() => setSidebarCollapsed(true)}
                 title="Recolher menu"
                 aria-label="Recolher menu"
@@ -597,11 +679,11 @@ export default function App() {
                 }}
               >
                 <ChevronsLeft size={14} strokeWidth={2} />
-              </button>
+              </button>}
             </>
           )}
 
-          {sidebarCollapsed && (
+          {sidebarCollapsed && !isCompact && (
             <button
               onClick={() => setSidebarCollapsed(false)}
               title="Expandir menu"
@@ -1132,12 +1214,14 @@ export default function App() {
                   setActiveSession(null)
                   saveFocusedEntity(null)
                   onSessionUpdate()
+                  tabSync.emit('session')
                 }
 
                 const clearBanner = () => {
                   setActiveSession(null)
                   saveFocusedEntity(null)
                   onSessionUpdate()
+                  tabSync.emit('session')
                 }
 
                 if (type === 'quest') {
@@ -1178,14 +1262,48 @@ export default function App() {
 
       <main style={{
         flex: 1,
-        padding: location.pathname.startsWith('/calendario') ? '24px 32px' : '48px 60px',
+        // Mobile: padding mínimo. Desktop: padding generoso (mantém vibe
+        // editorial). Calendário sempre menor pra timeline caber.
+        padding: isCompact
+          ? '12px'
+          : (location.pathname.startsWith('/calendario') ? '24px 32px' : '48px 60px'),
         maxWidth: '100%',
-        marginLeft: sidebarCollapsed ? 72 : 220,
+        // Mobile: sidebar é drawer overlay, conteúdo ocupa 100%. Desktop:
+        // empurra pro lado do sidebar pinned.
+        marginLeft: isCompact ? 0 : (sidebarCollapsed ? 72 : 220),
         marginTop: (isHydrated && activeSession) ? 64 : 0,
         transition: 'margin-top var(--motion-base) var(--ease-emphasis), margin-left var(--motion-base) var(--ease-emphasis)',
         minHeight: '100vh',
         background: 'transparent',
       }}>
+        {/* Hambúrguer mobile — fica fixed no canto top-left pra ser sempre
+            alcançável. Em desktop, escondido (sidebar é sempre visível). */}
+        {isCompact && (
+          <button
+            type="button"
+            onClick={() => setSidebarOpen(o => !o)}
+            aria-label={sidebarOpen ? 'Fechar menu' : 'Abrir menu'}
+            style={{
+              position: 'fixed',
+              top: (isHydrated && activeSession) ? 76 : 12,
+              left: 12,
+              zIndex: 98,
+              background: 'rgba(8, 12, 18, 0.92)',
+              backdropFilter: 'blur(12px)',
+              WebkitBackdropFilter: 'blur(12px)',
+              border: '1px solid var(--color-border-strong)',
+              borderRadius: 0,
+              clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%)',
+              color: 'var(--color-ice-light)',
+              width: 44, height: 44,
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              cursor: 'pointer',
+              transition: 'background var(--motion-fast) var(--ease-smooth)',
+            }}
+          >
+            <Menu size={20} strokeWidth={2} />
+          </button>
+        )}
         {/* Sem fade global entre rotas — quem dá a sensação "premium"
             agora é o stagger dos cards/listas montando dentro da rota
             nova (Framer Motion StaggerList). Linear/Vercel/Raycast fazem
@@ -1249,7 +1367,7 @@ export default function App() {
                     // do projeto pai). Refetch pra o state global sair de
                     // sincronia ou continuar sincronizado sem F5.
                     if ('archived_at' in patch) {
-                      fetchQuests().then(setQuests).catch(err => reportApiError('App', err))
+                      appInv.quests()
                     }
                   })
                   .catch(err => reportApiError('App', err))
