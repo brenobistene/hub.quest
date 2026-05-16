@@ -5,30 +5,35 @@ import { Sunrise, Sun, Moon, X, ArrowRight, Calendar as CalendarIcon, Trash2, Al
 import type { ActiveSession, Area, BuildRitual, Deliverable, Project, Quest, Routine, Task } from '../types'
 import { fetchDeliverables, updateTask, deleteTask, reportApiError } from '../api'
 import { useTasks, useRoutines, useRoutinesForDate, useAppInvalidator } from '../lib/app-queries'
+import { useCreateHealthRecord } from '../lib/health-queries'
 import {
   useDiaPendencias,
   useInvalidateDiaPendencias,
-  useDiscardHealthItemSession,
-  useDiscardMindSession,
   useHealthItemSession,
   useLinkHealthItemSessionToRecord,
   useLinkMindSessionToRecord,
+  useLinkRitualClusterToRecord,
   useMindSession,
   usePauseHealthItemSession,
   usePauseMindSession,
+  usePauseRitualCluster,
   useResumeHealthItemSession,
   useResumeMindSession,
+  useResumeRitualCluster,
+  useRitualCluster,
   useStartHealthItemSession,
   useStartMindSession,
+  useStartRitualCluster,
 } from '../lib/dia-queries'
 import type { DiaSessionCluster } from '../api'
 
 type DiaSessionClusterLike = DiaSessionCluster
-import { useRituals } from '../lib/build-queries'
+import { useRituals, useCreateRitualSession } from '../lib/build-queries'
 import { tabSync } from '../lib/tabsync'
 import { confirmDialog } from '../lib/dialog'
 import MindRegisterModal from '../components/mind/MindRegisterModal'
 import RegisterModal from '../components/health/RegisterModal'
+import { SessionHistoryModal } from '../components/SessionHistoryModal'
 import { isoToLocalYmd } from '../utils/datetime'
 import { effectiveQuestDeadline } from '../utils/quests'
 import type { DateRange } from '../utils/dateRange'
@@ -149,6 +154,8 @@ export function DiaView({ projects, quests, areas, activeSession, onSessionUpdat
   >(null)
   const linkMindToRecord = useLinkMindSessionToRecord()
   const linkHealthItemToRecord = useLinkHealthItemSessionToRecord()
+  const createHealthRecord = useCreateHealthRecord()
+  const invalidateDiaPendencias = useInvalidateDiaPendencias()
   const [showPlanner, setShowPlanner] = useState(false)
   const [plannerRange, setPlannerRange] = useState<DateRange>(() => computeRange('7d'))
   const [plannerTypes, setPlannerTypes] = useState<Set<'quest' | 'task' | 'routine' | 'ritual' | 'mind' | 'health'>>(
@@ -1085,6 +1092,47 @@ export function DiaView({ projects, quests, areas, activeSession, onSessionUpdat
                     duracao_min: durMin,
                   }
                 : undefined
+
+              // Health · atividade_tipo (Exercício): user só clica FINALIZAR
+              // e pronto — sistema já sabe quando começou/terminou. Auto-cria
+              // record sem modal e linka o cluster. Notas podem ser adicionadas
+              // depois editando o record direto na página do domínio.
+              if (
+                item.modal_type === 'health_register' &&
+                item.target?.domain_template === 'atividade_tipo' &&
+                prefill
+              ) {
+                const t = item.target ?? {}
+                const startDate = new Date(prefill.started_at)
+                const dataIso = isoToLocalYmd(prefill.started_at) ||
+                  `${startDate.getFullYear()}-${String(startDate.getMonth() + 1).padStart(2, '0')}-${String(startDate.getDate()).padStart(2, '0')}`
+                const horario = `${String(startDate.getHours()).padStart(2, '0')}:${String(startDate.getMinutes()).padStart(2, '0')}`
+                createHealthRecord.mutate(
+                  {
+                    domainSlug: t.domain_slug,
+                    body: {
+                      item_id: t.item_id,
+                      data: dataIso,
+                      horario,
+                      payload: { duracao_min: prefill.duracao_min },
+                    },
+                  },
+                  {
+                    onSuccess: (created: any) => {
+                      if (created?.id && t.item_id) {
+                        linkHealthItemToRecord.mutate({
+                          itemId: t.item_id,
+                          recordId: created.id,
+                        })
+                      }
+                      invalidateDiaPendencias()
+                    },
+                    onError: (err) => reportApiError('DiaPage.autoFinalize', err),
+                  },
+                )
+                return
+              }
+
               if (item.modal_type === 'mind') {
                 setOpenPendenciaModal({ type: 'mind', prefill })
               } else if (item.modal_type === 'health_register') {
@@ -1405,6 +1453,8 @@ function PeriodSection({
                   onRemoveFromPlan={() => onRemoveFromPlan(item.id)}
                   onFinalize={onExecutePendencia}
                   onSessionUpdate={onSessionUpdate}
+                  currentPeriod={period}
+                  onMoveToPeriod={(target) => onMoveToPeriod(item.id, target)}
                 />
               )
             }
@@ -1417,6 +1467,9 @@ function PeriodSection({
                   key={item.id}
                   item={item}
                   onRemoveFromPlan={() => onRemoveFromPlan(item.id)}
+                  onSessionUpdate={onSessionUpdate}
+                  currentPeriod={period}
+                  onMoveToPeriod={(target) => onMoveToPeriod(item.id, target)}
                 />
               )
             }
@@ -2593,6 +2646,60 @@ function itemIsDone(item: any): boolean {
  * o modal correto (MindRegisterModal ou RegisterModal de Health). Após
  * salvar, backend tira da lista de pendências e o item some.
  */
+// ─── MovePeriodChips ──────────────────────────────────────────────────────
+
+/**
+ * Chips M/T/N pra mover item entre turnos no /dia. Touch fallback do
+ * drag-and-drop (visível em devices com pointer coarse via CSS classe
+ * `hq-move-period-chips`). Esconde o chip do período atual pra não poluir.
+ *
+ * Compartilhado entre PlannedItemRow (quest/task/routine) inline e
+ * PendenciaPlannedRow + RitualPlannedRow. Sem chips → user pendência fica
+ * preso ao turno onde foi alocado pela primeira vez (bug reportado).
+ */
+function MovePeriodChips({
+  currentPeriod,
+  onMoveToPeriod,
+}: {
+  currentPeriod: 'morning' | 'afternoon' | 'evening'
+  onMoveToPeriod: (target: 'morning' | 'afternoon' | 'evening') => void
+}) {
+  return (
+    <div
+      className="hq-move-period-chips"
+      style={{
+        display: 'none',
+        gap: 4,
+        alignSelf: 'flex-start',
+      }}
+      data-current-period={currentPeriod}
+    >
+      {(['morning', 'afternoon', 'evening'] as const).map(p => {
+        if (p === currentPeriod) return null
+        const label = p === 'morning' ? 'M' : p === 'afternoon' ? 'T' : 'N'
+        return (
+          <button
+            key={p}
+            onClick={() => onMoveToPeriod(p)}
+            title={`mover pra ${p === 'morning' ? 'manhã' : p === 'afternoon' ? 'tarde' : 'noite'}`}
+            style={{
+              minWidth: 32, minHeight: 32,
+              background: 'rgba(8, 12, 18, 0.55)',
+              border: '1px solid var(--color-border)',
+              color: 'var(--color-ice-light)',
+              cursor: 'pointer',
+              fontFamily: 'var(--font-mono)',
+              fontSize: 11, fontWeight: 700,
+              borderRadius: 0,
+              clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 4px), calc(100% - 4px) 100%, 0 100%)',
+            }}
+          >{label}</button>
+        )
+      })}
+    </div>
+  )
+}
+
 // ─── RitualPlannedRow ─────────────────────────────────────────────────────
 
 /**
@@ -2606,122 +2713,391 @@ function itemIsDone(item: any): boolean {
 function RitualPlannedRow({
   item,
   onRemoveFromPlan,
+  onSessionUpdate,
+  currentPeriod,
+  onMoveToPeriod,
 }: {
   item: any
   onRemoveFromPlan: () => void
+  onSessionUpdate: () => void
+  currentPeriod?: 'morning' | 'afternoon' | 'evening'
+  onMoveToPeriod?: (target: 'morning' | 'afternoon' | 'evening') => void
 }) {
-  const navigate = useNavigate()
-  const accent = '#dc2531' // Neomilitarism red (mesma do RitualNextCard)
-  const done = !!item.done
-  const cadenciaLabel = item.cadencia
-    ? item.cadencia.charAt(0).toUpperCase() + item.cadencia.slice(1)
+  const cadencia: string = item.cadencia ?? ''
+  const accent = '#dc2531' // Neomilitarism red
+  const cadenciaLabel = cadencia
+    ? cadencia.charAt(0).toUpperCase() + cadencia.slice(1)
     : 'Ritual'
+  const typeCode = 'RTL'
+  const durMin = item.duracao_alvo_min ?? 0
+  const durLabel = durMin > 0
+    ? (durMin >= 60
+      ? `${Math.floor(durMin / 60)}H${durMin % 60 ? ` ${durMin % 60}M` : ''}`
+      : `${durMin}M`)
+    : '—'
+  const borderColor = 'rgba(143, 191, 211, 0.22)'
+
+  const clusterQ = useRitualCluster(cadencia || null)
+  const cluster: DiaSessionClusterLike = clusterQ.data ?? {
+    has_active: false,
+    is_running: false,
+    started_at: null,
+    ended_at: null,
+    elapsed_seconds: 0,
+    rows: [],
+  }
+
+  const startRitual = useStartRitualCluster()
+  const pauseRitual = usePauseRitualCluster()
+  const resumeRitual = useResumeRitualCluster()
+  const linkRitualToRecord = useLinkRitualClusterToRecord()
+  const createRitualSession = useCreateRitualSession()
+  const invalidateDia = useInvalidateDiaPendencias()
+
+  function doStart() {
+    if (!cadencia) return
+    startRitual.mutate(cadencia, { onSuccess: () => onSessionUpdate() })
+  }
+  function doPause() {
+    if (!cadencia) return
+    pauseRitual.mutate(cadencia, { onSuccess: () => onSessionUpdate() })
+  }
+  function doResume() {
+    if (!cadencia) return
+    resumeRitual.mutate(cadencia, { onSuccess: () => onSessionUpdate() })
+  }
+  function doFinalize() {
+    if (!cadencia || !cluster.started_at) return
+    const handleAfterPause = () => {
+      const elapsedMin = Math.max(1, Math.floor((cluster.elapsed_seconds || 0) / 60))
+      const startDate = new Date(cluster.started_at as string)
+      const dataExec = `${startDate.getFullYear()}-${String(startDate.getMonth() + 1).padStart(2, '0')}-${String(startDate.getDate()).padStart(2, '0')}`
+      createRitualSession.mutate(
+        {
+          cadencia: cadencia as any,
+          body: { data_executado: dataExec, duracao_min: elapsedMin },
+        },
+        {
+          onSuccess: (created: any) => {
+            if (created?.id) {
+              linkRitualToRecord.mutate({ cadencia, recordId: created.id })
+            }
+            invalidateDia()
+            onSessionUpdate()
+          },
+          onError: (err) => reportApiError('RitualPlannedRow.finalize', err),
+        },
+      )
+    }
+    if (cluster.is_running) {
+      pauseRitual.mutate(cadencia, { onSuccess: handleAfterPause })
+    } else {
+      handleAfterPause()
+    }
+  }
+
+  const [tick, setTick] = useState(0)
+  useEffect(() => {
+    if (!cluster.is_running) return
+    const t = setInterval(() => setTick(x => x + 1), 1000)
+    return () => clearInterval(t)
+  }, [cluster.is_running])
+  let liveElapsedSec = cluster.elapsed_seconds
+  if (cluster.is_running) {
+    const lastOpen = cluster.rows.find(r => r.ended_at === null)
+    if (lastOpen) {
+      try {
+        const start = new Date(lastOpen.started_at.replace('Z', '+00:00')).getTime()
+        const closedSec = cluster.rows
+          .filter(r => r.ended_at !== null)
+          .reduce((acc, r) => {
+            try {
+              const s = new Date(r.started_at.replace('Z', '+00:00')).getTime()
+              const e = new Date(r.ended_at!.replace('Z', '+00:00')).getTime()
+              return acc + Math.max(0, Math.floor((e - s) / 1000))
+            } catch { return acc }
+          }, 0)
+        liveElapsedSec = closedSec + Math.max(0, Math.floor((Date.now() - start) / 1000))
+      } catch {}
+    }
+  }
+  void tick
+
+  function fmtElapsed(sec: number): string {
+    const h = Math.floor(sec / 3600)
+    const m = Math.floor((sec % 3600) / 60)
+    const s = sec % 60
+    const pad = (n: number) => String(n).padStart(2, '0')
+    return h > 0 ? `${pad(h)}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`
+  }
+
+  const [showInfo, setShowInfo] = useState(false)
+  const [showHistory, setShowHistory] = useState(false)
+  const historySessions = (cluster.rows ?? []).map(r => ({
+    id: r.id, started_at: r.started_at, ended_at: r.ended_at,
+  }))
+  const refetchCluster = () => { clusterQ.refetch(); onSessionUpdate() }
 
   return (
-    <div
-      style={{
-        // Tint diagonal sutil em vez de border-stripe (DESIGN.md ban).
-        background: `linear-gradient(135deg, ${accent}0d 0%, transparent 45%), rgba(8, 12, 18, 0.55)`,
-        border: '1px solid rgba(143, 191, 211, 0.22)',
-        clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%)',
-        padding: '10px 14px',
-        display: 'flex',
-        alignItems: 'center',
-        gap: 10,
-        opacity: done ? 0.5 : 1,
-      }}
-    >
-      <div style={{ flex: 1, minWidth: 0 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 0, width: '100%' }}>
+      <div
+        style={{
+          display: 'flex', alignItems: 'stretch', gap: 6, position: 'relative',
+          transition: 'transform var(--motion-fast) var(--ease-smooth)',
+        }}
+        onMouseEnter={e => { e.currentTarget.style.transform = 'translateX(2px)' }}
+        onMouseLeave={e => { e.currentTarget.style.transform = 'translateX(0)' }}
+      >
+        {/* THUMBNAIL */}
         <div
           style={{
-            fontFamily: 'var(--font-display)',
-            fontSize: 13,
-            fontWeight: 600,
-            color: 'var(--color-text-primary)',
-            letterSpacing: '0.03em',
-            textTransform: 'uppercase',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-            textDecoration: done ? 'line-through' : 'none',
+            width: 64, flexShrink: 0,
+            background: `linear-gradient(135deg, ${accent}22, ${accent}08 60%, transparent)`,
+            border: `1px solid ${borderColor}`,
+            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+            gap: 4,
+            clipPath: 'polygon(8px 0, 100% 0, 100% 100%, 0 100%, 0 8px)',
           }}
         >
-          {item.title}
+          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 12, fontWeight: 700, color: accent, letterSpacing: '0.12em', lineHeight: 1, textShadow: `0 0 6px ${accent}55` }}>
+            {typeCode}
+          </div>
+          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700, color: 'var(--color-text-muted)', letterSpacing: '0.08em', lineHeight: 1 }}>
+            {durLabel}
+          </div>
+          <div aria-hidden="true" style={{ width: 5, height: 5, background: accent, marginTop: 2 }} />
         </div>
+
+        {/* MAIN CARD */}
         <div
           style={{
-            marginTop: 3,
-            display: 'flex',
-            gap: 8,
-            alignItems: 'center',
-            fontFamily: 'var(--font-mono)',
-            fontSize: 9,
-            fontWeight: 700,
-            color: 'var(--color-text-muted)',
-            letterSpacing: '0.15em',
-            textTransform: 'uppercase',
-            flexWrap: 'wrap',
+            flex: 1, minWidth: 0,
+            background: 'rgba(8, 12, 18, 0.55)',
+            border: `1px solid ${borderColor}`,
+            clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%)',
+            padding: '10px 14px',
+            display: 'flex', flexDirection: 'column', gap: 6,
+            transition: 'border-color var(--motion-fast) var(--ease-smooth), background var(--motion-fast) var(--ease-smooth), box-shadow var(--motion-fast) var(--ease-smooth)',
+          }}
+          onMouseEnter={e => {
+            e.currentTarget.style.borderColor = 'rgba(143, 191, 211, 0.45)'
+            e.currentTarget.style.boxShadow = '0 0 12px rgba(143, 191, 211, 0.18)'
+          }}
+          onMouseLeave={e => {
+            e.currentTarget.style.borderColor = borderColor
+            e.currentTarget.style.boxShadow = 'none'
           }}
         >
-          <span style={{ color: accent }}>Ritual · {cadenciaLabel}</span>
-          {item.duracao_alvo_min > 0 && (
-            <>
-              <span style={{ opacity: 0.4 }}>·</span>
-              <span>{item.duracao_alvo_min} min</span>
-            </>
-          )}
-          {done && (
-            <>
-              <span style={{ opacity: 0.4 }}>·</span>
-              <span style={{ color: 'var(--color-success)' }}>cumprido hoje</span>
-            </>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, flexWrap: 'wrap', width: '100%', minWidth: 0 }}>
+            <div style={{ flex: '1 1 180px', minWidth: 0 }}>
+              <div style={{
+                fontFamily: 'var(--font-display)', color: 'var(--color-text-primary)',
+                fontWeight: 600, fontSize: 13, letterSpacing: '0.03em', textTransform: 'uppercase',
+                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+              }}>
+                {item.title}
+              </div>
+              <div style={{
+                fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--color-text-muted)',
+                letterSpacing: '0.15em', textTransform: 'uppercase', fontWeight: 600,
+                marginTop: 4, display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap',
+              }}>
+                <span style={{ color: accent }}>Ritual · {cadenciaLabel}</span>
+                {item.done && (
+                  <>
+                    <span style={{ opacity: 0.4 }}>·</span>
+                    <span style={{ color: 'var(--color-success)' }}>cumprido hoje</span>
+                  </>
+                )}
+              </div>
+            </div>
+
+            {/* Controles */}
+            <div style={{ display: 'inline-flex', gap: 6, flexShrink: 0, alignSelf: 'flex-start', alignItems: 'center' }}>
+              {cluster.has_active && (
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); setShowHistory(true) }}
+                  title={cluster.is_running ? 'em execução — ver/editar sessões' : 'pausado — ver/editar sessões'}
+                  style={{
+                    background: 'none', border: 'none', cursor: 'pointer', padding: '2px 4px',
+                    fontFamily: 'var(--font-mono)', fontSize: 11, fontWeight: 700,
+                    color: cluster.is_running ? accent : 'var(--color-text-muted)',
+                    letterSpacing: '0.04em',
+                    textShadow: cluster.is_running ? `0 0 8px ${accent}55` : 'none',
+                    minWidth: 56, textAlign: 'right',
+                  }}
+                >
+                  {fmtElapsed(liveElapsedSec)}
+                </button>
+              )}
+              <button
+                onClick={(e) => { e.stopPropagation(); setShowInfo(v => !v) }}
+                title={showInfo ? 'ocultar info' : 'ver info'}
+                style={{
+                  background: 'none', border: 'none', cursor: 'pointer',
+                  fontFamily: 'var(--font-mono)', color: 'var(--color-text-muted)',
+                  fontSize: 9, padding: '2px 4px', fontWeight: 700,
+                  letterSpacing: '0.18em', display: 'inline-flex', alignItems: 'center', gap: 3,
+                  flexShrink: 0,
+                }}
+                onMouseEnter={e => (e.currentTarget.style.color = 'var(--color-ice-light)')}
+                onMouseLeave={e => (e.currentTarget.style.color = 'var(--color-text-muted)')}
+              >
+                <span>{showInfo ? '▼' : '▶'}</span> INFO
+              </button>
+              {!cluster.has_active && (
+                <button
+                  type="button"
+                  onClick={doStart}
+                  title="iniciar ritual"
+                  style={{
+                    cursor: 'pointer', fontFamily: 'var(--font-mono)',
+                    fontSize: 9, fontWeight: 700, padding: '5px 10px',
+                    letterSpacing: '0.18em', textTransform: 'uppercase',
+                    clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 5px), calc(100% - 5px) 100%, 0 100%)',
+                    display: 'inline-flex', alignItems: 'center', gap: 4,
+                    background: 'rgba(143, 191, 211, 0.10)',
+                    border: '1px solid rgba(143, 191, 211, 0.45)',
+                    color: 'var(--color-ice-light)',
+                    boxShadow: '0 0 10px rgba(143, 191, 211, 0.15)',
+                  }}
+                >
+                  <Play size={9} strokeWidth={2} fill="currentColor" />
+                  PLAY
+                </button>
+              )}
+              {cluster.has_active && cluster.is_running && (
+                <button
+                  type="button"
+                  onClick={doPause}
+                  title="pausar"
+                  style={{
+                    cursor: 'pointer', fontFamily: 'var(--font-mono)',
+                    fontSize: 9, fontWeight: 700, padding: '5px 10px',
+                    letterSpacing: '0.18em', textTransform: 'uppercase',
+                    clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 5px), calc(100% - 5px) 100%, 0 100%)',
+                    background: 'rgba(192, 138, 58, 0.10)',
+                    border: '1px solid rgba(192, 138, 58, 0.55)',
+                    color: 'var(--color-warning)',
+                  }}
+                >
+                  ❚❚ PAUSE
+                </button>
+              )}
+              {cluster.has_active && !cluster.is_running && (
+                <button
+                  type="button"
+                  onClick={doResume}
+                  title="retomar"
+                  style={{
+                    cursor: 'pointer', fontFamily: 'var(--font-mono)',
+                    fontSize: 9, fontWeight: 700, padding: '5px 10px',
+                    letterSpacing: '0.18em', textTransform: 'uppercase',
+                    clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 5px), calc(100% - 5px) 100%, 0 100%)',
+                    background: 'rgba(143, 191, 211, 0.10)',
+                    border: '1px solid rgba(143, 191, 211, 0.45)',
+                    color: 'var(--color-ice-light)',
+                  }}
+                >
+                  <Play size={9} strokeWidth={2} fill="currentColor" />
+                  RESUME
+                </button>
+              )}
+              {cluster.has_active && (
+                <button
+                  type="button"
+                  onClick={doFinalize}
+                  title="finalizar e registrar"
+                  style={{
+                    cursor: 'pointer', fontFamily: 'var(--font-mono)',
+                    fontSize: 9, fontWeight: 700, padding: '5px 10px',
+                    letterSpacing: '0.18em', textTransform: 'uppercase',
+                    clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 5px), calc(100% - 5px) 100%, 0 100%)',
+                    background: `${accent}22`,
+                    border: `1px solid ${accent}`,
+                    color: accent,
+                    boxShadow: `0 0 10px ${accent}33`,
+                  }}
+                >
+                  ▣ FINALIZAR
+                </button>
+              )}
+              {onMoveToPeriod && currentPeriod && (
+                <MovePeriodChips
+                  currentPeriod={currentPeriod}
+                  onMoveToPeriod={onMoveToPeriod}
+                />
+              )}
+              <button
+                onClick={onRemoveFromPlan}
+                title="remover do plano do dia"
+                style={{
+                  background: 'none', border: 'none', cursor: 'pointer',
+                  fontFamily: 'var(--font-mono)', color: 'var(--color-text-muted)',
+                  fontSize: 12, padding: '0 6px', opacity: 0.55,
+                  transition: 'opacity 0.15s, color 0.15s',
+                }}
+                onMouseEnter={e => {
+                  e.currentTarget.style.opacity = '1'
+                  e.currentTarget.style.color = 'var(--color-accent-light)'
+                }}
+                onMouseLeave={e => {
+                  e.currentTarget.style.opacity = '0.55'
+                  e.currentTarget.style.color = 'var(--color-text-muted)'
+                }}
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+
+          {showInfo && (
+            <div
+              style={{
+                marginTop: 6, paddingTop: 8,
+                borderTop: '1px dashed rgba(143, 191, 211, 0.22)',
+                fontFamily: 'var(--font-mono)', fontSize: 10,
+                color: 'var(--color-text-secondary)', letterSpacing: 0,
+                display: 'flex', flexDirection: 'column', gap: 4,
+              }}
+            >
+              {cluster.has_active && cluster.started_at && (
+                <div>
+                  <span style={{ color: 'var(--color-text-tertiary)' }}>INÍCIO:</span>{' '}
+                  {new Date(cluster.started_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                </div>
+              )}
+              {cluster.has_active && (
+                <div>
+                  <span style={{ color: 'var(--color-text-tertiary)' }}>STATUS:</span>{' '}
+                  {cluster.is_running ? 'em execução' : 'pausado'}
+                </div>
+              )}
+              {cluster.has_active && cluster.rows.length > 1 && (
+                <div>
+                  <span style={{ color: 'var(--color-text-tertiary)' }}>SUB-SESSÕES:</span>{' '}
+                  {cluster.rows.length}
+                </div>
+              )}
+              {durMin > 0 && (
+                <div>
+                  <span style={{ color: 'var(--color-text-tertiary)' }}>DURAÇÃO ALVO:</span>{' '}
+                  {durMin} min
+                </div>
+              )}
+            </div>
           )}
         </div>
       </div>
-      <button
-        type="button"
-        onClick={() => navigate('/build')}
-        title="Abrir no /build"
-        style={{
-          background: 'rgba(8, 12, 18, 0.55)',
-          border: '1px solid var(--color-border)',
-          color: 'var(--color-text-tertiary)',
-          cursor: 'pointer',
-          fontFamily: 'var(--font-mono)',
-          fontSize: 9,
-          fontWeight: 700,
-          padding: '5px 10px',
-          letterSpacing: '0.18em',
-          textTransform: 'uppercase',
-          borderRadius: 0,
-          clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 4px), calc(100% - 4px) 100%, 0 100%)',
-          transition: 'color var(--motion-fast) var(--ease-smooth)',
-        }}
-        onMouseEnter={e => (e.currentTarget.style.color = 'var(--color-ice-light)')}
-        onMouseLeave={e => (e.currentTarget.style.color = 'var(--color-text-tertiary)')}
-      >
-        Abrir
-      </button>
-      <button
-        type="button"
-        onClick={onRemoveFromPlan}
-        title="Tirar do plano"
-        aria-label="Tirar do plano"
-        style={{
-          background: 'none',
-          border: 'none',
-          cursor: 'pointer',
-          color: 'var(--color-text-muted)',
-          padding: '4px 6px',
-          display: 'inline-flex',
-          alignItems: 'center',
-          transition: 'color var(--motion-fast) var(--ease-smooth)',
-        }}
-        onMouseEnter={e => (e.currentTarget.style.color = 'var(--color-accent-light)')}
-        onMouseLeave={e => (e.currentTarget.style.color = 'var(--color-text-muted)')}
-      >
-        <X size={12} strokeWidth={1.8} />
-      </button>
+      {showHistory && (
+        <SessionHistoryModal
+          sessions={historySessions}
+          kind="ritual"
+          onChanged={refetchCluster}
+          onClose={() => setShowHistory(false)}
+        />
+      )}
     </div>
   )
 }
@@ -2742,6 +3118,8 @@ function PendenciaPlannedRow({
   onRemoveFromPlan,
   onFinalize,
   onSessionUpdate,
+  currentPeriod,
+  onMoveToPeriod,
 }: {
   item: any
   onRemoveFromPlan: () => void
@@ -2751,6 +3129,11 @@ function PendenciaPlannedRow({
   /** Avisa o App pra refetch o activeSession (mantém banner global em sync
    *  imediatamente — RQ invalidate sozinho não atinge o useState do App). */
   onSessionUpdate: () => void
+  /** Período onde a pendência está alocada atualmente (esconde chip de
+   *  movimento pra esse período). */
+  currentPeriod?: 'morning' | 'afternoon' | 'evening'
+  /** Move a pendência pra outro turno (paridade com PlannedItemRow). */
+  onMoveToPeriod?: (target: 'morning' | 'afternoon' | 'evening') => void
 }) {
   const isMind = item.origem === 'mind'
   const itemId = isMind ? null : parseInt(String(item.id).split(':')[1] ?? '0', 10)
@@ -2781,11 +3164,9 @@ function PendenciaPlannedRow({
   const startMind = useStartMindSession()
   const pauseMind = usePauseMindSession()
   const resumeMind = useResumeMindSession()
-  const discardMind = useDiscardMindSession()
   const startHealth = useStartHealthItemSession()
   const pauseHealth = usePauseHealthItemSession()
   const resumeHealth = useResumeHealthItemSession()
-  const discardHealth = useDiscardHealthItemSession()
 
   function doStart() {
     const opts = { onSuccess: () => onSessionUpdate() }
@@ -2801,11 +3182,6 @@ function PendenciaPlannedRow({
     const opts = { onSuccess: () => onSessionUpdate() }
     if (isMind) resumeMind.mutate(undefined, opts)
     else if (itemId) resumeHealth.mutate(itemId, opts)
-  }
-  function doDiscard() {
-    const opts = { onSuccess: () => onSessionUpdate() }
-    if (isMind) discardMind.mutate(undefined, opts)
-    else if (itemId) discardHealth.mutate(itemId, opts)
   }
   function doFinalize() {
     // Pausa se rodando, depois abre modal com cluster atual.
@@ -2861,6 +3237,21 @@ function PendenciaPlannedRow({
 
   // ─── Painel inline expansível (INFO) ─────────────────────────────────
   const [showInfo, setShowInfo] = useState(false)
+  // ─── Histórico de sessões — modal de edição/exclusão das rows ────────
+  const [showHistory, setShowHistory] = useState(false)
+  // Sessões pra exibir no histórico modal. cluster.rows traz só rows
+  // do cluster ativo (record_id IS NULL); pra paridade com quest/task/
+  // routine, isso é suficiente — usuário edita o segmento atual.
+  const historySessions = (cluster.rows ?? []).map(r => ({
+    id: r.id,
+    started_at: r.started_at,
+    ended_at: r.ended_at,
+  }))
+  const refetchCluster = () => {
+    if (isMind) mindSessionQ.refetch()
+    else healthSessionQ.refetch()
+    onSessionUpdate()
+  }
 
   return (
     <div
@@ -3023,10 +3414,18 @@ function PendenciaPlannedRow({
                 alignItems: 'center',
               }}
             >
-              {/* Live timer quando rodando ou pausado */}
+              {/* Live timer quando rodando ou pausado — clicável: abre
+                  histórico pra editar/excluir rows do cluster atual */}
               {cluster.has_active && (
-                <span
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); setShowHistory(true) }}
+                  title={cluster.is_running ? 'em execução — ver/editar sessões' : 'pausado — ver/editar sessões'}
                   style={{
+                    background: 'none',
+                    border: 'none',
+                    cursor: 'pointer',
+                    padding: '2px 4px',
                     fontFamily: 'var(--font-mono)',
                     fontSize: 11,
                     fontWeight: 700,
@@ -3036,10 +3435,9 @@ function PendenciaPlannedRow({
                     minWidth: 56,
                     textAlign: 'right',
                   }}
-                  title={cluster.is_running ? 'em execução' : 'pausado'}
                 >
                   {fmtElapsed(liveElapsedSec)}
-                </span>
+                </button>
               )}
               {/* INFO toggle */}
               <button
@@ -3163,27 +3561,11 @@ function PendenciaPlannedRow({
                   ▣ FINALIZAR
                 </button>
               )}
-              {cluster.has_active && (
-                /* DISCARD — joga fora o cluster (não cria record) */
-                <button
-                  type="button"
-                  onClick={async () => {
-                    if (confirm('Descartar essa sessão? Não vai criar registro.')) {
-                      doDiscard()
-                    }
-                  }}
-                  title="descartar"
-                  style={{
-                    cursor: 'pointer', fontFamily: 'var(--font-mono)',
-                    fontSize: 9, fontWeight: 700, padding: '5px 8px',
-                    background: 'transparent',
-                    border: '1px solid var(--color-border)',
-                    color: 'var(--color-text-muted)',
-                    clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 5px), calc(100% - 5px) 100%, 0 100%)',
-                  }}
-                >
-                  ⌫
-                </button>
+              {onMoveToPeriod && currentPeriod && (
+                <MovePeriodChips
+                  currentPeriod={currentPeriod}
+                  onMoveToPeriod={onMoveToPeriod}
+                />
               )}
               {/* X de remover — espelho do PlannedItemRow */}
               <button
@@ -3279,6 +3661,14 @@ function PendenciaPlannedRow({
           )}
         </div>
       </div>
+      {showHistory && (
+        <SessionHistoryModal
+          sessions={historySessions}
+          kind={isMind ? 'mind' : 'health'}
+          onChanged={refetchCluster}
+          onClose={() => setShowHistory(false)}
+        />
+      )}
     </div>
   )
 }
