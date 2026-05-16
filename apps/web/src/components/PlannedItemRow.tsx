@@ -91,6 +91,11 @@ export function PlannedItemRow({ item, areas, activeSession, onSessionUpdate, on
   // `id` preservado pra permitir edição/exclusão da sessão pelo
   // SessionHistoryModal (PATCH/DELETE /api/{kind}-sessions/{id}).
   const [sessions, setSessions] = useState<{ id?: number; started_at: string; ended_at: string | null }[]>([])
+  // Trigger pra refetch quando session é editada/deletada via modal. O
+  // activeSession só muda quando a sessão LIVE muda — deletar uma sessão
+  // antiga (não-ativa) não dispara nenhum dep, então sessions ficavam
+  // stale e modal mostrava entrada já deletada.
+  const [sessionsTick, setSessionsTick] = useState(0)
   useEffect(() => {
     if (!item?.id) { setSessions([]); return }
     let cancelled = false
@@ -111,7 +116,14 @@ export function PlannedItemRow({ item, areas, activeSession, onSessionUpdate, on
       })
       .catch(() => { if (!cancelled) setSessions([]) })
     return () => { cancelled = true }
-  }, [item?.id, kind, target, activeSession?.type, activeSession?.id, activeSession?.started_at, activeSession?.ended_at])
+  }, [item?.id, kind, target, activeSession?.type, activeSession?.id, activeSession?.started_at, activeSession?.ended_at, sessionsTick])
+
+  // Wrappa onSessionUpdate pra refetchar sessions local quando o modal
+  // delete/edita uma row. Sem isso, sessions stale ficam visíveis no modal.
+  const handleSessionUpdate = () => {
+    setSessionsTick(t => t + 1)
+    onSessionUpdate()
+  }
 
   const done = item.status === 'done' || item.done === true
   const typeLabel = isTask ? 'Tarefa' : isRoutine ? 'Rotina' : (item as Quest).area_slug
@@ -331,7 +343,7 @@ export function PlannedItemRow({ item, areas, activeSession, onSessionUpdate, on
           id={item.id}
           sessions={sessions}
           activeSession={activeSession}
-          onSessionUpdate={onSessionUpdate}
+          onSessionUpdate={handleSessionUpdate}
           target={kind === 'routine' ? target : undefined}
           done={done}
           onReopen={async () => {
@@ -342,7 +354,7 @@ export function PlannedItemRow({ item, areas, activeSession, onSessionUpdate, on
               if (kind === 'quest') { appInv.quests(); tabSync.emit('quests') }
               else if (kind === 'task') { appInv.tasks(); tabSync.emit('tasks') }
               else { appInv.routines(); tabSync.emit('routines') }
-              onSessionUpdate()
+              handleSessionUpdate()
             } catch (err) {
               console.error('[runnable] reopen failed', { kind, id: item.id, err })
               alertDialog({ title: 'Erro', message: 'Erro ao reabrir — veja o console (F12).', variant: 'danger' })
