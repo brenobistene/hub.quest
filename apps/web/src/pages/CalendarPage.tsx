@@ -1,7 +1,12 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronLeft, ChevronRight, Target } from 'lucide-react'
 import type { Area, Deliverable, Project, Quest, Routine, Task } from '../types'
-import { fetchSessions, fetchTasks, fetchTaskSessions, fetchRoutineSessions, fetchDeliverables, deleteRoutine, reportApiError } from '../api'
+import {
+  fetchSessions, fetchTasks, fetchTaskSessions, fetchRoutineSessions, fetchDeliverables,
+  fetchMindSessionsRange, fetchHealthItemSessionsRange,
+  deleteRoutine, reportApiError,
+} from '../api'
+import type { MindSessionRangeRow, HealthItemSessionRangeRow } from '../api'
 import { useRoutines, useAppInvalidator } from '../lib/app-queries'
 import { tabSync } from '../lib/tabsync'
 import { parseIsoAsUtc } from '../utils/datetime'
@@ -12,10 +17,8 @@ import { getAllBlockRangesForDay } from '../utils/blocks'
 import { Card } from '../components/ui/Primitives'
 import { alertDialog } from '../lib/dialog'
 import { RitualNextCard } from '../components/RitualNextCard'
-import { useRitualSchedule, useRituals } from '../lib/build-queries'
-import { useDiaPendencias } from '../lib/dia-queries'
-import { loadDayPeriods, periodRangesMinFrom } from '../utils/dayPeriods'
-import type { BuildRitual, BuildRitualCadencia } from '../types'
+import { useRitualSchedule, useRituals, useRitualSessions } from '../lib/build-queries'
+import type { BuildRitual, BuildRitualCadencia, BuildRitualSession } from '../types'
 
 const MONTH_NAMES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
                      'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro']
@@ -114,77 +117,6 @@ function routineMatchesDay(r: Routine, jsDay: number): boolean {
   return false
 }
 
-/**
- * Resolve onde no timeline cada item (ritual/health-item/mind) deve
- * aparecer, processando TODOS de uma vez pra evitar empilhamento no início
- * do período.
- *
- * Lógica em duas fases:
- *  1. Items com `horario_sugerido` preenchido ganham slot FIXO na hora
- *     informada (não entram no cascade).
- *  2. Items SEM hora caem no cascade do período onde foram alocados via
- *     dayPlan (localStorage `hq-day-plan-${dateIso}`). Dentro do período,
- *     items se encadeiam: o 1° começa no início do período, o 2° começa
- *     onde o 1° acaba, etc. Cap no fim do período pra não vazar.
- *
- * Items que não têm hora E não foram alocados ficam fora do map (não
- * renderizam como block — continuam visíveis só como marker no header).
- */
-interface CalendarDayItem {
-  id: string
-  duracaoMin: number
-  horarioSugerido?: string | null | undefined
-}
-
-function buildDayItemSlots(
-  items: CalendarDayItem[],
-  dateIso: string,
-): Map<string, { startMin: number; endMin: number }> {
-  const result = new Map<string, { startMin: number; endMin: number }>()
-  const durOf = (item: CalendarDayItem) => Math.max(15, item.duracaoMin || 30)
-
-  // Fase 1: horarios fixos.
-  for (const item of items) {
-    if (item.horarioSugerido && /^\d{2}:\d{2}$/.test(item.horarioSugerido)) {
-      const [h, m] = item.horarioSugerido.split(':').map(Number)
-      const start = h * 60 + m
-      result.set(item.id, { startMin: start, endMin: start + durOf(item) })
-    }
-  }
-
-  // Fase 2: cascade no período alocado via dayPlan.
-  try {
-    const raw = localStorage.getItem(`hq-day-plan-${dateIso}`)
-    if (!raw) return result
-    const plan = JSON.parse(raw) as {
-      morning?: string[]
-      afternoon?: string[]
-      evening?: string[]
-    }
-    const periods = loadDayPeriods()
-    const ranges = periodRangesMinFrom(periods)
-    const periodKeys: Array<'morning' | 'afternoon' | 'evening'> = ['morning', 'afternoon', 'evening']
-
-    for (const periodName of periodKeys) {
-      const ids = plan[periodName] ?? []
-      const periodStart = ranges[periodName][0]
-      const periodEnd = ranges[periodName][1]
-      let cursor = periodStart
-      for (const id of ids) {
-        // Item já posicionado por horario_sugerido tem prioridade — pula.
-        if (result.has(id)) continue
-        const item = items.find(i => i.id === id)
-        if (!item) continue
-        const dur = durOf(item)
-        const end = Math.min(cursor + dur, periodEnd)
-        result.set(id, { startMin: cursor, endMin: end })
-        cursor = end
-      }
-    }
-  } catch { /* ignore */ }
-
-  return result
-}
 
 /**
  * `/calendario` — visão dia/semana/mês/ano. O modo "dia" e "semana" renderizam
@@ -207,6 +139,10 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger, on
   const [tasks, setTasks] = useState<Task[]>([])
   const [allTaskSessions, setAllTaskSessions] = useState<Map<string, any[]>>(new Map())
   const [allRoutineSessions, setAllRoutineSessions] = useState<Map<string, any[]>>(new Map())
+  // Sessões executadas de Mind e Health items (rows com started_at/ended_at)
+  // — backend retorna por range, frontend só filtra rows do dia visível.
+  const [mindSessionRows, setMindSessionRows] = useState<MindSessionRangeRow[]>([])
+  const [healthSessionRows, setHealthSessionRows] = useState<HealthItemSessionRangeRow[]>([])
   // Deliverables por projeto — usado pra resolver `effectiveQuestDeadline`
   // (quest herda deadline do entregável → projeto). Buscado em paralelo no
   // mount + sempre que a lista de project_ids das quests muda.
@@ -214,7 +150,12 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger, on
   // Modal de histórico/edição de sessão. Setado quando user clica num bloco
   // do timeline. Carrega as sessões já populadas em allSessions/...,
   // filtrando pela entity escolhida.
-  const [sessionModal, setSessionModal] = useState<{ kind: 'quest' | 'task' | 'routine'; entityId: string } | null>(null)
+  const [sessionModal, setSessionModal] = useState<
+    | { kind: 'quest' | 'task' | 'routine'; entityId: string }
+    | { kind: 'mind' }
+    | { kind: 'health'; itemId: number }
+    | null
+  >(null)
   // Tick por minuto pra linha de "agora" seguir o relógio — antes estava
   // congelado no instante do mount, o que dava sensação de atraso conforme
   // o tempo passa.
@@ -266,41 +207,22 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger, on
     return map
   }, [rituals])
 
-  // Pendências do dia visualizado (health items + mind). Hook recebe a data
-  // do calendário (não só hoje), permitindo blocks futuros se houver
-  // `horario_sugerido` ou dayPlan setado.
-  const dateIsoTmp = (() => {
-    const d = currentDate
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-  })()
-  const { data: dayPendencias = [] } = useDiaPendencias(dateIsoTmp)
-
-  // Slot map: resolve onde cada item (ritual/health/mind) cai no timeline,
-  // processando todos juntos pra evitar empilhamento (vários blocks na
-  // mesma hora). Items com horario_sugerido têm hora fixa; items só
-  // alocados via dayPlan cascateiam dentro do período. Recalcula quando
-  // a data muda OU listas mudam.
-  const dayItemSlots = useMemo(() => {
-    const items: CalendarDayItem[] = []
-    const ritualCadenciasNoDia = ritualsByDate.get(dateIsoTmp) ?? []
-    for (const cadencia of ritualCadenciasNoDia) {
-      const ritual = ritualByCadencia.get(cadencia)
-      if (!ritual) continue
-      items.push({
-        id: `ritual:${cadencia}`,
-        duracaoMin: ritual.duracao_alvo_min,
-        horarioSugerido: null,
-      })
-    }
-    for (const p of dayPendencias) {
-      items.push({
-        id: p.pendencia_id,
-        duracaoMin: p.duracao_min ?? 0,
-        horarioSugerido: p.horario_sugerido,
-      })
-    }
-    return buildDayItemSlots(items, dateIsoTmp)
-  }, [dateIsoTmp, ritualsByDate, ritualByCadencia, dayPendencias])
+  // Sessões reais de ritual — buscadas por cadência (1 query por cadência
+  // pra simplificar; backend ordena DESC por data_executado). Plugadas no
+  // collectSessions abaixo pra virarem blocks no timeline igual quest/task/
+  // routine sessions.
+  const { data: sessSemanal = [] } = useRitualSessions('semanal')
+  const { data: sessMensal = [] } = useRitualSessions('mensal')
+  const { data: sessTrimestral = [] } = useRitualSessions('trimestral')
+  const { data: sessAnual = [] } = useRitualSessions('anual')
+  const ritualSessionsByCadencia = useMemo(() => {
+    const map = new Map<BuildRitualCadencia, BuildRitualSession[]>()
+    map.set('semanal', sessSemanal)
+    map.set('mensal', sessMensal)
+    map.set('trimestral', sessTrimestral)
+    map.set('anual', sessAnual)
+    return map
+  }, [sessSemanal, sessMensal, sessTrimestral, sessAnual])
 
   useEffect(() => {
     const update = () => setCurrentTime(new Date())
@@ -391,6 +313,28 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger, on
       })
   }, [routines, currentDate, sessionUpdateTrigger])
 
+  // Mind + Health sessions executadas — fetch por range pra renderizar
+  // como blocos no timeline (paridade com quest/task/routine). Janela do
+  // dia visível ±1 dia pra cobrir cross-midnight.
+  useEffect(() => {
+    const d = new Date(currentDate)
+    const prev = new Date(d); prev.setDate(d.getDate() - 1)
+    const next = new Date(d); next.setDate(d.getDate() + 1)
+    const fmt = (x: Date) => `${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,'0')}-${String(x.getDate()).padStart(2,'0')}`
+    const from = fmt(prev)
+    const to = fmt(next)
+    let cancelled = false
+    Promise.all([
+      fetchMindSessionsRange(from, to).catch(() => [] as MindSessionRangeRow[]),
+      fetchHealthItemSessionsRange(from, to).catch(() => [] as HealthItemSessionRangeRow[]),
+    ]).then(([mindRows, healthRows]) => {
+      if (cancelled) return
+      setMindSessionRows(mindRows)
+      setHealthSessionRows(healthRows)
+    })
+    return () => { cancelled = true }
+  }, [currentDate, sessionUpdateTrigger])
+
   const todayIso = (() => {
     const d = new Date()
     return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
@@ -461,25 +405,29 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger, on
       evs.push({ id: `r:${routine.id}`, startMin: sMin, endMin: eMin })
     })
 
-    // Rituais — slot vem do dayItemSlots map (cascade dentro do período).
-    // Items sem hora fixa nem allocation ficam fora do map → só marker.
-    const ritualCadenciasNoDia = ritualsByDate.get(dateIso) ?? []
-    for (const cadencia of ritualCadenciasNoDia) {
-      const itemId = `ritual:${cadencia}`
-      const slot = dayItemSlots.get(itemId)
-      if (slot) evs.push({ id: itemId, startMin: slot.startMin, endMin: slot.endMin })
-    }
-
-    // Health items + Mind — slot vem do mesmo map. horario_sugerido tem
-    // prioridade; cascade entra como fallback.
-    for (const p of dayPendencias) {
-      const slot = dayItemSlots.get(p.pendencia_id)
-      if (slot) evs.push({ id: `pen:${p.pendencia_id}`, startMin: slot.startMin, endMin: slot.endMin })
+    // Sessões REAIS de ritual — quando user dá play e completa, gera
+    // BuildRitualSession com `criado_em` (timestamp final) + `duracao_min`
+    // (duração cronometrada). Calendar registra execução, não intenção:
+    // start ≈ criado_em - duracao_min (aproximação, backend não guarda
+    // started_at separado).
+    for (const [cadencia, sessions] of ritualSessionsByCadencia.entries()) {
+      sessions.forEach((s, idx) => {
+        if (s.skipped) return
+        if (!s.criado_em || !s.duracao_min || s.duracao_min <= 0) return
+        const end = parseIsoAsUtc(s.criado_em)
+        const start = new Date(end.getTime() - s.duracao_min * 60_000)
+        const seg = intersectDay(start, end, dateIso)
+        if (!seg) return
+        const em = (seg.crossesIn || seg.crossesOut)
+          ? seg.endMin
+          : Math.max(seg.startMin + 15, seg.endMin)
+        evs.push({ id: `rt:${cadencia}:${idx}`, startMin: seg.startMin, endMin: em })
+      })
     }
 
     return computeEventLayout(evs)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [quests, tasks, routines, allSessions, allTaskSessions, allRoutineSessions, dateIso, ritualsByDate, dayPendencias, dayItemSlots])
+  }, [quests, tasks, routines, allSessions, allTaskSessions, allRoutineSessions, dateIso, ritualSessionsByCadencia])
 
   return (
     <div style={{ color: 'var(--color-text-primary)' }}>
@@ -652,8 +600,6 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger, on
               { label: 'TSK', name: 'TAREFAS', color: 'var(--color-warning)' },
               { label: 'RTN', name: 'ROTINAS', color: 'var(--color-success)' },
               { label: 'RTL', name: 'RITUAIS', color: '#dc2531' },
-              { label: 'EXC', name: 'EXERCÍCIOS', color: 'var(--color-ice-light)' },
-              { label: 'MND', name: 'MIND', color: '#9b88c4' },
               { label: 'IMP', name: 'IMPRODUTIVO', color: 'var(--color-text-muted)' },
             ].map(item => (
               <div
@@ -1317,6 +1263,117 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger, on
                   })
                 })}
 
+                {/* Sessões EXECUTADAS de Mind — rows de mind_session com
+                    started_at/ended_at; renderiza igual a routine session
+                    mas com cor roxa (#9b88c4) pra diferenciar visualmente. */}
+                {mindSessionRows.map((row, idx) => {
+                  if (!row.started_at) return null
+                  const start = parseIsoAsUtc(row.started_at)
+                  const end = row.ended_at ? parseIsoAsUtc(row.ended_at) : new Date()
+                  const seg = intersectDay(start, end, dateIso)
+                  if (!seg) return null
+                  const startHour = seg.startMin / 60
+                  const durationMin = seg.endMin - seg.startMin
+                  const topPercent = 20 + startHour * 60 * timelineZoom
+                  const heightPercent = durationMin * timelineZoom
+                  const running = !row.ended_at
+                  const cor = '#9b88c4'
+                  const isShort = durationMin < 25
+                  const fmtTime = (d: Date) => d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', hour12: false })
+                  const timeLabel = `${seg.crossesIn ? '↪ ' : ''}${fmtTime(start)} → ${fmtTime(end)}${seg.crossesOut ? ' ↩' : ''}`
+                  return (
+                    <div
+                      key={`mind-sess-${row.id}-${idx}`}
+                      title={`Meditar · ${running ? 'rodando' : 'finalizada'} · ${timeLabel} — clique pra editar histórico`}
+                      onClick={() => setSessionModal({ kind: 'mind' })}
+                      style={{
+                        position: 'absolute',
+                        left: '4px', right: '4px',
+                        top: `${topPercent}px`, height: `${heightPercent}px`,
+                        background: `linear-gradient(135deg, ${cor} 0%, ${cor}88 100%)`,
+                        border: running ? '1px dashed var(--color-ice-light)' : '1px solid rgba(255,255,255,0.18)',
+                        borderLeft: `2px solid ${cor}`,
+                        clipPath: seg.crossesIn || seg.crossesOut
+                          ? undefined
+                          : 'polygon(0 0, calc(100% - 6px) 0, 100% 6px, 100% 100%, 6px 100%, 0 calc(100% - 6px))',
+                        padding: isShort ? '0' : '4px 6px',
+                        overflow: 'hidden',
+                        opacity: 0.95, cursor: 'pointer',
+                        boxShadow: running
+                          ? `inset 0 0 0 1px rgba(143,191,211,0.35), 0 0 14px ${cor}55`
+                          : `inset 0 0 0 1px rgba(255,255,255,0.18), 0 0 8px ${cor}55`,
+                        zIndex: 4,
+                      }}
+                    >
+                      {!isShort && (
+                        <>
+                          <div style={{ fontFamily: 'var(--font-display)', fontSize: 10, fontWeight: 600, color: '#fff', letterSpacing: '0.03em', textTransform: 'uppercase', textShadow: '0 1px 2px rgba(0,0,0,0.5)' }}>
+                            <span style={{ opacity: 0.7, marginRight: 4 }}>MND</span>Meditar
+                          </div>
+                          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 8, fontWeight: 700, color: 'rgba(255,255,255,0.92)', letterSpacing: '0.08em', marginTop: 2, textShadow: '0 1px 2px rgba(0,0,0,0.5)' }}>
+                            {timeLabel}
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  )
+                })}
+
+                {/* Sessões EXECUTADAS de Health items — rows de
+                    health_item_session com started_at/ended_at. */}
+                {healthSessionRows.map((row, idx) => {
+                  if (!row.started_at) return null
+                  const start = parseIsoAsUtc(row.started_at)
+                  const end = row.ended_at ? parseIsoAsUtc(row.ended_at) : new Date()
+                  const seg = intersectDay(start, end, dateIso)
+                  if (!seg) return null
+                  const startHour = seg.startMin / 60
+                  const durationMin = seg.endMin - seg.startMin
+                  const topPercent = 20 + startHour * 60 * timelineZoom
+                  const heightPercent = durationMin * timelineZoom
+                  const running = !row.ended_at
+                  const cor = row.item_cor || '#7fb8a8'
+                  const isShort = durationMin < 25
+                  const fmtTime = (d: Date) => d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', hour12: false })
+                  const timeLabel = `${seg.crossesIn ? '↪ ' : ''}${fmtTime(start)} → ${fmtTime(end)}${seg.crossesOut ? ' ↩' : ''}`
+                  return (
+                    <div
+                      key={`health-sess-${row.id}-${idx}`}
+                      title={`${row.item_nome} · ${running ? 'rodando' : 'finalizada'} · ${timeLabel} — clique pra editar histórico`}
+                      onClick={() => setSessionModal({ kind: 'health', itemId: row.item_id })}
+                      style={{
+                        position: 'absolute',
+                        left: '4px', right: '4px',
+                        top: `${topPercent}px`, height: `${heightPercent}px`,
+                        background: `linear-gradient(135deg, ${cor} 0%, ${cor}88 100%)`,
+                        border: running ? '1px dashed var(--color-ice-light)' : '1px solid rgba(255,255,255,0.18)',
+                        borderLeft: `2px solid ${cor}`,
+                        clipPath: seg.crossesIn || seg.crossesOut
+                          ? undefined
+                          : 'polygon(0 0, calc(100% - 6px) 0, 100% 6px, 100% 100%, 6px 100%, 0 calc(100% - 6px))',
+                        padding: isShort ? '0' : '4px 6px',
+                        overflow: 'hidden',
+                        opacity: 0.95, cursor: 'pointer',
+                        boxShadow: running
+                          ? `inset 0 0 0 1px rgba(143,191,211,0.35), 0 0 14px ${cor}55`
+                          : `inset 0 0 0 1px rgba(255,255,255,0.18), 0 0 8px ${cor}55`,
+                        zIndex: 4,
+                      }}
+                    >
+                      {!isShort && (
+                        <>
+                          <div style={{ fontFamily: 'var(--font-display)', fontSize: 10, fontWeight: 600, color: '#fff', letterSpacing: '0.03em', textTransform: 'uppercase', textShadow: '0 1px 2px rgba(0,0,0,0.5)' }}>
+                            <span style={{ opacity: 0.7, marginRight: 4 }}>HLT</span>{row.item_nome.substring(0, 30)}
+                          </div>
+                          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 8, fontWeight: 700, color: 'rgba(255,255,255,0.92)', letterSpacing: '0.08em', marginTop: 2, textShadow: '0 1px 2px rgba(0,0,0,0.5)' }}>
+                            {timeLabel}
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  )
+                })}
+
                 {routinesForDay(dateIso).map((routine) => {
                   if (!routine.start_time || !routine.end_time) return null
 
@@ -1478,111 +1535,67 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger, on
                   )
                 })}
 
-                {/* Rituais alocados — slot vem do dayItemSlots map (cascade
-                    no período; items sem hora nem allocation ficam fora). */}
-                {(ritualsByDate.get(dateIso) ?? []).map((cadencia) => {
-                  const ritual = ritualByCadencia.get(cadencia)
-                  if (!ritual) return null
-                  const itemId = `ritual:${cadencia}`
-                  const slot = dayItemSlots.get(itemId)
-                  if (!slot) return null
-                  const topPercent = 20 + (slot.startMin / 60) * 60 * timelineZoom
-                  const heightPercent = ((slot.endMin - slot.startMin) / 60) * 60 * timelineZoom
-                  const lay = dayEventLayout.get(itemId) ?? { col: 0, cols: 1 }
-                  const lane = laneStyle(lay.col, lay.cols)
-                  const ritualName = ritual.nome || `Ritual ${cadencia}`
-                  const accent = '#dc2531' // Neomilitarism red
-                  return (
-                    <div
-                      key={itemId}
-                      title={`${ritualName} · ritual ${cadencia} · ${ritual.duracao_alvo_min}min`}
-                      style={{
-                        position: 'absolute',
-                        left: lane.left,
-                        width: lane.width,
-                        top: `${topPercent}px`,
-                        height: `${heightPercent}px`,
-                        background: `linear-gradient(135deg, ${accent}1a 0%, transparent 60%), rgba(8, 12, 18, 0.55)`,
-                        border: `1px solid ${accent}`,
-                        clipPath: 'polygon(0 0, calc(100% - 6px) 0, 100% 6px, 100% 100%, 6px 100%, 0 calc(100% - 6px))',
-                        padding: '4px 6px',
-                        overflow: 'hidden',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        justifyContent: 'space-between',
-                        opacity: 0.95,
-                        boxShadow: `0 0 8px ${accent}40`,
-                      }}
-                    >
-                      <div style={{
-                        fontSize: 9, fontWeight: 600, lineHeight: 1.1,
-                        color: 'var(--color-text-primary)',
-                        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-                      }}>
-                        {ritualName}
+                {/* Sessões REAIS de ritual — só aparecem APÓS o user dar
+                    play e completar a session. Aproxima started_at via
+                    `criado_em - duracao_min` (backend não guarda hora do
+                    play, só data + duração cronometrada). */}
+                {Array.from(ritualSessionsByCadencia.entries()).flatMap(([cadencia, sessions]) =>
+                  sessions.map((s, idx) => {
+                    if (s.skipped) return null
+                    if (!s.criado_em || !s.duracao_min || s.duracao_min <= 0) return null
+                    const end = parseIsoAsUtc(s.criado_em)
+                    const start = new Date(end.getTime() - s.duracao_min * 60_000)
+                    const seg = intersectDay(start, end, dateIso)
+                    if (!seg) return null
+                    const blockId = `rt:${cadencia}:${idx}`
+                    const topPercent = 20 + (seg.startMin / 60) * 60 * timelineZoom
+                    const heightPercent = ((seg.endMin - seg.startMin) / 60) * 60 * timelineZoom
+                    const lay = dayEventLayout.get(blockId) ?? { col: 0, cols: 1 }
+                    const lane = laneStyle(lay.col, lay.cols)
+                    const ritual = ritualByCadencia.get(cadencia)
+                    const ritualName = ritual?.nome || `Ritual ${cadencia}`
+                    const accent = '#dc2531'
+                    return (
+                      <div
+                        key={blockId}
+                        title={`${ritualName} · ritual ${cadencia} · ${s.duracao_min}min executados`}
+                        style={{
+                          position: 'absolute',
+                          left: lane.left,
+                          width: lane.width,
+                          top: `${topPercent}px`,
+                          height: `${heightPercent}px`,
+                          background: `linear-gradient(135deg, ${accent}1a 0%, transparent 60%), rgba(8, 12, 18, 0.55)`,
+                          border: `1px solid ${accent}`,
+                          clipPath: 'polygon(0 0, calc(100% - 6px) 0, 100% 6px, 100% 100%, 6px 100%, 0 calc(100% - 6px))',
+                          padding: '4px 6px',
+                          overflow: 'hidden',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          justifyContent: 'space-between',
+                          opacity: 0.95,
+                          boxShadow: `0 0 8px ${accent}40`,
+                        }}
+                      >
+                        <div style={{
+                          fontSize: 9, fontWeight: 600, lineHeight: 1.1,
+                          color: 'var(--color-text-primary)',
+                          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                        }}>
+                          {ritualName}
+                        </div>
+                        <div style={{
+                          fontFamily: 'var(--font-mono)',
+                          fontSize: 8, fontWeight: 700,
+                          color: accent,
+                          letterSpacing: '0.08em',
+                        }}>
+                          RTL · {cadencia.toUpperCase()}
+                        </div>
                       </div>
-                      <div style={{
-                        fontFamily: 'var(--font-mono)',
-                        fontSize: 8, fontWeight: 700,
-                        color: accent,
-                        letterSpacing: '0.08em',
-                      }}>
-                        RTL · {cadencia.toUpperCase()}
-                      </div>
-                    </div>
-                  )
-                })}
-
-                {/* Pendências (Health items + Mind) — slot vem do
-                    dayItemSlots map. Mind = roxo, health = cor do domain. */}
-                {dayPendencias.map((p) => {
-                  const slot = dayItemSlots.get(p.pendencia_id)
-                  if (!slot) return null
-                  const topPercent = 20 + (slot.startMin / 60) * 60 * timelineZoom
-                  const heightPercent = ((slot.endMin - slot.startMin) / 60) * 60 * timelineZoom
-                  const lay = dayEventLayout.get(`pen:${p.pendencia_id}`) ?? { col: 0, cols: 1 }
-                  const lane = laneStyle(lay.col, lay.cols)
-                  const accent = p.cor || (p.origem === 'mind' ? '#9b88c4' : 'var(--color-ice)')
-                  const code = p.origem === 'mind' ? 'MND' : 'EXC'
-                  return (
-                    <div
-                      key={`pen:${p.pendencia_id}`}
-                      title={`${p.titulo} · ${p.origem === 'mind' ? 'mind' : 'exercício'} · ${p.duracao_min || '?'}min`}
-                      style={{
-                        position: 'absolute',
-                        left: lane.left,
-                        width: lane.width,
-                        top: `${topPercent}px`,
-                        height: `${heightPercent}px`,
-                        background: `linear-gradient(135deg, ${accent}1a 0%, transparent 60%), rgba(8, 12, 18, 0.55)`,
-                        border: `1px solid ${accent}`,
-                        clipPath: 'polygon(0 0, calc(100% - 6px) 0, 100% 6px, 100% 100%, 6px 100%, 0 calc(100% - 6px))',
-                        padding: '4px 6px',
-                        overflow: 'hidden',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        justifyContent: 'space-between',
-                        opacity: 0.9,
-                      }}
-                    >
-                      <div style={{
-                        fontSize: 9, fontWeight: 600, lineHeight: 1.1,
-                        color: 'var(--color-text-primary)',
-                        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-                      }}>
-                        {p.titulo}
-                      </div>
-                      <div style={{
-                        fontFamily: 'var(--font-mono)',
-                        fontSize: 8, fontWeight: 700,
-                        color: accent,
-                        letterSpacing: '0.08em',
-                      }}>
-                        {code}
-                      </div>
-                    </div>
-                  )
-                })}
+                    )
+                  })
+                )}
               </div>
             </div>
           </div>
@@ -1687,8 +1700,6 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger, on
               { label: 'RTN', name: 'ROTINAS', color: 'var(--color-success)' },
               { label: 'QST', name: 'QUESTS', color: 'var(--color-ice)' },
               { label: 'RTL', name: 'RITUAIS', color: '#dc2531' },
-              { label: 'EXC', name: 'EXERCÍCIOS', color: 'var(--color-ice-light)' },
-              { label: 'MND', name: 'MIND', color: '#9b88c4' },
               { label: 'IMP', name: 'IMPRODUTIVO', color: 'var(--color-text-muted)' },
             ].map(item => (
               <div
@@ -3271,17 +3282,34 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger, on
       )}
 
       {sessionModal && (() => {
-        const sessMap = sessionModal.kind === 'quest'
-          ? allSessions
-          : sessionModal.kind === 'task'
-            ? allTaskSessions
-            : allRoutineSessions
-        const raw = sessMap.get(sessionModal.entityId) ?? []
-        const sess = raw.map((s: any) => ({
-          id: s?.id,
-          started_at: s?.started_at ?? '',
-          ended_at: s?.ended_at ?? null,
-        }))
+        let sess: { id?: number; started_at: string; ended_at: string | null }[] = []
+        if (sessionModal.kind === 'quest' || sessionModal.kind === 'task' || sessionModal.kind === 'routine') {
+          const sessMap = sessionModal.kind === 'quest'
+            ? allSessions
+            : sessionModal.kind === 'task'
+              ? allTaskSessions
+              : allRoutineSessions
+          const raw = sessMap.get(sessionModal.entityId) ?? []
+          sess = raw.map((s: any) => ({
+            id: s?.id,
+            started_at: s?.started_at ?? '',
+            ended_at: s?.ended_at ?? null,
+          }))
+        } else if (sessionModal.kind === 'mind') {
+          sess = mindSessionRows.map(r => ({
+            id: r.id,
+            started_at: r.started_at,
+            ended_at: r.ended_at,
+          }))
+        } else if (sessionModal.kind === 'health') {
+          sess = healthSessionRows
+            .filter(r => r.item_id === sessionModal.itemId)
+            .map(r => ({
+              id: r.id,
+              started_at: r.started_at,
+              ended_at: r.ended_at,
+            }))
+        }
         return (
           <SessionHistoryModal
             sessions={sess}
