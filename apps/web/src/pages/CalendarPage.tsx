@@ -425,9 +425,36 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger, on
       })
     }
 
+    // Mind + Health item sessions REAIS — paridade total com quest/task/
+    // routine. Cada session já vem com started_at + ended_at do backend
+    // (range query). Sessions ainda ativas (ended_at = null) clipam até
+    // o end-of-day pra mostrar "em andamento".
+    mindSessionRows.forEach((row, idx) => {
+      if (!row.started_at) return
+      const start = parseIsoAsUtc(row.started_at)
+      const end = row.ended_at ? parseIsoAsUtc(row.ended_at) : new Date()
+      const seg = intersectDay(start, end, dateIso)
+      if (!seg) return
+      const em = (seg.crossesIn || seg.crossesOut)
+        ? seg.endMin
+        : Math.max(seg.startMin + 15, seg.endMin)
+      evs.push({ id: `mind:${row.id}:${idx}`, startMin: seg.startMin, endMin: em })
+    })
+    healthSessionRows.forEach((row, idx) => {
+      if (!row.started_at) return
+      const start = parseIsoAsUtc(row.started_at)
+      const end = row.ended_at ? parseIsoAsUtc(row.ended_at) : new Date()
+      const seg = intersectDay(start, end, dateIso)
+      if (!seg) return
+      const em = (seg.crossesIn || seg.crossesOut)
+        ? seg.endMin
+        : Math.max(seg.startMin + 15, seg.endMin)
+      evs.push({ id: `hi:${row.id}:${idx}`, startMin: seg.startMin, endMin: em })
+    })
+
     return computeEventLayout(evs)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [quests, tasks, routines, allSessions, allTaskSessions, allRoutineSessions, dateIso, ritualSessionsByCadencia])
+  }, [quests, tasks, routines, allSessions, allTaskSessions, allRoutineSessions, dateIso, ritualSessionsByCadencia, mindSessionRows, healthSessionRows])
 
   return (
     <div style={{ color: 'var(--color-text-primary)' }}>
@@ -600,6 +627,8 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger, on
               { label: 'TSK', name: 'TAREFAS', color: 'var(--color-warning)' },
               { label: 'RTN', name: 'ROTINAS', color: 'var(--color-success)' },
               { label: 'RTL', name: 'RITUAIS', color: '#dc2531' },
+              { label: 'EXC', name: 'EXERCÍCIOS', color: 'var(--color-ice-light)' },
+              { label: 'MND', name: 'MIND', color: '#9b88c4' },
               { label: 'IMP', name: 'IMPRODUTIVO', color: 'var(--color-text-muted)' },
             ].map(item => (
               <div
@@ -1700,6 +1729,8 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger, on
               { label: 'RTN', name: 'ROTINAS', color: 'var(--color-success)' },
               { label: 'QST', name: 'QUESTS', color: 'var(--color-ice)' },
               { label: 'RTL', name: 'RITUAIS', color: '#dc2531' },
+              { label: 'EXC', name: 'EXERCÍCIOS', color: 'var(--color-ice-light)' },
+              { label: 'MND', name: 'MIND', color: '#9b88c4' },
               { label: 'IMP', name: 'IMPRODUTIVO', color: 'var(--color-text-muted)' },
             ].map(item => (
               <div
