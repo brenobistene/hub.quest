@@ -251,19 +251,9 @@ function HeroBiometric({
                     : 'danger'
               }
             />
-            <StatStatic
-              label="STATE"
-              value={total === 0 ? 'IDLE' : pendingCount === 0 ? 'CLEAR' : 'WATCH'}
-              tone={
-                total === 0
-                  ? 'mute'
-                  : pendingCount === 0
-                    ? 'ok'
-                    : pendingCount <= 2
-                      ? 'ice'
-                      : 'danger'
-              }
-            />
+            {/* STATE chip removido — era redundante com veredict headline
+                (VITALS NOMINAL / MINOR DRIFT / SIGNAL FRAGMENTED já carregam
+                a mesma info). Critique flagged como deletable. */}
           </div>
         </>
       ) : (
@@ -329,58 +319,6 @@ function Stat({
         }}
       >
         <AnimatedNumber value={value} format={format} duration={0.7} />
-      </span>
-    </div>
-  )
-}
-
-function StatStatic({
-  label,
-  value,
-  tone,
-}: {
-  label: string
-  value: string
-  tone: 'ice' | 'mute' | 'danger' | 'ok'
-}) {
-  const color =
-    tone === 'danger'
-      ? 'var(--color-accent-vivid)'
-      : tone === 'ice'
-        ? 'var(--color-ice-light)'
-        : tone === 'ok'
-          ? 'var(--color-success)'
-          : 'var(--color-text-tertiary)'
-
-  const glow =
-    tone === 'ice'
-      ? '0 0 12px var(--color-ice-glow)'
-      : tone === 'danger'
-        ? '0 0 12px rgba(184, 58, 58, 0.35)'
-        : tone === 'ok'
-          ? '0 0 12px rgba(110, 167, 122, 0.35)'
-          : 'none'
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-      <span
-        className="hq-tech-label"
-        style={{ color: 'var(--color-text-muted)' }}
-      >
-        {label}
-      </span>
-      <span
-        style={{
-          fontFamily: 'var(--font-display)',
-          fontSize: 16,
-          fontWeight: 600,
-          color,
-          textShadow: glow,
-          letterSpacing: '0.12em',
-          textTransform: 'uppercase',
-        }}
-      >
-        {value}
       </span>
     </div>
   )

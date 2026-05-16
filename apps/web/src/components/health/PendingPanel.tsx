@@ -41,7 +41,11 @@ export default function PendingPanel({ filterDomain, hideIfEmpty = true }: Props
     <div
       className="hq-glass hq-grain hq-chamfer-bl"
       style={{
-        borderLeft: '2px solid var(--color-warning)',
+        // Tint diagonal warning em vez de side-stripe (DESIGN.md ban absoluto).
+        // PendingPanel mantinha esse stripe enquanto DomainPanel já tinha sido
+        // refatorado — critique flagou a inconsistência.
+        backgroundImage: 'linear-gradient(135deg, rgba(192, 138, 58, 0.10), transparent 50%)',
+        border: '1px solid var(--color-warning-border)',
         padding: '10px 14px',
         marginBottom: 'var(--space-3)',
       }}
