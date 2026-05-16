@@ -43,8 +43,11 @@ export interface HudListItemProps {
   done?: boolean
   /** Linha de meta abaixo do título — area, type, status, etc. */
   caption?: ReactNode
-  /** Terceira linha opcional — stats technical readout (// EXEC · EST · QUEUE). */
+  /** Terceira linha opcional — stats (feito · planejado · entregáveis, etc).
+   *  Default mantém letter-spacing wide mas em case natural (lowercase). */
   stats?: ReactNode
+  /** Force uppercase + tighter spacing no stats. Default false (case natural). */
+  statsUppercase?: boolean
   /** Painel direito opcional dentro do main card (metrics, progress bars, etc).
    *  Aparece ao lado direito do conteúdo texto, alinhado ao centro. */
   metricsRight?: ReactNode
@@ -72,6 +75,7 @@ export function HudListItem({
   done = false,
   caption,
   stats,
+  statsUppercase = false,
   metricsRight,
   mainPadding = '12px 18px',
   dimmed,
@@ -188,11 +192,11 @@ export function HudListItem({
           {stats && (
             <div style={{
               fontFamily: 'var(--font-mono)',
-              fontSize: 9,
-              fontWeight: 600,
+              fontSize: 10,
+              fontWeight: 500,
               color: 'var(--color-text-muted)',
-              letterSpacing: '0.12em',
-              textTransform: 'uppercase',
+              letterSpacing: statsUppercase ? '0.12em' : '0.02em',
+              textTransform: statsUppercase ? 'uppercase' : 'none',
               display: 'flex',
               alignItems: 'center',
               gap: 12,

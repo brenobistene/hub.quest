@@ -606,19 +606,6 @@ export function DashboardView({ projects, quests, areas, profile, onProfileUpdat
           flexWrap: 'wrap',
         }}
       >
-        {/* TAB MARKER — pequeno indicador ice estendendo abaixo do title,
-            assinatura "tab pull" das HUDs CP2077. */}
-        <div
-          aria-hidden="true"
-          style={{
-            position: 'absolute',
-            left: 0, bottom: -1,
-            width: 64, height: 2,
-            background: 'var(--color-ice)',
-            boxShadow: '0 0 12px var(--color-ice-glow)',
-          }}
-        />
-
         {/* LEFT: tab title + user identity */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', flex: 1, minWidth: 0 }}>
           <div
@@ -727,24 +714,19 @@ export function DashboardView({ projects, quests, areas, profile, onProfileUpdat
 
       {/* ─── VEREDITO (data display frame estilo "score readout" CP2077) ─── */}
       <section style={{ marginTop: 40, marginBottom: 40, position: 'relative' }}>
-        {/* Frame outer com corner brackets ice + tab title bar no topo.
-            Estrutura: [TITLE BAR] [BIG SCORE] [STATS GRID] */}
+        {/* Frame outer enxuto: 3 decorativos só (border ice-deep + chamfer bottom-right + title bar).
+            Atmosphere e corner-brackets removidos — o body atmosphere global já dá depth, e o
+            40px Rajdhani veredito carrega o peso. Decoração superlotada virava noise. */}
         <div
-          className="hq-brackets-full"
           style={{
             position: 'relative',
             border: '1px solid var(--color-ice-deep)',
-            background: `
-              radial-gradient(ellipse 60% 100% at 50% 0%, rgba(143, 191, 211, 0.06), transparent 70%),
-              radial-gradient(ellipse 80% 60% at 50% 100%, rgba(40, 50, 57, 0.30), transparent 70%),
-              rgba(8, 12, 18, 0.65)
-            `,
+            background: 'rgba(8, 12, 18, 0.65)',
             padding: 0,
-            color: 'var(--color-ice)',  // for hq-brackets-full corner color
             clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 18px), calc(100% - 18px) 100%, 0 100%)',
           }}
         >
-          {/* TITLE BAR — faixa solid no topo do frame */}
+          {/* TITLE BAR — faixa solid no topo do frame (estrutura semântica) */}
           <div
             style={{
               padding: '8px 16px',
@@ -755,14 +737,6 @@ export function DashboardView({ projects, quests, areas, profile, onProfileUpdat
               background: 'rgba(40, 50, 57, 0.45)',
             }}
           >
-            <div
-              aria-hidden="true"
-              style={{
-                width: 8, height: 8,
-                background: 'var(--color-ice)',
-                boxShadow: '0 0 8px var(--color-ice-glow)',
-              }}
-            />
             <span
               className="hq-tech-label"
               style={{
@@ -780,7 +754,7 @@ export function DashboardView({ projects, quests, areas, profile, onProfileUpdat
               {windowRangeLabel(windowRange, todayIso).toUpperCase()}
             </span>
             <span
-              title={`Status: conta projetos atrasados (overdue) e em risco (ritmo > ${Math.round(avgDailyCapacityMin / 60 * 10) / 10}h/dia ou deadline em ≤1d).\n\nHoje: soma das horas que você precisa trabalhar hoje se distribuir o tempo restante de cada entregável uniformemente até sua deadline.\n\nMais urgente: item (projeto ou entregável) com a deadline mais próxima.`}
+              title={`Status conta projetos atrasados e em risco. "Em risco" = ritmo > ${Math.round(avgDailyCapacityMin / 60 * 10) / 10}h/dia OU deadline em até 7 dias OU sem plano em até 14 dias. Hoje: horas que precisa trabalhar hoje se distribuir tempo restante uniformemente até cada deadline. Mais urgente: item com deadline mais próxima.`}
               style={{ display: 'inline-flex', color: 'var(--color-text-muted)', cursor: 'help' }}
             >
               <Info size={11} strokeWidth={1.8} />
@@ -948,7 +922,7 @@ export function DashboardView({ projects, quests, areas, profile, onProfileUpdat
           display: 'grid',
           gridTemplateRows: (collapsedSections['matrix'] === undefined || collapsedSections['matrix']) ? '0fr' : '1fr',
           opacity: (collapsedSections['matrix'] === undefined || collapsedSections['matrix']) ? 0 : 1,
-          transition: 'opacity var(--motion-base) var(--ease-emphasis), grid-template-rows var(--motion-base) var(--ease-emphasis), margin-top var(--motion-base) var(--ease-emphasis)',
+          transition: 'opacity var(--motion-base) var(--ease-emphasis), grid-template-rows var(--motion-base) var(--ease-emphasis)',
           marginTop: (collapsedSections['matrix'] === undefined || collapsedSections['matrix']) ? 0 : 14,
         }}>
         <div style={{ overflow: 'hidden', minHeight: 0 }}>
@@ -1049,7 +1023,7 @@ export function DashboardView({ projects, quests, areas, profile, onProfileUpdat
           display: 'grid',
           gridTemplateRows: collapsedSections['pressure'] ? '0fr' : '1fr',
           opacity: collapsedSections['pressure'] ? 0 : 1,
-          transition: 'opacity var(--motion-base) var(--ease-emphasis), grid-template-rows var(--motion-base) var(--ease-emphasis), margin-top var(--motion-base) var(--ease-emphasis)',
+          transition: 'opacity var(--motion-base) var(--ease-emphasis), grid-template-rows var(--motion-base) var(--ease-emphasis)',
           marginTop: collapsedSections['pressure'] ? 0 : 14,
         }}>
         <div style={{ overflow: 'hidden', minHeight: 0 }}>
@@ -1127,7 +1101,7 @@ export function DashboardView({ projects, quests, areas, profile, onProfileUpdat
           display: 'grid',
           gridTemplateRows: collapsedSections['deadlines'] ? '0fr' : '1fr',
           opacity: collapsedSections['deadlines'] ? 0 : 1,
-          transition: 'opacity var(--motion-base) var(--ease-emphasis), grid-template-rows var(--motion-base) var(--ease-emphasis), margin-top var(--motion-base) var(--ease-emphasis)',
+          transition: 'opacity var(--motion-base) var(--ease-emphasis), grid-template-rows var(--motion-base) var(--ease-emphasis)',
           marginTop: collapsedSections['deadlines'] ? 0 : 14,
         }}>
         <div style={{ overflow: 'hidden', minHeight: 0 }}>
@@ -1672,25 +1646,24 @@ function ProjectRiskRow({ pp, areaColor, areaName, onOpen }: { pp: ProjectPressu
       stats={
         <>
           <span>
-            <span style={{ color: 'var(--color-ice-deep)', marginRight: 4 }}>//</span>
-            EXEC
+            feito
             <span style={{ color: 'var(--color-text-secondary)', marginLeft: 6, fontWeight: 700 }}>
-              {pp.totalWorkedMin > 0 ? fmtHM(pp.totalWorkedMin) : '0H'}
+              {pp.totalWorkedMin > 0 ? fmtHM(pp.totalWorkedMin) : '0h'}
             </span>
           </span>
           <span style={{ opacity: 0.3 }}>·</span>
           <span>
-            EST
+            planejado
             <span style={{ color: 'var(--color-text-secondary)', marginLeft: 6, fontWeight: 700 }}>
               {pp.totalEstimatedMin > 0 ? fmtHM(pp.totalEstimatedMin) : '—'}
             </span>
           </span>
           <span style={{ opacity: 0.3 }}>·</span>
           <span>
-            QUEUE
-            <span style={{ color: 'var(--color-text-secondary)', marginLeft: 6, fontWeight: 700 }}>
-              {delivCount} {delivCount === 1 ? 'ENTREGÁVEL' : 'ENTREGÁVEIS'}
+            <span style={{ color: 'var(--color-text-secondary)', marginRight: 6, fontWeight: 700 }}>
+              {delivCount}
             </span>
+            {delivCount === 1 ? 'entregável' : 'entregáveis'}
           </span>
         </>
       }
