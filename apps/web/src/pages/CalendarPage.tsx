@@ -12,7 +12,6 @@ import { getAllBlockRangesForDay } from '../utils/blocks'
 import { Card } from '../components/ui/Primitives'
 import { alertDialog } from '../lib/dialog'
 import { RitualNextCard } from '../components/RitualNextCard'
-import { CalendarLegend } from '../components/CalendarLegend'
 import { useRitualSchedule, useRituals } from '../lib/build-queries'
 import { useDiaPendencias } from '../lib/dia-queries'
 import { loadDayPeriods, periodRangesMinFrom } from '../utils/dayPeriods'
@@ -617,6 +616,9 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger, on
               { label: 'QST', name: 'QUESTS', color: 'var(--color-ice)' },
               { label: 'TSK', name: 'TAREFAS', color: 'var(--color-warning)' },
               { label: 'RTN', name: 'ROTINAS', color: 'var(--color-success)' },
+              { label: 'RTL', name: 'RITUAIS', color: '#dc2531' },
+              { label: 'EXC', name: 'EXERCÍCIOS', color: 'var(--color-ice-light)' },
+              { label: 'MND', name: 'MIND', color: '#9b88c4' },
               { label: 'IMP', name: 'IMPRODUTIVO', color: 'var(--color-text-muted)' },
             ].map(item => (
               <div
@@ -1654,6 +1656,9 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger, on
             {[
               { label: 'RTN', name: 'ROTINAS', color: 'var(--color-success)' },
               { label: 'QST', name: 'QUESTS', color: 'var(--color-ice)' },
+              { label: 'RTL', name: 'RITUAIS', color: '#dc2531' },
+              { label: 'EXC', name: 'EXERCÍCIOS', color: 'var(--color-ice-light)' },
+              { label: 'MND', name: 'MIND', color: '#9b88c4' },
               { label: 'IMP', name: 'IMPRODUTIVO', color: 'var(--color-text-muted)' },
             ].map(item => (
               <div
@@ -3234,8 +3239,6 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger, on
           `}</style>
         </div>
       )}
-
-      <CalendarLegend />
 
       {sessionModal && (() => {
         const sessMap = sessionModal.kind === 'quest'
