@@ -13,17 +13,26 @@
  * Sem brilho/gradiente. Tipografia agressiva pra títulos. Refs visuais em
  * docs/design-system/STYLES.md §3.2.
  */
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, lazy, Suspense } from 'react'
 import { createPortal } from 'react-dom'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Pencil, Plus, X, Check, Archive, History, Star, Target, AlertTriangle, Calendar,
   Link2, ChevronDown, ChevronRight, Wrench, Zap, Compass, Pause, Trash2,
   Clock, Activity, Settings as SettingsIcon, Shield, ShieldAlert, ShieldQuestion,
+  RotateCw, CheckSquare, MoreHorizontal,
 } from 'lucide-react'
+import type { ReactNode } from 'react'
 
-import { fetchAreas } from '../api'
-import { confirmDialog } from '../lib/dialog'
+import { fetchAreas, createProject } from '../api'
+import { confirmDialog, alertDialog } from '../lib/dialog'
+import { isBlockDocEmpty } from '../components/block-utils'
+
+// BlockEditor lazy — chunk pesado (~1.1 MB de @blocknote) só baixa quando
+// o usuário expande a seção "Notas" de uma Meta.
+const BlockEditor = lazy(() =>
+  import('../components/BlockEditor').then((m) => ({ default: m.BlockEditor })),
+)
 import {
   useAddGoalDependency,
   useBuildSettings,
@@ -62,7 +71,13 @@ import {
   useVisionHistory,
   useUpdateVision,
 } from '../lib/build-queries'
-import { useHealthMetricsCatalog, useHealthItems } from '../lib/health-queries'
+import {
+  useHealthMetricsCatalog,
+  useHealthItems,
+  useMindHipoteses,
+  useMindSessions,
+} from '../lib/health-queries'
+import LibraryBacklinksBadge from '../components/library/LibraryBacklinksBadge'
 import type {
   Area,
   BuildGoal,
@@ -223,13 +238,55 @@ function GoalsPanel() {
     filter === 'all' ? undefined : filter,
   )
   const [creating, setCreating] = useState(false)
+  const [showHelp, setShowHelp] = useState(false)
+
+  // Atalhos de teclado globais quando /build está aberto:
+  //  - N: nova Meta (só quando filter === 'ativa')
+  //  - ?: abre help modal com lista de atalhos
+  //
+  // Skip quando foco está em input/textarea/contenteditable, ou modal já
+  // aberto (creating) — evita conflitar com edição inline. Listener cleanup
+  // automático no unmount.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      // Ignora se modificadores (Ctrl/Cmd/Alt) ativos — só atalhos puros.
+      if (e.ctrlKey || e.metaKey || e.altKey) return
+      const target = e.target as HTMLElement | null
+      if (target) {
+        const tag = target.tagName?.toLowerCase()
+        if (tag === 'input' || tag === 'textarea' || target.isContentEditable) return
+      }
+      // ESC fecha help (mesmo que outras coisas estejam abertas)
+      if (e.key === 'Escape' && showHelp) {
+        e.preventDefault()
+        setShowHelp(false)
+        return
+      }
+      // Ignora restante quando algum modal já tá aberto.
+      if (creating || showHelp) return
+      if (e.key === 'n' || e.key === 'N') {
+        if (filter === 'ativa') {
+          e.preventDefault()
+          setCreating(true)
+        }
+      }
+      if (e.key === '?') {
+        e.preventDefault()
+        setShowHelp(true)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [creating, showHelp, filter])
 
   const subtitle =
     filter === 'ativa'
-      ? `${goals.length} ${goals.length === 1 ? 'breakpoint' : 'breakpoints'} no caminho`
+      ? `${goals.length} ${goals.length === 1 ? 'meta ativa' : 'metas ativas'} no caminho`
       : filter === 'all'
-      ? `${goals.length} Metas no histórico total`
-      : `${goals.length} Metas — filtro: ${filter}`
+      ? `${goals.length} ${goals.length === 1 ? 'meta' : 'metas'} no histórico total`
+      : `${goals.length} ${goals.length === 1 ? 'meta' : 'metas'} — ${
+          GOAL_STATUS_LABEL[filter as BuildGoalStatus]?.toLowerCase() ?? filter
+        }`
 
   return (
     <Panel
@@ -272,24 +329,28 @@ function GoalsPanel() {
       </div>
 
       {isLoading ? (
-        <div style={{ color: NEO.textMuted, fontSize: 13 }}>Carregando…</div>
+        <PanelLoading />
       ) : (
         <>
-          {goals.length === 0 && !creating && (
-            <p
-              style={{
-                margin: 0,
-                fontSize: 13,
-                color: NEO.textMuted,
-                fontStyle: 'italic',
-                lineHeight: 1.6,
-              }}
-            >
-              {filter === 'ativa'
-                ? 'Nenhuma Meta ativa. Meta = outcome com prazo (não ação). Ex.: "ter 5k/mês fixo até dez/2027" — não "fazer curso X".'
-                : `Nenhuma Meta com status "${filter}".`}
-            </p>
-          )}
+          {goals.length === 0 && !creating ? (
+            filter === 'ativa' ? (
+              <PanelEmpty
+                message="Nenhuma Meta ativa."
+                hint='Meta = outcome com prazo (não ação). Ex.: "ter 5k/mês fixo até dez/2027" — não "fazer curso X".'
+                action={{
+                  label: 'Nova Meta',
+                  icon: <Plus size={13} />,
+                  onClick: () => setCreating(true),
+                }}
+              />
+            ) : (
+              <PanelEmpty
+                message={`Nenhuma Meta com status "${
+                  GOAL_STATUS_LABEL[filter as BuildGoalStatus]?.toLowerCase() ?? filter
+                }".`}
+              />
+            )
+          ) : null}
 
           {goals.length > 0 && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -299,7 +360,7 @@ function GoalsPanel() {
             </div>
           )}
 
-          {filter === 'ativa' && (
+          {filter === 'ativa' && goals.length > 0 && (
             <div style={{ marginTop: 16 }}>
               <ActionBtn
                 onClick={() => setCreating(true)}
@@ -313,6 +374,7 @@ function GoalsPanel() {
       )}
 
       {creating && <GoalCreateModal onClose={() => setCreating(false)} />}
+      {showHelp && <KeyboardShortcutsHelp onClose={() => setShowHelp(false)} />}
     </Panel>
   )
 }
@@ -332,6 +394,12 @@ function GoalRow({ goal }: { goal: BuildGoal }) {
   const primary = goal.areas.find((a) => a.is_primary)
   const secondaries = goal.areas.filter((a) => !a.is_primary)
   const primaryArea = primary && areas.find((a: Area) => a.slug === primary.area_slug)
+  // Resolve cada secundária pra Area completa (com cor + name) — usado pra
+  // renderizar mini-pílulas coloridas no L3 + tooltip caso truncado.
+  const secondaryAreas: Area[] = secondaries
+    .map((s) => areas.find((a: Area) => a.slug === s.area_slug))
+    .filter((a): a is Area => !!a)
+  const secondaryNames = secondaryAreas.map((a) => a.name).join(', ')
 
   return (
     <div
@@ -390,21 +458,14 @@ function GoalRow({ goal }: { goal: BuildGoal }) {
               fontWeight: 700,
             }}
           >
-            {goal.status}
+            {GOAL_STATUS_LABEL[goal.status as BuildGoalStatus] ?? goal.status}
           </span>
         )}
-        <span
-          style={{
-            fontSize: 9,
-            color: NEO.textMuted,
-            letterSpacing: '0.2em',
-            textTransform: 'uppercase',
-          }}
-        >
-          {goal.horizon}
-        </span>
+        <LibraryBacklinksBadge targetType="build_goal" targetId={goal.id} />
       </div>
 
+      {/* L2 — info de ação: prazo, critério, área primária. Tamanho médio,
+          cor textSecondary. É o que o usuário precisa ver pra decidir. */}
       <div
         style={{
           display: 'flex',
@@ -412,18 +473,33 @@ function GoalRow({ goal }: { goal: BuildGoal }) {
           gap: 14,
           fontSize: 11,
           color: NEO.textSecondary,
+          flexWrap: 'wrap',
         }}
       >
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
           <Calendar size={11} />
           até {fmtDate(goal.data_alvo)}
         </span>
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-          <Target size={11} />
-          {goal.criterion_type === 'numeric'
-            ? `target ${goal.criterion_target_value}`
-            : 'booleano'}
-        </span>
+        {/* Critério — boolean usa ícone CheckSquare + "ao concluir"; numeric
+            mostra "alvo: N" com Target. Sem termos técnicos cru ("booleano",
+            "target") expostos pro usuário. */}
+        {goal.criterion_type === 'numeric' ? (
+          <span
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}
+            title="Alvo numérico — progresso é medido contra esse valor"
+          >
+            <Target size={11} />
+            alvo: {goal.criterion_target_value?.toLocaleString('pt-BR')}
+          </span>
+        ) : (
+          <span
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}
+            title="Critério tudo-ou-nada — marca quando atingir"
+          >
+            <CheckSquare size={11} />
+            ao concluir
+          </span>
+        )}
         {primaryArea && (
           <span
             style={{
@@ -438,9 +514,61 @@ function GoalRow({ goal }: { goal: BuildGoal }) {
             {primaryArea.name}
           </span>
         )}
-        {secondaries.length > 0 && (
-          <span style={{ fontSize: 10, color: NEO.textMuted }}>
-            +{secondaries.length} cross
+      </div>
+
+      {/* L3 — metadata secundária: horizon, áreas extras, projetos vinculados.
+          Tamanho menor, cor mais sutil. Contexto sem competir com L1/L2 pelo
+          olhar. Só aparece quando há algo relevante (horizon sempre vem). */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+          fontSize: 9,
+          color: NEO.textMuted,
+          letterSpacing: '0.15em',
+          textTransform: 'uppercase',
+          fontWeight: 700,
+          flexWrap: 'wrap',
+          marginTop: -2,
+        }}
+      >
+        <span
+          title={
+            goal.horizon === 'anual'
+              ? 'Horizonte: 1+ ano'
+              : 'Horizonte: 12 semanas'
+          }
+        >
+          {GOAL_HORIZON_LABEL[goal.horizon as BuildGoalHorizon] ?? goal.horizon}
+        </span>
+        {/* Áreas secundárias como mini-pílulas coloridas — visualmente
+            identificam as áreas sem hover. Acima de 3, mostra as 3
+            primeiras + "+N" pra evitar overflow horizontal. */}
+        {secondaryAreas.length > 0 && (
+          <span
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}
+            title={`Áreas adicionais: ${secondaryNames}`}
+          >
+            {secondaryAreas.slice(0, 3).map((a) => (
+              <span
+                key={a.slug}
+                style={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: 2,
+                  background: a.color,
+                  flexShrink: 0,
+                  display: 'inline-block',
+                }}
+                title={a.name}
+              />
+            ))}
+            {secondaryAreas.length > 3 && (
+              <span style={{ fontSize: 9, color: NEO.textMuted, marginLeft: 2 }}>
+                +{secondaryAreas.length - 3}
+              </span>
+            )}
           </span>
         )}
         <span
@@ -448,15 +576,18 @@ function GoalRow({ goal }: { goal: BuildGoal }) {
             display: 'inline-flex',
             alignItems: 'center',
             gap: 4,
-            fontSize: 10,
             color: linkedProjects.length > 0 ? NEO.cyan : NEO.textMuted,
-            letterSpacing: '0.1em',
           }}
-          title={`${linkedProjects.length} projeto(s) servindo essa Meta`}
+          title={
+            linkedProjects.length === 0
+              ? 'Nenhum projeto vinculado'
+              : `Projetos servindo essa Meta:\n• ${linkedProjects.map((p) => p.title ?? p.id).join('\n• ')}`
+          }
         >
           <Link2 size={10} />
           {linkedProjects.length} projeto{linkedProjects.length === 1 ? '' : 's'}
         </span>
+        <QuickCreateProjectButton goal={goal} primaryAreaSlug={primary?.area_slug ?? null} />
       </div>
 
       {goal.descricao && (
@@ -472,24 +603,59 @@ function GoalRow({ goal }: { goal: BuildGoal }) {
         </div>
       )}
 
-      {/* Sub-painéis: progresso (numérico) + sprints (anual) + deps + guardrails */}
+      {/* Sub-painéis: progresso (numérico) sempre aberto — informação
+          principal pra ação. Sprints/Deps/Guardrails dentro de collapse pra
+          reduzir densidade visual de Metas com muito conteúdo. */}
       {goal.criterion_type === 'numeric' && <GoalProgressBar goal={goal} />}
-      {goal.horizon === 'anual' && <SprintsInline goal={goal} />}
-      <DependenciesInline goal={goal} />
-      <GuardrailsInline goal={goal} />
+      {goal.horizon === 'anual' && (
+        <CollapsibleSection
+          label="Sprints"
+          storageKey={`hq-build-collapse-${goal.id}-sprints`}
+        >
+          <SprintsInline goal={goal} />
+        </CollapsibleSection>
+      )}
+      <CollapsibleSection
+        label="Dependências"
+        storageKey={`hq-build-collapse-${goal.id}-deps`}
+      >
+        <DependenciesInline goal={goal} />
+      </CollapsibleSection>
+      <CollapsibleSection
+        label="Guardrails"
+        storageKey={`hq-build-collapse-${goal.id}-guardrails`}
+      >
+        <GuardrailsInline goal={goal} />
+      </CollapsibleSection>
+      <CollapsibleSection
+        label="Notas"
+        storageKey={`hq-build-collapse-${goal.id}-notes`}
+      >
+        <GoalNotesSection goal={goal} />
+      </CollapsibleSection>
 
-      {/* Ações rápidas — contextuais ao status atual */}
-      <div style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
-        <MicroBtn onClick={() => setEditing(true)} label="✎ editar" />
-
-        {/* Reativar — só pra status diferente de ativa */}
-        {goal.status !== 'ativa' && (
+      {/* Ações — uma ação primária visível conforme o status, demais no
+          menu ⋯. Reduz a poluição dos 5 botões antigos empilhados. */}
+      <div style={{ display: 'flex', gap: 6, marginTop: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+        {/* Ação primária contextual */}
+        {goal.status === 'ativa' && (
+          <MicroBtn
+            onClick={() =>
+              updateGoal.mutate({ id: goal.id, patch: { status: 'concluida' } })
+            }
+            icon={<Check size={10} />}
+            label="concluir"
+          />
+        )}
+        {(goal.status === 'pausada' || goal.status === 'abandonada') && (
           <MicroBtn
             onClick={async () => {
               const ok = await confirmDialog({
                 title: 'Reativar Meta',
                 message:
-                  `Reativar "${goal.titulo}" (status atual: ${goal.status})? ` +
+                  `Reativar "${goal.titulo}" (status atual: ${
+                    GOAL_STATUS_LABEL[goal.status as BuildGoalStatus] ?? goal.status
+                  })? ` +
                   `Ela volta pra lista de Metas ativas, sujeita ao limite duro ` +
                   `(default 5 ativas).`,
                 confirmLabel: 'REATIVAR',
@@ -497,49 +663,64 @@ function GoalRow({ goal }: { goal: BuildGoal }) {
               if (!ok) return
               updateGoal.mutate({ id: goal.id, patch: { status: 'ativa' } })
             }}
-            label="↻ reativar"
+            icon={<RotateCw size={10} />}
+            label="reativar"
           />
         )}
 
-        {/* Concluir — só faz sentido pra ativa ou pausada */}
-        {(goal.status === 'ativa' || goal.status === 'pausada') && (
-          <MicroBtn
-            onClick={() =>
-              updateGoal.mutate({ id: goal.id, patch: { status: 'concluida' } })
-            }
-            label="✓ concluir"
-          />
-        )}
-
-        {/* Pausar — só pra ativa */}
-        {goal.status === 'ativa' && (
-          <MicroBtn
-            onClick={() =>
-              updateGoal.mutate({ id: goal.id, patch: { status: 'pausada' } })
-            }
-            label="∥ pausar"
-          />
-        )}
-
-        {/* Abandonar — não faz sentido pra Meta já abandonada/concluida */}
-        {goal.status !== 'abandonada' && goal.status !== 'concluida' && (
-          <MicroBtn
-            onClick={async () => {
-              const ok = await confirmDialog({
-                title: 'Abandonar Meta',
-                message:
-                  `Vai abandonar "${goal.titulo}"? A Meta sai da lista de ativas mas o ` +
-                  'histórico fica preservado (não deleta nada). Você pode reativá-la ' +
-                  'depois editando o status.',
-                confirmLabel: 'ABANDONAR',
-                danger: true,
-              })
-              if (!ok) return
-              updateGoal.mutate({ id: goal.id, patch: { status: 'abandonada' } })
-            }}
-            label="× abandonar"
-          />
-        )}
+        {/* Menu ⋯ — sempre tem editar; demais ações conforme status */}
+        <ActionMenu
+          items={[
+            {
+              label: 'editar',
+              icon: <Pencil size={11} />,
+              onClick: () => setEditing(true),
+            },
+            ...(goal.status === 'ativa'
+              ? [{
+                  label: 'pausar',
+                  icon: <Pause size={11} />,
+                  onClick: () =>
+                    updateGoal.mutate({ id: goal.id, patch: { status: 'pausada' } }),
+                }]
+              : []),
+            ...(goal.status === 'concluida'
+              ? [{
+                  label: 'reativar',
+                  icon: <RotateCw size={11} />,
+                  onClick: async () => {
+                    const ok = await confirmDialog({
+                      title: 'Reativar Meta',
+                      message: `Reativar "${goal.titulo}" (atualmente concluída)?`,
+                      confirmLabel: 'REATIVAR',
+                    })
+                    if (!ok) return
+                    updateGoal.mutate({ id: goal.id, patch: { status: 'ativa' } })
+                  },
+                }]
+              : []),
+            ...(goal.status !== 'abandonada' && goal.status !== 'concluida'
+              ? [{
+                  label: 'abandonar',
+                  icon: <X size={11} />,
+                  danger: true,
+                  onClick: async () => {
+                    const ok = await confirmDialog({
+                      title: 'Abandonar Meta',
+                      message:
+                        `Vai abandonar "${goal.titulo}"? A Meta sai da lista de ativas mas o ` +
+                        'histórico fica preservado (não deleta nada). Você pode reativá-la ' +
+                        'depois editando o status.',
+                      confirmLabel: 'ABANDONAR',
+                      danger: true,
+                    })
+                    if (!ok) return
+                    updateGoal.mutate({ id: goal.id, patch: { status: 'abandonada' } })
+                  },
+                }]
+              : []),
+          ]}
+        />
       </div>
 
       {editing && (
@@ -550,6 +731,20 @@ function GoalRow({ goal }: { goal: BuildGoal }) {
 }
 
 // ─── Barra de progresso pra Meta numérica ─────────────────────────────────
+
+/**
+ * Parser pt-BR pra número com formato brasileiro (`1.234,56`).
+ * Aceita também `1234.56` (US), `1234,56` e `1234`. Retorna null se inválido.
+ */
+function parseNumberPtBR(s: string): number | null {
+  const trimmed = s.trim()
+  if (trimmed === '') return null
+  // Remove separadores de milhar `.` E troca decimal `,` por `.`. Cobre
+  // ambos formatos brasileiros: "1.234,56", "1234,56", "1234.56", "1234".
+  const cleaned = trimmed.replace(/\./g, '').replace(',', '.')
+  const n = Number(cleaned)
+  return isNaN(n) ? null : n
+}
 
 function GoalProgressBar({ goal }: { goal: BuildGoal }) {
   const updateProgress = useUpdateGoalProgress()
@@ -568,12 +763,14 @@ function GoalProgressBar({ goal }: { goal: BuildGoal }) {
   const isHealthLinked = goal.criterion_metric_slug != null
 
   function startEdit() {
-    setDraft(String(current))
+    // Prefill formatado em pt-BR ("5.000" em vez de "5000") pra o usuário
+    // reconhecer o formato e poder editar mantendo a vírgula brasileira.
+    setDraft(current.toLocaleString('pt-BR'))
     setEditing(true)
   }
   function save() {
-    const num = Number(draft)
-    if (isNaN(num)) return
+    const num = parseNumberPtBR(draft)
+    if (num === null) return
     updateProgress.mutate(
       { id: goal.id, value: num },
       { onSuccess: () => setEditing(false) },
@@ -643,7 +840,8 @@ function GoalProgressBar({ goal }: { goal: BuildGoal }) {
           (editing ? (
             <span style={{ display: 'flex', gap: 4 }}>
               <input
-                type="number"
+                type="text"
+                inputMode="decimal"
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
                 onKeyDown={(e) => {
@@ -651,6 +849,8 @@ function GoalProgressBar({ goal }: { goal: BuildGoal }) {
                   if (e.key === 'Escape') setEditing(false)
                 }}
                 autoFocus
+                placeholder="ex.: 1.234,56"
+                title="Formato brasileiro: . pra milhar, , pra decimal"
                 style={{
                   background: NEO.bg,
                   color: NEO.textPrimary,
@@ -658,15 +858,15 @@ function GoalProgressBar({ goal }: { goal: BuildGoal }) {
                   padding: '2px 6px',
                   fontFamily: MONO,
                   fontSize: 11,
-                  width: 80,
+                  width: 100,
                   outline: 'none',
                 }}
               />
-              <MicroBtn onClick={save} label="ok" />
-              <MicroBtn onClick={() => setEditing(false)} label="x" />
+              <MicroBtn onClick={save} icon={<Check size={10} />} label="ok" />
+              <MicroBtn onClick={() => setEditing(false)} icon={<X size={10} />} label="" />
             </span>
           ) : (
-            <MicroBtn onClick={startEdit} label="↻ atualizar" />
+            <MicroBtn onClick={startEdit} icon={<RotateCw size={10} />} label="atualizar" />
           ))}
       </div>
       {/* Barra fina */}
@@ -736,7 +936,7 @@ function SprintsInline({ goal }: { goal: BuildGoal }) {
           letterSpacing: '0.05em',
         }}
       >
-        <MicroBtn onClick={quickCreate} label="+ Sprint (12 sem)" />
+        <MicroBtn onClick={quickCreate} icon={<Plus size={10} />} label="Sprint (12 sem)" />
         <span>· marcos de 12 semanas dentro da Meta anual</span>
       </div>
     )
@@ -766,7 +966,7 @@ function SprintsInline({ goal }: { goal: BuildGoal }) {
         ))}
       </div>
       <div style={{ marginTop: 4 }}>
-        <MicroBtn onClick={quickCreate} label="+ próximo sprint" />
+        <MicroBtn onClick={quickCreate} icon={<Plus size={10} />} label="próximo sprint" />
       </div>
     </div>
   )
@@ -791,12 +991,19 @@ function SprintRow({
     abandonado: NEO.textMuted,
   }[sprint.status]
 
+  // Detecta se "agora" está dentro do range do sprint — se sim, marca como
+  // "atual" mesmo que o status seja `planejado` (usuário pode ter esquecido
+  // de mudar pra `ativo`). Visual: borda mais grossa + tag "AGORA".
+  const today = new Date().toISOString().slice(0, 10)
+  const isCurrent = today >= sprint.data_inicio && today <= sprint.data_fim &&
+    sprint.status !== 'abandonado' && sprint.status !== 'concluido'
+
   return (
     <div
       style={{
-        background: 'transparent',
-        border: `1px solid ${NEO.border}`,
-        borderLeft: `2px solid ${statusColor}`,
+        background: isCurrent ? `${NEO.accent}08` : 'transparent',
+        border: `1px solid ${isCurrent ? NEO.borderHot : NEO.border}`,
+        borderLeft: `${isCurrent ? 3 : 2}px solid ${statusColor}`,
         padding: '4px 8px',
         fontSize: 11,
         display: 'flex',
@@ -808,6 +1015,24 @@ function SprintRow({
       <span style={{ color: NEO.cyan, fontWeight: 700, minWidth: 20 }}>
         #{sprint.numero}
       </span>
+      {isCurrent && (
+        <span
+          style={{
+            fontSize: 8,
+            color: NEO.accent,
+            letterSpacing: '0.22em',
+            fontWeight: 700,
+            textTransform: 'uppercase',
+            background: `${NEO.accent}15`,
+            padding: '1px 5px',
+            border: `1px solid ${NEO.borderHot}`,
+            flexShrink: 0,
+          }}
+          title="Hoje está dentro do período deste sprint"
+        >
+          AGORA
+        </span>
+      )}
       <span style={{ fontSize: 10, color: NEO.textMuted, minWidth: 110 }}>
         {fmtDate(sprint.data_inicio)} → {fmtDate(sprint.data_fim)}
       </span>
@@ -872,10 +1097,10 @@ function SprintRow({
           cursor: 'pointer',
         }}
       >
-        <option value="planejado">PLAN</option>
-        <option value="ativo">ATIVO</option>
-        <option value="concluido">DONE</option>
-        <option value="abandonado">×</option>
+        <option value="planejado">Planejado</option>
+        <option value="ativo">Ativo</option>
+        <option value="concluido">Concluído</option>
+        <option value="abandonado">Abandonado</option>
       </select>
       <button
         type="button"
@@ -922,7 +1147,7 @@ function DependenciesInline({ goal }: { goal: BuildGoal }) {
           color: NEO.textMuted,
         }}
       >
-        <MicroBtn onClick={() => setPicking(true)} label="+ depende de…" />
+        <MicroBtn onClick={() => setPicking(true)} icon={<Plus size={10} />} label="depende de…" />
       </div>
     )
   }
@@ -1058,7 +1283,7 @@ function DependenciesInline({ goal }: { goal: BuildGoal }) {
         </div>
       ) : (
         <div style={{ marginTop: 4 }}>
-          <MicroBtn onClick={() => setPicking(true)} label="+ pré-requisito" />
+          <MicroBtn onClick={() => setPicking(true)} icon={<Plus size={10} />} label="pré-requisito" />
         </div>
       )}
     </div>
@@ -1106,12 +1331,12 @@ function DriftPanel() {
       title="DRIFT · PROJETOS SEM ALINHAMENTO"
       subtitle={
         drift.length === 0
-          ? '// nenhum projeto em drift — vida ordenada'
-          : `// ${drift.length} ${drift.length === 1 ? 'projeto sem' : 'projetos sem'} meta nem classificação`
+          ? 'nenhum projeto em drift — vida ordenada'
+          : `${drift.length} ${drift.length === 1 ? 'projeto sem' : 'projetos sem'} meta nem classificação`
       }
     >
       {isLoading ? (
-        <div style={{ color: NEO.textMuted, fontSize: 13 }}>Carregando…</div>
+        <PanelLoading />
       ) : drift.length === 0 ? (
         <div
           style={{
@@ -1615,12 +1840,12 @@ function RitualsPanel() {
       title="RITUAIS · REVISÃO"
       subtitle={
         totalAtrasados > 0
-          ? `// ${totalAtrasados} ritual${totalAtrasados === 1 ? '' : 'is'} atrasado${totalAtrasados === 1 ? '' : 's'}`
-          : '// ponte entre estrategista e executor'
+          ? `${totalAtrasados} ritual${totalAtrasados === 1 ? '' : 'is'} atrasado${totalAtrasados === 1 ? '' : 's'}`
+          : 'ponte entre estrategista e executor'
       }
     >
       {isLoading ? (
-        <div style={{ color: NEO.textMuted, fontSize: 13 }}>Carregando…</div>
+        <PanelLoading />
       ) : (
         <div
           style={{
@@ -2444,7 +2669,7 @@ function RitualReviewModal({
             textTransform: 'uppercase',
           }}
         >
-          // duração alvo: {ritual.duracao_alvo_min} min · escopo disciplinado abaixo
+          duração alvo: {ritual.duracao_alvo_min} min · escopo disciplinado abaixo
         </div>
 
         {/* Direcionamentos em destaque */}
@@ -2472,7 +2697,10 @@ function RitualReviewModal({
                 marginBottom: 6,
               }}
             >
-              ✓ O QUE PENSAR
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                <Check size={11} strokeWidth={2.5} />
+                O QUE PENSAR
+              </span>
             </div>
             <div
               style={{
@@ -2501,7 +2729,10 @@ function RitualReviewModal({
                 marginBottom: 6,
               }}
             >
-              × O QUE NÃO PENSAR
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                <X size={11} strokeWidth={2.5} />
+                O QUE NÃO PENSAR
+              </span>
             </div>
             <div
               style={{
@@ -2515,6 +2746,12 @@ function RitualReviewModal({
             </div>
           </div>
         </div>
+
+        {/* Mind como matéria-prima da reflexão — hipóteses pendentes do log
+            inteiro + sessões/revelações registradas no período do ritual.
+            Sem isso o usuário escreve `notas` cego; com isso, a observação
+            estruturada vira combustível pra revisão estratégica. */}
+        <MindContextPanel cadencia={cadencia} />
 
         {/* Toggle mode: completar vs pular intencionalmente */}
         <div
@@ -3084,7 +3321,69 @@ function RitualConfigModal({
   )
 }
 
-// ─── Guardrails (v2 — pontes Hub Health) ──────────────────────────────────
+// ─── Notas long-form da Meta ──────────────────────────────────────────────
+
+/**
+ * Caderno da Meta (BlockNote). Diferente de `descricao` (1-2 frases curtas
+ * exibidas no card), `notes` é long-form pra registrar razões profundas,
+ * links, raciocínio, status detalhado. Edita com BlockEditor + autosave
+ * debounced (mesma lógica do PageView/QuestDetailPanel).
+ *
+ * Lazy import do BlockEditor — chunk pesado (~1.1 MB) só baixa quando o
+ * usuário expande a seção "Notas".
+ */
+function GoalNotesSection({ goal }: { goal: BuildGoal }) {
+  const updateGoal = useUpdateGoal()
+  const [draft, setDraft] = useState<string | null>(null)
+
+  // Autosave do `notes` com debounce 800ms (mesmo padrão dos outros
+  // BlockEditors do projeto). Doc-vazio do BlockNote vira `null` no DB
+  // pra não poluir com JSON vazio.
+  useEffect(() => {
+    if (draft === null) return
+    const current = goal.notes ?? null
+    if (draft === (current ?? '')) return
+    const t = setTimeout(() => {
+      const incoming = isBlockDocEmpty(draft) ? null : draft
+      if (incoming !== current) {
+        updateGoal.mutate({ id: goal.id, patch: { notes: incoming } })
+      }
+    }, 800)
+    return () => clearTimeout(t)
+  }, [draft, goal.id, goal.notes])
+
+  return (
+    <div style={{ marginTop: 6 }}>
+      <Suspense
+        fallback={
+          <div
+            style={{
+              fontSize: 9,
+              color: NEO.textMuted,
+              letterSpacing: '0.18em',
+              textTransform: 'uppercase',
+              padding: '12px 0',
+            }}
+          >
+            <span style={{ color: NEO.cyan, marginRight: 4, letterSpacing: 0 }}>//</span>
+            LOADING.EDITOR
+          </div>
+        }
+      >
+        <BlockEditor
+          // key força remount se trocar de Meta (initialContent é memoizado).
+          key={goal.id}
+          value={draft ?? goal.notes ?? ''}
+          onChange={setDraft}
+          placeholder="Caderno da Meta — razões, links, raciocínio. Digite / pra blocos…"
+          minHeight={120}
+        />
+      </Suspense>
+    </div>
+  )
+}
+
+// ─── Guardrails (v2 — pontes Health) ──────────────────────────────────
 
 const GUARDRAIL_STATE_STYLE: Record<
   BuildGuardrailEvaluation['estado'],
@@ -3106,7 +3405,7 @@ const GUARDRAIL_STATE_STYLE: Record<
     label: 'ESPERANDO DADOS',
   },
   METRICA_NAO_ENCONTRADA: {
-    color: '#ffb300',  // âmbar (alinhado com Hub Health)
+    color: '#ffb300',  // âmbar (alinhado com Health)
     icon: <AlertTriangle size={11} />,
     label: 'MÉTRICA SUMIU',
   },
@@ -3125,7 +3424,7 @@ function GuardrailsInline({ goal }: { goal: BuildGoal }) {
   if (guardrails.length === 0 && !adding) {
     return (
       <div style={{ marginTop: 4 }}>
-        <MicroBtn onClick={() => setAdding(true)} label="+ guardrail (espírito)" />
+        <MicroBtn onClick={() => setAdding(true)} icon={<Plus size={10} />} label="guardrail (espírito)" />
       </div>
     )
   }
@@ -3177,7 +3476,7 @@ function GuardrailsInline({ goal }: { goal: BuildGoal }) {
         />
       ) : (
         <div style={{ marginTop: 4 }}>
-          <MicroBtn onClick={() => setAdding(true)} label="+ guardrail" />
+          <MicroBtn onClick={() => setAdding(true)} icon={<Plus size={10} />} label="guardrail" />
         </div>
       )}
     </div>
@@ -3374,7 +3673,7 @@ function GuardrailForm({
           textTransform: 'uppercase',
         }}
       >
-        {isEdit ? 'Editar guardrail (Hub Health)' : 'Adicionar guardrail (Hub Health)'}
+        {isEdit ? 'Editar guardrail (Health)' : 'Adicionar guardrail (Health)'}
       </div>
 
       {/* Select de métrica.
@@ -3405,7 +3704,10 @@ function GuardrailForm({
             {metrics.map((m) => (
               <option key={m.slug} value={m.slug}>
                 {m.nome}
-                {m.precisa_item ? ' (precisa item)' : ''}
+                {/* Sufixo "precisa item" removido — info técnica do schema.
+                    Quando true, o segundo dropdown (item) aparece logo abaixo
+                    automaticamente; UI fala por si só. */}
+                {''}
               </option>
             ))}
           </optgroup>
@@ -3521,11 +3823,17 @@ function GuardrailForm({
   )
 }
 
-function MicroBtn({ onClick, label }: { onClick: () => void; label: string }) {
+function MicroBtn({ onClick, label, icon, title }: {
+  onClick: () => void
+  label: string
+  icon?: ReactNode
+  title?: string
+}) {
   return (
     <button
       type="button"
       onClick={onClick}
+      title={title}
       style={{
         background: 'transparent',
         color: NEO.textMuted,
@@ -3536,10 +3844,689 @@ function MicroBtn({ onClick, label }: { onClick: () => void; label: string }) {
         letterSpacing: '0.1em',
         textTransform: 'uppercase',
         cursor: 'pointer',
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 5,
       }}
     >
+      {icon}
       {label}
     </button>
+  )
+}
+
+/**
+ * Loading state padrão usado dentro dos painéis principais (Goals,
+ * Drift, Rituals, Purpose, Vision). Substitui o div solto duplicado
+ * em 5+ lugares — uma fonte só pra mudar tom/tipo.
+ */
+function PanelLoading({ label = 'Carregando…' }: { label?: string }) {
+  return (
+    <div style={{ color: NEO.textMuted, fontSize: 13 }}>{label}</div>
+  )
+}
+
+/**
+ * Seletor de áreas reusável pelos modais de criar/editar Meta. Renderiza
+ * lista de áreas com checkbox visual + estrela pra primária. Mesmo
+ * comportamento dos dois lugares (toggle + makePrimary). Antes era código
+ * duplicado de ~80 linhas entre Create e Edit modals.
+ */
+function AreasSelector({
+  areas,
+  selectedSlugs,
+  primarySlug,
+  onToggle,
+  onMakePrimary,
+}: {
+  areas: Area[]
+  selectedSlugs: Set<string>
+  primarySlug: string | null
+  onToggle: (slug: string) => void
+  onMakePrimary: (slug: string) => void
+}) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      {areas.map((a) => {
+        const isSelected = selectedSlugs.has(a.slug)
+        const isPrimary = primarySlug === a.slug
+        return (
+          <div
+            key={a.slug}
+            onClick={() => onToggle(a.slug)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 10,
+              padding: '8px 10px',
+              background: isSelected ? `${a.color}15` : 'transparent',
+              border: `1px solid ${isSelected ? a.color : NEO.border}`,
+              cursor: 'pointer',
+              userSelect: 'none',
+              transition: 'background 0.1s, border-color 0.1s',
+            }}
+          >
+            {/* Checkbox visual — quadrado preenchido pra marcar selection */}
+            <span
+              style={{
+                width: 14,
+                height: 14,
+                border: `1.5px solid ${isSelected ? a.color : NEO.textMuted}`,
+                background: isSelected ? a.color : 'transparent',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
+              }}
+            >
+              {isSelected && <Check size={10} color={NEO.bg} strokeWidth={3} />}
+            </span>
+
+            <span
+              style={{
+                color: isSelected ? NEO.textPrimary : NEO.textSecondary,
+                fontSize: 13,
+                flex: 1,
+              }}
+            >
+              {a.name}
+            </span>
+
+            {/* Estrela pra trocar a primária — só clicável se selecionada */}
+            <button
+              type="button"
+              title={isPrimary ? 'Esta é a área primária' : 'Tornar primária'}
+              disabled={!isSelected}
+              onClick={(e) => {
+                e.stopPropagation() // evita disparar onToggle
+                if (isSelected) onMakePrimary(a.slug)
+              }}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: isPrimary ? a.color : NEO.textMuted,
+                cursor: isSelected ? 'pointer' : 'not-allowed',
+                padding: 4,
+                display: 'flex',
+                opacity: isSelected ? 1 : 0.3,
+              }}
+            >
+              <Star size={14} fill={isPrimary ? a.color : 'transparent'} />
+            </button>
+
+            <span
+              style={{
+                fontSize: 9,
+                color: isPrimary ? a.color : NEO.textMuted,
+                letterSpacing: '0.15em',
+                textTransform: 'uppercase',
+                minWidth: 70,
+                textAlign: 'right',
+              }}
+            >
+              {isPrimary ? 'PRIMÁRIA' : isSelected ? 'secundária' : ''}
+            </span>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+/**
+ * Modal pequeno listando atalhos de teclado disponíveis no /build.
+ * Renderizado pelo GoalsPanel quando usuário aperta `?`. Esc fecha.
+ */
+function KeyboardShortcutsHelp({ onClose }: { onClose: () => void }) {
+  const shortcuts = [
+    { key: 'N', label: 'Nova Meta' },
+    { key: '?', label: 'Mostrar/esconder este atalho' },
+    { key: 'Esc', label: 'Fechar modal/diálogo' },
+  ]
+  return createPortal(
+    <div
+      role="dialog"
+      onClick={onClose}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        background: 'rgba(0,0,0,0.7)',
+        backdropFilter: 'blur(6px)',
+        WebkitBackdropFilter: 'blur(6px)',
+        zIndex: 1100,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 20,
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: 'min(420px, calc(100vw - 32px))',
+          background: '#0b0d12',
+          border: `1px solid ${NEO.accent}`,
+          padding: '24px 28px',
+          position: 'relative',
+        }}
+      >
+        <CornerBracket position="tl" />
+        <CornerBracket position="tr" />
+        <CornerBracket position="bl" />
+        <CornerBracket position="br" />
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: 18,
+          }}
+        >
+          <div style={{ fontSize: 11, letterSpacing: '0.32em', color: NEO.accent, fontWeight: 700 }}>
+            ❰ ATALHOS
+          </div>
+          <button
+            onClick={onClose}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: NEO.textSecondary,
+              cursor: 'pointer',
+              padding: 4,
+            }}
+          >
+            <X size={14} />
+          </button>
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {shortcuts.map((s) => (
+            <div
+              key={s.key}
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                gap: 16,
+                fontSize: 12,
+                color: NEO.textSecondary,
+              }}
+            >
+              <span>{s.label}</span>
+              <kbd
+                style={{
+                  fontFamily: MONO,
+                  fontSize: 11,
+                  fontWeight: 700,
+                  padding: '2px 8px',
+                  background: NEO.bg,
+                  border: `1px solid ${NEO.border}`,
+                  color: NEO.cyan,
+                  letterSpacing: '0.05em',
+                  minWidth: 28,
+                  textAlign: 'center',
+                  display: 'inline-block',
+                }}
+              >
+                {s.key}
+              </kbd>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>,
+    document.body,
+  )
+}
+
+/**
+ * Quick-create de projeto vinculado a uma Meta — botão "+ projeto" inline
+ * no L3 do card de Meta. Click expande input inline (Enter cria + vincula
+ * + invalida queries; Esc cancela). Sem modal full pra fluxo rápido.
+ *
+ * Usa a área primária da Meta (ou fallback no slug) como area_slug do
+ * projeto criado. Dispara link em sequência — UX é "novo projeto pra essa
+ * Meta", não "criar e vincular separado".
+ */
+function QuickCreateProjectButton({ goal, primaryAreaSlug }: {
+  goal: BuildGoal
+  primaryAreaSlug: string | null
+}) {
+  const linkProject = useLinkProjectToGoal()
+  const queryClient = useQueryClient()
+  const [adding, setAdding] = useState(false)
+  const [draft, setDraft] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  async function submit() {
+    const title = draft.trim()
+    if (!title || !primaryAreaSlug || busy) return
+    setBusy(true)
+    try {
+      const proj = await createProject({ title, area_slug: primaryAreaSlug })
+      // Vincula o projeto recém-criado à Meta. Backend valida tudo.
+      await new Promise<void>((resolve, reject) => {
+        linkProject.mutate(
+          { projectId: proj.id, goalId: goal.id },
+          { onSuccess: () => resolve(), onError: (e) => reject(e) },
+        )
+      })
+      // Invalida cross-cutting: lista de projetos do alignment + lista geral.
+      queryClient.invalidateQueries({ queryKey: ['build', 'projects-alignment'] })
+      queryClient.invalidateQueries({ queryKey: ['projects'] })
+      setDraft('')
+      setAdding(false)
+    } catch (err) {
+      alertDialog({
+        title: 'Falha ao criar projeto',
+        message: err instanceof Error ? err.message : 'Erro desconhecido',
+        variant: 'danger',
+      })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  if (!primaryAreaSlug) return null  // sem área primária, não dá pra criar
+
+  if (adding) {
+    return (
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+        <input
+          type="text"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') submit()
+            if (e.key === 'Escape') {
+              setDraft('')
+              setAdding(false)
+            }
+          }}
+          autoFocus
+          placeholder="título do projeto…"
+          disabled={busy}
+          style={{
+            background: NEO.bg,
+            color: NEO.textPrimary,
+            border: `1px solid ${NEO.accent}`,
+            padding: '1px 6px',
+            fontFamily: MONO,
+            fontSize: 10,
+            width: 180,
+            outline: 'none',
+            opacity: busy ? 0.6 : 1,
+          }}
+        />
+        <button
+          type="button"
+          onClick={submit}
+          disabled={busy || !draft.trim()}
+          title="Criar e vincular"
+          style={{
+            background: 'transparent',
+            border: 'none',
+            color: NEO.cyan,
+            cursor: busy || !draft.trim() ? 'not-allowed' : 'pointer',
+            padding: 1,
+            display: 'flex',
+            opacity: busy || !draft.trim() ? 0.4 : 1,
+          }}
+        >
+          <Check size={11} />
+        </button>
+        <button
+          type="button"
+          onClick={() => { setDraft(''); setAdding(false) }}
+          disabled={busy}
+          title="Cancelar"
+          style={{
+            background: 'transparent',
+            border: 'none',
+            color: NEO.textMuted,
+            cursor: 'pointer',
+            padding: 1,
+            display: 'flex',
+          }}
+        >
+          <X size={11} />
+        </button>
+      </span>
+    )
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => setAdding(true)}
+      title="Criar projeto vinculado a esta Meta"
+      style={{
+        background: 'transparent',
+        border: 'none',
+        color: NEO.textMuted,
+        cursor: 'pointer',
+        padding: 1,
+        display: 'inline-flex',
+        alignItems: 'center',
+        opacity: 0.5,
+        transition: 'opacity 0.15s, color 0.15s',
+      }}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.opacity = '1'
+        e.currentTarget.style.color = NEO.cyan
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.opacity = '0.5'
+        e.currentTarget.style.color = NEO.textMuted
+      }}
+    >
+      <Plus size={11} />
+    </button>
+  )
+}
+
+/**
+ * Empty state padrão pra painéis. `message` é a mensagem principal
+ * (em itálico, muted), `hint` é um sub-texto explicativo opcional, e
+ * `action` é um CTA opcional pra convidar o usuário a popular.
+ *
+ * Antes cada painel reimplementava com `<p>` ad-hoc; agora padronizado:
+ * mesmo tom (itálico muted), mesmas dimensões, ação primária consistente.
+ */
+function PanelEmpty({
+  message,
+  hint,
+  action,
+}: {
+  message: string
+  hint?: string
+  action?: { label: string; icon?: ReactNode; onClick: () => void }
+}) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <p
+        style={{
+          margin: 0,
+          fontSize: 13,
+          color: NEO.textMuted,
+          fontStyle: 'italic',
+          lineHeight: 1.6,
+        }}
+      >
+        {message}
+      </p>
+      {hint && (
+        <p
+          style={{
+            margin: 0,
+            fontSize: 11,
+            color: NEO.textMuted,
+            lineHeight: 1.5,
+          }}
+        >
+          {hint}
+        </p>
+      )}
+      {action && (
+        <div>
+          <ActionBtn
+            onClick={action.onClick}
+            icon={action.icon}
+            label={action.label}
+            variant="accent"
+          />
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Labels PT-BR pra status de Meta — substituem strings cruas do banco no card.
+const GOAL_STATUS_LABEL: Record<BuildGoalStatus, string> = {
+  ativa: 'Em andamento',
+  pausada: 'Pausada',
+  concluida: 'Concluída',
+  abandonada: 'Abandonada',
+}
+
+// Labels PT-BR pra horizon — usado em filtros e detalhe da Meta.
+const GOAL_HORIZON_LABEL: Record<BuildGoalHorizon, string> = {
+  anual: 'Anual',
+  trimestral: 'Trimestral',
+}
+
+/**
+ * Sub-seção colapsável dentro do card de Meta — usado pra Sprints,
+ * Dependências e Guardrails. Default fechado pra reduzir densidade visual
+ * de Metas com muito conteúdo. Quando fechado, os children NÃO são
+ * montados — economiza fetch das queries internas (cada sub-componente
+ * tem seu próprio `useQuery`).
+ *
+ * Persiste estado open/closed em localStorage por `storageKey` (formato
+ * sugerido: `hq-build-collapse-{goalId}-{sectionName}`). Sem `storageKey`,
+ * comportamento legacy (in-memory). Útil pra Meta que o usuário consulta
+ * muito — não fecha a Section toda vez que o painel re-renderiza.
+ */
+function CollapsibleSection({ label, defaultOpen, storageKey, children }: {
+  label: string
+  defaultOpen?: boolean
+  storageKey?: string
+  children: ReactNode
+}) {
+  const [open, setOpen] = useState<boolean>(() => {
+    if (storageKey) {
+      try {
+        const raw = localStorage.getItem(storageKey)
+        if (raw === '1') return true
+        if (raw === '0') return false
+      } catch {}
+    }
+    return defaultOpen ?? false
+  })
+
+  function toggle() {
+    setOpen((prev) => {
+      const next = !prev
+      if (storageKey) {
+        try { localStorage.setItem(storageKey, next ? '1' : '0') } catch {}
+      }
+      return next
+    })
+  }
+
+  return (
+    <div style={{ marginTop: 6 }}>
+      <button
+        type="button"
+        onClick={toggle}
+        aria-expanded={open}
+        style={{
+          background: 'transparent',
+          border: 'none',
+          color: NEO.textMuted,
+          padding: '2px 0',
+          fontFamily: MONO,
+          fontSize: 9,
+          letterSpacing: '0.2em',
+          textTransform: 'uppercase',
+          cursor: 'pointer',
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 6,
+          fontWeight: 700,
+        }}
+      >
+        {open ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
+        {label}
+      </button>
+      {open && <div>{children}</div>}
+    </div>
+  )
+}
+
+/**
+ * Menu dropdown pra ações secundárias da Meta (pausar, abandonar, etc).
+ * A ação primária (concluir/reativar/etc, depende do status) fica como
+ * botão visível ao lado. Reduz a poluição de 5 botões empilhados.
+ *
+ * Acessibilidade:
+ *  - Click fora fecha
+ *  - ESC fecha (capture phase pra não vazar pra outros listeners)
+ *  - ↑/↓ navegam itens (focus); Enter dispara o item focado
+ *  - Tab também navega (default do browser nos buttons internos)
+ *  - Auto-focus no primeiro item ao abrir
+ */
+function ActionMenu({ items }: {
+  items: { label: string; icon?: ReactNode; onClick: () => void; danger?: boolean }[]
+}) {
+  const [open, setOpen] = useState(false)
+  const [focusIdx, setFocusIdx] = useState(0)
+  const ref = useRef<HTMLDivElement | null>(null)
+  const menuRef = useRef<HTMLDivElement | null>(null)
+  const itemRefs = useRef<(HTMLButtonElement | null)[]>([])
+  const triggerRef = useRef<HTMLButtonElement | null>(null)
+
+  useEffect(() => {
+    if (!open) return
+    function onDoc(e: MouseEvent) {
+      // Menu agora é portalizado pra escapar do clipPath ancestral — o
+      // handler precisa checar AMBOS o wrapper do trigger E o menu portaled.
+      const target = e.target as Node
+      if (ref.current?.contains(target)) return
+      if (menuRef.current?.contains(target)) return
+      setOpen(false)
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        e.stopPropagation()
+        setOpen(false)
+        triggerRef.current?.focus()
+        return
+      }
+      if (e.key === 'ArrowDown') {
+        e.preventDefault()
+        setFocusIdx((i) => {
+          const next = Math.min(i + 1, items.length - 1)
+          itemRefs.current[next]?.focus()
+          return next
+        })
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault()
+        setFocusIdx((i) => {
+          const next = Math.max(i - 1, 0)
+          itemRefs.current[next]?.focus()
+          return next
+        })
+      }
+    }
+    document.addEventListener('mousedown', onDoc)
+    document.addEventListener('keydown', onKey, true) // capture
+    return () => {
+      document.removeEventListener('mousedown', onDoc)
+      document.removeEventListener('keydown', onKey, true)
+    }
+  }, [open, items.length])
+
+  // Auto-focus no primeiro item ao abrir.
+  useEffect(() => {
+    if (open) {
+      setFocusIdx(0)
+      // microtask: deixa o DOM renderizar antes de tentar focar
+      queueMicrotask(() => itemRefs.current[0]?.focus())
+    }
+  }, [open])
+
+  if (items.length === 0) return null
+
+  return (
+    <div ref={ref} style={{ position: 'relative', display: 'inline-block' }}>
+      <button
+        ref={triggerRef}
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        title="Mais ações"
+        style={{
+          background: 'transparent',
+          color: NEO.textMuted,
+          border: `1px solid ${NEO.border}`,
+          padding: '2px 6px',
+          fontFamily: MONO,
+          cursor: 'pointer',
+          display: 'inline-flex',
+          alignItems: 'center',
+          height: 19,
+        }}
+      >
+        <MoreHorizontal size={12} />
+      </button>
+      {open && (() => {
+        // Portal-rendered + position:fixed — escapa do clipPath dos painéis
+        // ancestrais do Build (mesmo bug que afeta GoalCreateModal e
+        // RitualSessionFormModal). Posição calculada do bounding box do
+        // trigger; ancorado à direita pra alinhar com o ícone do botão.
+        const rect = triggerRef.current?.getBoundingClientRect()
+        if (!rect) return null
+        const menu = (
+          <div
+            ref={menuRef}
+            role="menu"
+            style={{
+              position: 'fixed',
+              top: rect.bottom + 2,
+              // Âncora pela esquerda → menu se expande pra direita do botão.
+              left: rect.left,
+              background: '#0b0d12',
+              border: `1px solid ${NEO.border}`,
+              zIndex: 1000,
+              minWidth: 140,
+              boxShadow: '0 8px 24px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(0, 0, 0, 0.4)',
+            }}
+          >
+            {items.map((item, i) => (
+              <button
+                key={i}
+                ref={(el) => { itemRefs.current[i] = el }}
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setOpen(false)
+                  item.onClick()
+                }}
+                onFocus={() => setFocusIdx(i)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  width: '100%',
+                  background: focusIdx === i ? NEO.panel : 'transparent',
+                  border: 'none',
+                  color: item.danger ? NEO.accent : NEO.textSecondary,
+                  padding: '6px 10px',
+                  fontFamily: MONO,
+                  fontSize: 10,
+                  letterSpacing: '0.1em',
+                  textTransform: 'uppercase',
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                  outline: 'none',
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = NEO.panel)}
+                onMouseLeave={(e) => {
+                  if (focusIdx !== i) e.currentTarget.style.background = 'transparent'
+                }}
+              >
+                {item.icon}
+                {item.label}
+              </button>
+            ))}
+          </div>
+        )
+        return createPortal(menu, document.body)
+      })()}
+    </div>
   )
 }
 
@@ -3761,20 +4748,21 @@ function GoalCreateModal({ onClose }: { onClose: () => void }) {
         </div>
         <div
           style={{
-            fontSize: 10,
-            color: NEO.textMuted,
+            fontSize: 12,
+            color: NEO.textSecondary,
             marginBottom: 24,
-            letterSpacing: '0.1em',
-            textTransform: 'uppercase',
+            lineHeight: 1.5,
+            fontStyle: 'italic',
           }}
         >
-          // outcome com prazo · não ação · sua, não importada
+          Uma meta é um <em>outcome</em> com prazo — não uma ação. Sua, não
+          importada.
         </div>
 
-        {/* Pergunta 1 */}
+        {/* Pergunta 1 — qual o outcome (estado final desejado) */}
         <Question
-          numero="01"
-          titulo="QUAL O ESTADO QUE VOCÊ QUER TER ATINGIDO?"
+          numero="·"
+          titulo="Qual o estado que você quer ter atingido?"
         />
         <input
           value={titulo}
@@ -3790,10 +4778,10 @@ function GoalCreateModal({ onClose }: { onClose: () => void }) {
           style={{ ...textareaStyle, marginTop: 8, fontSize: 12 }}
         />
 
-        {/* Pergunta 2 */}
+        {/* Pergunta 2 — critério objetivo de sucesso */}
         <Question
-          numero="02"
-          titulo="COMO VAI SABER OBJETIVAMENTE QUE ATINGIU?"
+          numero="·"
+          titulo="Como vai saber objetivamente que atingiu?"
         />
         <div style={{ display: 'flex', gap: 12 }}>
           <RadioOpt
@@ -3819,7 +4807,7 @@ function GoalCreateModal({ onClose }: { onClose: () => void }) {
               style={{ ...inputBlockStyle, marginTop: 10, width: 220 }}
             />
 
-            {/* v2.1: Origem do valor — manual ou Hub Health */}
+            {/* v2.1: Origem do valor — manual ou Health */}
             <div style={{ marginTop: 14 }}>
               <Label>DE ONDE VEM O VALOR ATUAL</Label>
               <div style={{ display: 'flex', gap: 12, marginTop: 6 }}>
@@ -3832,7 +4820,7 @@ function GoalCreateModal({ onClose }: { onClose: () => void }) {
                 <RadioOpt
                   checked={valorOrigem === 'health'}
                   onClick={() => setValorOrigem('health')}
-                  label="Vem de Hub Health"
+                  label="Vem de Health"
                   sub="puxa de uma Métrica automaticamente"
                 />
               </div>
@@ -3872,7 +4860,10 @@ function GoalCreateModal({ onClose }: { onClose: () => void }) {
                         {metrics.map((m) => (
                           <option key={m.slug} value={m.slug}>
                             {m.nome}
-                            {m.precisa_item ? ' (precisa item)' : ''}
+                            {/* Sufixo "precisa item" removido — info técnica do schema.
+                    Quando true, o segundo dropdown (item) aparece logo abaixo
+                    automaticamente; UI fala por si só. */}
+                {''}
                           </option>
                         ))}
                       </optgroup>
@@ -3902,7 +4893,7 @@ function GoalCreateModal({ onClose }: { onClose: () => void }) {
                     </select>
                   )}
                   <div style={{ fontSize: 10, color: NEO.textMuted, fontStyle: 'italic' }}>
-                    O valor atual será puxado direto de Hub Health — não precisa atualizar manualmente.
+                    O valor atual será puxado direto de Health — não precisa atualizar manualmente.
                   </div>
                 </div>
               )}
@@ -3911,7 +4902,7 @@ function GoalCreateModal({ onClose }: { onClose: () => void }) {
         )}
 
         {/* Pergunta 3 */}
-        <Question numero="03" titulo="ATÉ QUANDO?" />
+        <Question numero="·" titulo="Até quando?" />
         <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
           <input
             type="date"
@@ -3934,96 +4925,19 @@ function GoalCreateModal({ onClose }: { onClose: () => void }) {
         </div>
 
         {/* Áreas */}
-        <Question numero="·" titulo="ÁREAS DA VIDA QUE A META ATRAVESSA" />
+        <Question numero="·" titulo="Áreas da vida que a meta atravessa" />
         <div style={{ fontSize: 10, color: NEO.textMuted, marginBottom: 8 }}>
           Clique nas áreas pra selecionar (várias permitidas). A primeira vira{' '}
           <strong style={{ color: NEO.accent }}>primária</strong> automaticamente
           — clique na ★ pra trocar qual é a principal.
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          {areas.map((a: Area) => {
-            const isSelected = selectedSlugs.has(a.slug)
-            const isPrimary = primarySlug === a.slug
-            return (
-              <div
-                key={a.slug}
-                onClick={() => toggleArea(a.slug)}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 10,
-                  padding: '8px 10px',
-                  background: isSelected ? `${a.color}15` : 'transparent',
-                  border: `1px solid ${isSelected ? a.color : NEO.border}`,
-                  cursor: 'pointer',
-                  userSelect: 'none',
-                  transition: 'background 0.1s, border-color 0.1s',
-                }}
-              >
-                {/* Checkbox visual — quadrado preenchido pra marcar selection */}
-                <span
-                  style={{
-                    width: 14,
-                    height: 14,
-                    border: `1.5px solid ${isSelected ? a.color : NEO.textMuted}`,
-                    background: isSelected ? a.color : 'transparent',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    flexShrink: 0,
-                  }}
-                >
-                  {isSelected && <Check size={10} color={NEO.bg} strokeWidth={3} />}
-                </span>
-
-                <span
-                  style={{
-                    color: isSelected ? NEO.textPrimary : NEO.textSecondary,
-                    fontSize: 13,
-                    flex: 1,
-                  }}
-                >
-                  {a.name}
-                </span>
-
-                {/* Star pra trocar a primária — só clicável se a área está selecionada */}
-                <button
-                  type="button"
-                  title={isPrimary ? 'Esta é a área primária' : 'Tornar primária'}
-                  disabled={!isSelected}
-                  onClick={(e) => {
-                    e.stopPropagation() // evita disparar toggleArea
-                    if (isSelected) makePrimary(a.slug)
-                  }}
-                  style={{
-                    background: 'transparent',
-                    border: 'none',
-                    color: isPrimary ? a.color : NEO.textMuted,
-                    cursor: isSelected ? 'pointer' : 'not-allowed',
-                    padding: 4,
-                    display: 'flex',
-                    opacity: isSelected ? 1 : 0.3,
-                  }}
-                >
-                  <Star size={14} fill={isPrimary ? a.color : 'transparent'} />
-                </button>
-
-                <span
-                  style={{
-                    fontSize: 9,
-                    color: isPrimary ? a.color : NEO.textMuted,
-                    letterSpacing: '0.15em',
-                    textTransform: 'uppercase',
-                    minWidth: 60,
-                    textAlign: 'right',
-                  }}
-                >
-                  {isPrimary ? 'PRIMÁRIA' : isSelected ? 'cross' : ''}
-                </span>
-              </div>
-            )
-          })}
-        </div>
+        <AreasSelector
+          areas={areas}
+          selectedSlugs={selectedSlugs}
+          primarySlug={primarySlug}
+          onToggle={toggleArea}
+          onMakePrimary={makePrimary}
+        />
 
         {/* Foundational */}
         <div
@@ -4218,7 +5132,7 @@ function GoalEditModal({
     }
     if (isNumeric && valorOrigem === 'health') {
       if (!metricSlug) {
-        setError('Escolha uma Métrica de Hub Health')
+        setError('Escolha uma Métrica de Health')
         return
       }
       if (selectedMetric?.precisa_item && !metricItemId) {
@@ -4374,14 +5288,16 @@ function GoalEditModal({
         </div>
         <div
           style={{
-            fontSize: 10,
-            color: NEO.textMuted,
+            fontSize: 12,
+            color: NEO.textSecondary,
             marginBottom: 24,
-            letterSpacing: '0.1em',
-            textTransform: 'uppercase',
+            lineHeight: 1.5,
+            fontStyle: 'italic',
           }}
         >
-          // dependências têm fluxo próprio (no card). critério (booleano/numérico) não muda.
+          Dependências têm fluxo próprio (no card da Meta). O tipo de critério
+          (atingir um valor ou marcar quando feito) não pode ser alterado depois
+          de criada.
         </div>
 
         <Label>TÍTULO</Label>
@@ -4455,7 +5371,7 @@ function GoalEditModal({
               <RadioOpt
                 checked={valorOrigem === 'health'}
                 onClick={() => setValorOrigem('health')}
-                label="Vem de Hub Health"
+                label="Vem de Health"
                 sub="puxa de uma Métrica"
               />
             </div>
@@ -4494,7 +5410,10 @@ function GoalEditModal({
                       {metrics.map((m) => (
                         <option key={m.slug} value={m.slug}>
                           {m.nome}
-                          {m.precisa_item ? ' (precisa item)' : ''}
+                          {/* Sufixo "precisa item" removido — info técnica do schema.
+                    Quando true, o segundo dropdown (item) aparece logo abaixo
+                    automaticamente; UI fala por si só. */}
+                {''}
                         </option>
                       ))}
                     </optgroup>
@@ -4540,84 +5459,13 @@ function GoalEditModal({
           >
             Clique pra selecionar/desselecionar. ★ marca a área primária (cor).
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            {areasList.map((a: Area) => {
-              const isSelected = selectedSlugs.has(a.slug)
-              const isPrimary = primarySlug === a.slug
-              return (
-                <div
-                  key={a.slug}
-                  onClick={() => toggleArea(a.slug)}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 10,
-                    padding: '6px 10px',
-                    background: isSelected ? `${a.color}15` : 'transparent',
-                    border: `1px solid ${isSelected ? a.color : NEO.border}`,
-                    cursor: 'pointer',
-                    userSelect: 'none',
-                  }}
-                >
-                  <span
-                    style={{
-                      width: 12,
-                      height: 12,
-                      border: `1.5px solid ${isSelected ? a.color : NEO.textMuted}`,
-                      background: isSelected ? a.color : 'transparent',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      flexShrink: 0,
-                    }}
-                  >
-                    {isSelected && <Check size={9} color={NEO.bg} strokeWidth={3} />}
-                  </span>
-                  <span
-                    style={{
-                      color: isSelected ? NEO.textPrimary : NEO.textSecondary,
-                      fontSize: 12,
-                      flex: 1,
-                    }}
-                  >
-                    {a.name}
-                  </span>
-                  <button
-                    type="button"
-                    title={isPrimary ? 'Área primária' : 'Tornar primária'}
-                    disabled={!isSelected}
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      if (isSelected) makePrimary(a.slug)
-                    }}
-                    style={{
-                      background: 'transparent',
-                      border: 'none',
-                      color: isPrimary ? a.color : NEO.textMuted,
-                      cursor: isSelected ? 'pointer' : 'not-allowed',
-                      padding: 4,
-                      display: 'flex',
-                      opacity: isSelected ? 1 : 0.3,
-                    }}
-                  >
-                    <Star size={13} fill={isPrimary ? a.color : 'transparent'} />
-                  </button>
-                  <span
-                    style={{
-                      fontSize: 9,
-                      color: isPrimary ? a.color : NEO.textMuted,
-                      letterSpacing: '0.15em',
-                      textTransform: 'uppercase',
-                      minWidth: 55,
-                      textAlign: 'right',
-                    }}
-                  >
-                    {isPrimary ? 'PRIMÁRIA' : isSelected ? 'cross' : ''}
-                  </span>
-                </div>
-              )
-            })}
-          </div>
+          <AreasSelector
+            areas={areasList}
+            selectedSlugs={selectedSlugs}
+            primarySlug={primarySlug}
+            onToggle={toggleArea}
+            onMakePrimary={makePrimary}
+          />
         </div>
 
         <div
@@ -4697,12 +5545,22 @@ function GoalEditModal({
   )
 }
 
+/**
+ * Section header dentro do modal de criar/editar Meta. A prop `numero`
+ * vira um marcador estético sutil ("·") em vez do antigo "01/02/03" rígido
+ * que parecia tutorial.
+ *
+ * Tipografia suavizada (sentence case + tamanho médio) pra ficar mais
+ * conversacional — antes era uppercase letter-spaced agressivo, que somado
+ * à numeração reforçava sensação de "formulário militar". Pergunta agora
+ * lê como pergunta, não como label de campo.
+ */
 function Question({ numero, titulo }: { numero: string; titulo: string }) {
   return (
     <div
       style={{
-        marginTop: 18,
-        marginBottom: 8,
+        marginTop: 22,
+        marginBottom: 10,
         display: 'flex',
         alignItems: 'baseline',
         gap: 10,
@@ -4710,21 +5568,20 @@ function Question({ numero, titulo }: { numero: string; titulo: string }) {
     >
       <span
         style={{
-          fontSize: 11,
+          fontSize: 12,
           color: NEO.accent,
           fontWeight: 700,
-          letterSpacing: '0.2em',
+          minWidth: 8,
         }}
       >
         {numero}
       </span>
       <span
         style={{
-          fontSize: 10,
-          color: NEO.textSecondary,
-          letterSpacing: '0.25em',
-          fontWeight: 700,
-          textTransform: 'uppercase',
+          fontSize: 13,
+          color: NEO.textPrimary,
+          fontWeight: 600,
+          letterSpacing: '0.01em',
         }}
       >
         {titulo}
@@ -4942,7 +5799,7 @@ function PurposePanel() {
   return (
     <Panel title="PROPÓSITO" subtitle="Atemporal · O arquétipo da build">
       {isLoading ? (
-        <div style={{ color: NEO.textMuted, fontSize: 13 }}>Carregando…</div>
+        <PanelLoading />
       ) : editing ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <textarea
@@ -4982,37 +5839,37 @@ function PurposePanel() {
       ) : (
         <>
           {purpose?.texto ? (
-            <p
-              style={{
-                margin: 0,
-                fontSize: 14,
-                lineHeight: 1.7,
-                color: NEO.textPrimary,
-              }}
-            >
-              {purpose.texto}
-            </p>
+            <>
+              <p
+                style={{
+                  margin: 0,
+                  fontSize: 14,
+                  lineHeight: 1.7,
+                  color: NEO.textPrimary,
+                }}
+              >
+                {purpose.texto}
+              </p>
+              <div style={{ marginTop: 16 }}>
+                <ActionBtn
+                  onClick={startEdit}
+                  icon={<Pencil size={13} />}
+                  label="Editar"
+                  variant="accent"
+                />
+              </div>
+            </>
           ) : (
-            <p
-              style={{
-                margin: 0,
-                fontSize: 13,
-                color: NEO.textMuted,
-                fontStyle: 'italic',
-                lineHeight: 1.6,
+            <PanelEmpty
+              message="Propósito ainda não articulado."
+              hint="É o arquétipo da sua build — atemporal. Comece com 1-3 frases sobre quem você está sendo, não o que vai fazer."
+              action={{
+                label: 'Articular Propósito',
+                icon: <Pencil size={13} />,
+                onClick: startEdit,
               }}
-            >
-              Propósito ainda não articulado. Clique em editar pra escrever.
-            </p>
-          )}
-          <div style={{ marginTop: 16 }}>
-            <ActionBtn
-              onClick={startEdit}
-              icon={<Pencil size={13} />}
-              label={purpose?.texto ? 'Editar' : 'Articular Propósito'}
-              variant="accent"
             />
-          </div>
+          )}
         </>
       )}
 
@@ -5092,6 +5949,7 @@ function PrincipleRow({ principle }: { principle: BuildPrinciple }) {
           {principle.texto}
         </span>
       )}
+      <LibraryBacklinksBadge targetType="build_principle" targetId={principle.id} />
       <button
         type="button"
         onClick={() => deletePrinciple.mutate(principle.id)}
@@ -5157,17 +6015,10 @@ function PrinciplesSection() {
       )}
 
       {!isLoading && principles.length === 0 && !adding && (
-        <p
-          style={{
-            margin: 0,
-            fontSize: 12,
-            color: NEO.textMuted,
-            fontStyle: 'italic',
-          }}
-        >
-          Nenhum princípio negativo definido. Esses são os "não-quero-ser"
-          que filtram decisões.
-        </p>
+        <PanelEmpty
+          message="Nenhum princípio negativo definido."
+          hint='Esses são os "não-quero-ser" — filtram decisões e Metas. Ex.: "Não trabalhar > 45h/sem sustentado".'
+        />
       )}
 
       {principles.length > 0 && (
@@ -5345,14 +6196,14 @@ function VisionHistoryModal({
         </div>
         <div
           style={{
-            fontSize: 10,
-            color: NEO.textMuted,
+            fontSize: 12,
+            color: NEO.textSecondary,
             marginBottom: 24,
-            letterSpacing: '0.1em',
-            textTransform: 'uppercase',
+            lineHeight: 1.5,
+            fontStyle: 'italic',
           }}
         >
-          // {versions.length} {versions.length === 1 ? 'versão arquivada' : 'versões arquivadas'} · ordem cronológica reversa
+          {versions.length} {versions.length === 1 ? 'versão arquivada' : 'versões arquivadas'} — ordem cronológica reversa.
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -5511,7 +6362,7 @@ function VisionPanel() {
       subtitle={vision ? `Até ${fmtDate(vision.data_alvo)} · A build alvo` : 'A build alvo no lvl 50'}
     >
       {isLoading ? (
-        <div style={{ color: NEO.textMuted, fontSize: 13 }}>Carregando…</div>
+        <PanelLoading />
       ) : versioning ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <Label>NOVA VISÃO</Label>
@@ -5819,6 +6670,219 @@ function ActionBtn({
       {icon}
       {label}
     </button>
+  )
+}
+
+/**
+ * Painel "MIND DO PERÍODO" injetado no RitualSessionFormModal.
+ *
+ * Mostra hipóteses pendentes (sempre relevantes, não filtradas por data) +
+ * revelações + contagem de sessões no período do ritual. Click numa hipótese
+ * leva pra /mind/hipoteses pra confrontar. Pretende ser matéria-prima da
+ * reflexão — sem isso, `notas` é escrita às cegas.
+ *
+ * Esconde-se quando nada relevante existe (não polui rituais de quem ainda
+ * não tem prática de observação).
+ */
+function MindContextPanel({ cadencia }: { cadencia: BuildRitualCadencia }) {
+  // Janela de período por cadência — alinha com o sentido temporal do ritual.
+  const days = (() => {
+    switch (cadencia) {
+      case 'semanal': return 7
+      case 'mensal': return 30
+      case 'trimestral': return 90
+      case 'anual': return 365
+      default: return 7
+    }
+  })()
+  const cutoff = new Date()
+  cutoff.setDate(cutoff.getDate() - (days - 1))
+  const cutoffIso = cutoff.toISOString().slice(0, 10)
+
+  const { data: pendingHipoteses = [] } = useMindHipoteses('pending')
+  const { data: sessions = [] } = useMindSessions({ limit: 200 })
+  const periodSessions = sessions.filter((s) => s.data >= cutoffIso)
+  const revelacoes = periodSessions.filter((s) => s.payload.tipo === 'revelacao')
+
+  if (pendingHipoteses.length === 0 && periodSessions.length === 0) return null
+
+  return (
+    <div
+      style={{
+        border: '1px solid #9b88c4',
+        borderLeft: '2px solid #9b88c4',
+        padding: '12px 14px',
+        background: 'rgba(155, 136, 196, 0.04)',
+        marginBottom: 20,
+      }}
+    >
+      <div
+        style={{
+          fontSize: 9,
+          color: '#9b88c4',
+          letterSpacing: '0.25em',
+          fontWeight: 700,
+          marginBottom: 8,
+          textTransform: 'uppercase',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+        }}
+      >
+        <span>MIND · ÚLTIMOS {days}D</span>
+        <span style={{ color: NEO.textMuted, fontWeight: 500 }}>
+          · matéria-prima da reflexão
+        </span>
+      </div>
+
+      {/* Stats compactos */}
+      <div
+        style={{
+          display: 'flex',
+          gap: 18,
+          marginBottom: 10,
+          fontSize: 11,
+          fontFamily: MONO,
+          color: NEO.textSecondary,
+          flexWrap: 'wrap',
+        }}
+      >
+        <span>
+          <span style={{ color: '#9b88c4', fontWeight: 700 }}>
+            {periodSessions.length}
+          </span>{' '}
+          sessões
+        </span>
+        {revelacoes.length > 0 && (
+          <span>
+            <span style={{ color: '#c08a3a', fontWeight: 700 }}>
+              {revelacoes.length}
+            </span>{' '}
+            revelações
+          </span>
+        )}
+        {pendingHipoteses.length > 0 && (
+          <span>
+            <span style={{ color: 'var(--color-warning)', fontWeight: 700 }}>
+              {pendingHipoteses.length}
+            </span>{' '}
+            hipóteses pendentes
+          </span>
+        )}
+      </div>
+
+      {/* Hipóteses pendentes — itálico, máx 5 */}
+      {pendingHipoteses.length > 0 && (
+        <div style={{ marginBottom: revelacoes.length > 0 ? 10 : 0 }}>
+          <div
+            style={{
+              fontSize: 9,
+              color: 'var(--color-warning)',
+              letterSpacing: '0.2em',
+              marginBottom: 4,
+              textTransform: 'uppercase',
+            }}
+          >
+            A confrontar
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {pendingHipoteses.slice(0, 5).map((h) => (
+              <a
+                key={h.id}
+                href="/mind/hipoteses"
+                style={{
+                  fontSize: 12,
+                  fontFamily: BODY,
+                  fontStyle: 'italic',
+                  color: NEO.textPrimary,
+                  textDecoration: 'none',
+                  borderLeft: '2px solid var(--color-warning)',
+                  paddingLeft: 8,
+                  lineHeight: 1.45,
+                }}
+              >
+                "{h.texto}"
+                {h.tags.length > 0 && (
+                  <span
+                    style={{
+                      fontFamily: MONO,
+                      fontStyle: 'normal',
+                      color: NEO.textMuted,
+                      fontSize: 10,
+                      marginLeft: 6,
+                    }}
+                  >
+                    · {h.tags.join(' · ')}
+                  </span>
+                )}
+              </a>
+            ))}
+            {pendingHipoteses.length > 5 && (
+              <span
+                style={{
+                  fontSize: 10,
+                  color: NEO.textMuted,
+                  fontFamily: MONO,
+                  fontStyle: 'italic',
+                  paddingLeft: 8,
+                }}
+              >
+                + {pendingHipoteses.length - 5} outras
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Revelações no período — destacadas em âmbar */}
+      {revelacoes.length > 0 && (
+        <div>
+          <div
+            style={{
+              fontSize: 9,
+              color: '#c08a3a',
+              letterSpacing: '0.2em',
+              marginBottom: 4,
+              textTransform: 'uppercase',
+            }}
+          >
+            ✦ Revelações no período
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {revelacoes.slice(0, 3).map((s) => (
+              <div
+                key={s.id}
+                style={{
+                  fontSize: 12,
+                  fontFamily: BODY,
+                  color: NEO.textPrimary,
+                  borderLeft: '2px solid #c08a3a',
+                  paddingLeft: 8,
+                  lineHeight: 1.45,
+                }}
+              >
+                {s.payload.observacao.length > 180
+                  ? `${s.payload.observacao.slice(0, 180).trimEnd()}…`
+                  : s.payload.observacao}
+              </div>
+            ))}
+            {revelacoes.length > 3 && (
+              <span
+                style={{
+                  fontSize: 10,
+                  color: NEO.textMuted,
+                  fontFamily: MONO,
+                  fontStyle: 'italic',
+                  paddingLeft: 8,
+                }}
+              >
+                + {revelacoes.length - 3} outras revelações
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
   )
 }
 

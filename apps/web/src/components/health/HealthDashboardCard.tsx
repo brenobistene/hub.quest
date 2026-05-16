@@ -48,13 +48,19 @@ const PRIMARY_BY_TEMPLATE: Record<string, string> = {
   consumo_vontade: 'tempo_desde_ultimo_consumo',
   metrica_simples: 'ultimo_valor',
   evento_escala: 'media_7d',
+  // Mind: tag mais frequente no card vital (resumo do padrão dominante).
+  observacao_estruturada: 'tag_top_30d',
 }
 
 export default function HealthDashboardCard() {
   const { data: settings } = useHealthSettings()
-  const { data: domains = [] } = useHealthDomains()
+  const { data: allDomains = [] } = useHealthDomains()
   const { data: pending = [] } = useHealthPending()
   const { data: catalog = [] } = useHealthMetricsCatalog()
+
+  // Mind virou peer top-level — não aparece mais nos vitals do Biomonitor.
+  // Filtro pelo template (cobre variações de slug).
+  const domains = allDomains.filter((d) => d.template !== 'observacao_estruturada')
 
   // Respeita preferência do usuário — pode esconder o card via settings.
   // `undefined` (settings ainda carregando) = mostra (estado padrão).

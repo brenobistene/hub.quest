@@ -40,8 +40,12 @@ import { AnimatedNumber, SkeletonBlock } from '../../components/ui/Motion'
 import type { HealthDomain } from '../../types'
 
 export default function BiomonitorPage() {
-  const { data: domains = [], isLoading } = useHealthDomains()
+  const { data: allDomains = [], isLoading } = useHealthDomains()
   const { data: pending = [] } = useHealthPending()
+
+  // Mind virou peer top-level — não aparece mais no Biomonitor (filtra pelo
+  // template). Doc: ARCHITECTURE §3.
+  const domains = allDomains.filter((d) => d.template !== 'observacao_estruturada')
 
   return (
     <div
@@ -627,6 +631,7 @@ function DomainPanel({ domain }: { domain: HealthDomain }) {
         <RecentRecords
           records={records.slice(0, 2)}
           domainSlug={domain.slug}
+          template={domain.template}
           cor={cor}
         />
       )}
@@ -705,10 +710,12 @@ function MiniStat({
 function RecentRecords({
   records,
   domainSlug,
+  template,
   cor,
 }: {
   records: any[]
   domainSlug: string
+  template: string
   cor: string
 }) {
   return (
@@ -720,7 +727,10 @@ function RecentRecords({
       }}
     >
       {records.map((r) => {
-        const live = isLiveRecord(r.criado_em)
+        // Pulse só pra registro do dia atual. Sono noturno usa criado_em
+        // (data=ontem mas evento ainda recente); demais usam data — fix
+        // do bug de registro retroativo "fica como hoje ativo".
+        const live = isLiveRecord(r, template)
         return (
           <div
             key={r.id}

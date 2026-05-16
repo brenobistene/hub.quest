@@ -16,7 +16,7 @@ import { PageShell } from '../components/ui/CyberShell'
 import { get } from '../api'
 
 type ReportItem = {
-  kind: 'area' | 'task' | 'routine'
+  kind: 'area' | 'task' | 'routine' | 'library'
   slug: string
   label: string
   color: string | null
@@ -36,6 +36,7 @@ type WeeklyBucket = {
   quest: number
   task: number
   routine: number
+  library: number
   total_minutes: number
 }
 
@@ -310,7 +311,7 @@ function WeeklyBars({ data }: { data: WeeklyBucket[] }) {
               {shortLabel(w.week_start)}
             </div>
             <div
-              title={`Quest: ${fmtMin(w.quest)} · Task: ${fmtMin(w.task)} · Routine: ${fmtMin(w.routine)}`}
+              title={`Quest: ${fmtMin(w.quest)} · Task: ${fmtMin(w.task)} · Routine: ${fmtMin(w.routine)} · Library: ${fmtMin(w.library)}`}
               style={{
                 display: 'flex',
                 height: 18,
@@ -340,6 +341,13 @@ function WeeklyBars({ data }: { data: WeeklyBucket[] }) {
                   opacity: 0.85,
                 }} />
               )}
+              {w.library > 0 && (
+                <div style={{
+                  flex: w.library,
+                  background: '#7fb8a8',
+                  opacity: 0.85,
+                }} />
+              )}
             </div>
             <div style={{ ...metaStyle, color: 'var(--color-text-secondary)' }}>
               {fmtMin(w.total_minutes)}
@@ -355,6 +363,7 @@ function WeeklyBars({ data }: { data: WeeklyBucket[] }) {
         <Legend color="var(--color-ice-light)" label="QUEST" />
         <Legend color="var(--color-accent-light)" label="TASK" />
         <Legend color="var(--color-success-light)" label="ROUTINE" />
+        <Legend color="#7fb8a8" label="LIBRARY" />
       </div>
     </div>
   )

@@ -1,6 +1,6 @@
-import { useEffect, useState, lazy, Suspense } from 'react'
+import { useEffect, useState, lazy, Suspense, useCallback, useRef } from 'react'
 import { CheckCircle2, CheckCircle, Pencil, Trash2, XCircle, GripVertical } from 'lucide-react'
-import type { Area, Project, Quest, FinParcela, FinPaymentTemplate, FinClient, FinHourlyRateStats } from '../types'
+import type { Area, Project, Quest, FinParcela, FinPaymentTemplate, FinClient, FinHourlyRateStats, ProjectPageMeta } from '../types'
 import {
   fetchQuestsByProject, fetchDeliverables,
   createQuest, deleteQuest,
@@ -9,8 +9,11 @@ import {
   fetchFinParcelas, createFinParcela, applyFinParcelaTemplate,
   updateFinParcela, deleteFinParcela,
   fetchFinClients, fetchFinHourlyRateStats,
+  fetchProjectPages, createPage, fetchPage,
   reportApiError,
 } from '../api'
+import { extractPlainTextPreview } from './block-utils'
+import { PageView } from './PageView'
 import { useAppInvalidator } from '../lib/app-queries'
 import { useFinanceInvalidator } from '../lib/finance-queries'
 import { tabSync } from '../lib/tabsync'
@@ -120,6 +123,36 @@ export function QuestDetailPanel({
   // Draft local pras "informações detalhadas" (notes) do projeto — mesma
   // lógica de debounce, mas escopado num único campo só.
   const [notesDraft, setNotesDraft] = useState<string | null>(null)
+
+  // ─── Nested Pages (caderno virtual estilo Notion) ──────────────────────
+  // Lista flat das pages do projeto (sem content_json — só metadata).
+  // Usada pra hidratar título dos blocos `page` no editor + montar
+  // breadcrumb. Doc: docs/nested-pages/PLAN.md
+  const [pagesMeta, setPagesMeta] = useState<ProjectPageMeta[]>([])
+  // Page corrente — null = página raiz (notes do projeto). String = uma page.
+  // Persistido em localStorage por projeto pra preservar o lugar quando o
+  // usuário fecha/reabre o painel (caderno de matéria geralmente é retomado).
+  const PAGE_STATE_KEY = `hq-page-state-${project.id}`
+  const [currentPageId, setCurrentPageId] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem(PAGE_STATE_KEY) || null
+    } catch { return null }
+  })
+  // Trigger pra recarregar pagesMeta (depois de create/rename/delete).
+  const [pagesReloadTrigger, setPagesReloadTrigger] = useState(0)
+  // True enquanto o primeiro fetch da lista batch está em flight — sinaliza
+  // pro PageBlock renderizar placeholder neutro em vez de "Página excluída"
+  // (evita flash visual no primeiro render do projeto).
+  const [pagesLoading, setPagesLoading] = useState(true)
+  // Page recém-criada via slash `/page` — quando navegamos pra ela,
+  // PageView abre o título em modo edit (Notion-style: criar + começar
+  // a digitar o nome direto). Limpa após o primeiro commit do título.
+  const [pageJustCreated, setPageJustCreated] = useState<string | null>(null)
+  // Ids de pages deletadas pendentes de limpeza no JSON do pai. Quando
+  // o BlockEditor do ancestral certo monta, lê esse Set, remove blocos
+  // `page` órfãos via removeBlocks. PLAN §7.3.
+  const [orphanCleanupIds, setOrphanCleanupIds] = useState<Set<string>>(() => new Set())
+
   // Drag-and-drop state para reordenação de entregáveis
   const [draggedId, setDraggedId] = useState<string | null>(null)
   const [dragOverId, setDragOverId] = useState<string | null>(null)
@@ -191,6 +224,150 @@ export function QuestDetailPanel({
     }, 800)
     return () => clearTimeout(t)
   }, [notesDraft, project.notes, project.id, onProjectUpdate])
+
+  // ─── Nested Pages: carregar lista batch do projeto ────────────────────
+  // Reload a cada `pagesReloadTrigger++`. Lista vem sem content_json (light)
+  // — usada só pra hidratar título dos blocos `page` + breadcrumb.
+  // `pagesLoading` controla flash de "Página excluída" no PageBlock (true
+  // só na primeira carga ou ao trocar de projeto; reloads depois não
+  // disparam loading porque a lista anterior já está válida).
+  useEffect(() => {
+    let cancelled = false
+    fetchProjectPages(project.id)
+      .then(list => { if (!cancelled) setPagesMeta(list) })
+      .catch(err => reportApiError('QuestDetailPanel.fetchPages', err))
+      .finally(() => { if (!cancelled) setPagesLoading(false) })
+    return () => { cancelled = true }
+  }, [project.id, pagesReloadTrigger])
+
+  // Ao trocar de projeto, reset do loading flag pra true até o novo fetch
+  // completar (evita usar pagesById do projeto anterior pro novo).
+  useEffect(() => {
+    setPagesLoading(true)
+  }, [project.id])
+
+  // Ao trocar de projeto, lê do localStorage do novo projeto.
+  // Sem reset hard — o useState inicial já cobre o primeiro render; este
+  // efeito cobre re-mount com prop `project.id` diferente.
+  useEffect(() => {
+    try {
+      setCurrentPageId(localStorage.getItem(`hq-page-state-${project.id}`) || null)
+    } catch { setCurrentPageId(null) }
+  }, [project.id])
+
+  // Persiste qualquer mudança de currentPageId no localStorage do projeto
+  // atual. Null = "voltou pra raiz" → remove a chave pra evitar lixo.
+  useEffect(() => {
+    try {
+      if (currentPageId) localStorage.setItem(PAGE_STATE_KEY, currentPageId)
+      else localStorage.removeItem(PAGE_STATE_KEY)
+    } catch {}
+  }, [currentPageId, PAGE_STATE_KEY])
+
+  // Validar page persistida: se a page salva no localStorage não existe
+  // mais (deletada externamente, ou trocou de projeto com pages diferentes),
+  // volta pra raiz pra não ficar travado num pageId fantasma.
+  useEffect(() => {
+    if (currentPageId && pagesMeta.length > 0) {
+      if (!pagesMeta.some(p => p.id === currentPageId)) {
+        setCurrentPageId(null)
+      }
+    }
+  }, [pagesMeta, currentPageId])
+
+  // ESC navegacional: quando há page aberta, ESC sobe um nível em vez de
+  // fechar o painel. Capture-phase + stopPropagation pra preceder o handler
+  // global do App.tsx (que navega entre rotas). Quando já tá na raiz, não
+  // intercepta — deixa o handler global fechar/navegar normal.
+  useEffect(() => {
+    if (currentPageId === null) return
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      // Ignora ESC quando algum input/textarea/contenteditable está focado —
+      // ali o ESC tem semântica própria (cancelar edição inline).
+      const target = e.target as HTMLElement | null
+      if (target) {
+        const tag = target.tagName?.toLowerCase()
+        if (tag === 'input' || tag === 'textarea' || target.isContentEditable) return
+      }
+      const parent = pagesMeta.find(p => p.id === currentPageId)?.parent_page_id ?? null
+      setCurrentPageId(parent)
+      e.preventDefault()
+      e.stopPropagation()
+    }
+    window.addEventListener('keydown', onKeyDown, true)  // capture
+    return () => window.removeEventListener('keydown', onKeyDown, true)
+  }, [currentPageId, pagesMeta])
+
+  const reloadPages = useCallback(() => {
+    setPagesReloadTrigger(t => t + 1)
+  }, [])
+
+  // Cache de previews on-hover: pageId → Promise<plain text | null>.
+  // Dedup: hover repetido no mesmo card retorna a Promise já em flight (ou
+  // já resolvida) — não bate no backend de novo. useRef pra sobreviver
+  // re-renders. Reseta ao trocar de projeto pra evitar lookup vazado.
+  const previewCacheRef = useRef<Map<string, Promise<string | null>>>(new Map())
+  useEffect(() => {
+    previewCacheRef.current = new Map()
+  }, [project.id])
+
+  const fetchPreviewForPage = useCallback((pageId: string): Promise<string | null> => {
+    const cache = previewCacheRef.current
+    const existing = cache.get(pageId)
+    if (existing) return existing
+    const promise = fetchPage(pageId)
+      .then(p => extractPlainTextPreview(p.content_json))
+      .catch(err => {
+        // Em caso de falha, remove do cache pra permitir retry no próximo hover.
+        cache.delete(pageId)
+        reportApiError('QuestDetailPanel.fetchPreview', err)
+        return null
+      })
+    cache.set(pageId, promise)
+    return promise
+  }, [])
+
+  // Helper que cria nova page filha (do parent provido) e devolve o id.
+  // Usado pelo slash `/page` no BlockEditor (raiz e dentro de PageView).
+  // Marca como "recém-criada" pro PageView abrir o título em modo edit.
+  const handleCreatePage = useCallback(async (parentPageId: string | null): Promise<string> => {
+    try {
+      const newPage = await createPage(project.id, { parent_page_id: parentPageId })
+      setPageJustCreated(newPage.id)
+      reloadPages()
+      return newPage.id
+    } catch (err) {
+      reportApiError('QuestDetailPanel.createPage', err)
+      alertDialog({
+        title: 'Falha ao criar página',
+        message: 'Não foi possível criar uma nova página. Verifique se o backend está rodando.',
+        variant: 'danger',
+      })
+      throw err
+    }
+  }, [project.id, reloadPages])
+
+  // Marca ids deletados pra limpeza nos blocos `page` do JSON do(s) ancestral(is).
+  // Triggered pelo PageDeleteModal após DELETE com cascade no backend.
+  const handlePageDeleted = useCallback((deletedIds: string[]) => {
+    setOrphanCleanupIds(prev => {
+      const next = new Set(prev)
+      for (const id of deletedIds) next.add(id)
+      return next
+    })
+    reloadPages()
+  }, [reloadPages])
+
+  // BlockEditor avisa quais ids foram efetivamente removidos do JSON dele —
+  // tiramos do Set pra não tentar limpar de novo em re-renders.
+  const handleCleanupDone = useCallback((cleaned: string[]) => {
+    setOrphanCleanupIds(prev => {
+      const next = new Set(prev)
+      for (const id of cleaned) next.delete(id)
+      return next
+    })
+  }, [])
 
   // Update otimista de subtask + dispara o callback global do App.
   // Quando o patch muda `status` ou `deliverable_id`, espelhamos a regra
@@ -1693,19 +1870,45 @@ export function QuestDetailPanel({
         </div>
       </div>
 
-      <div style={{ marginTop: 40, paddingTop: 28, borderTop: '1px solid var(--color-divider)' }}>
-        <Label>informações detalhadas</Label>
-        <div style={{ marginTop: 10 }}>
-          <Suspense fallback={<EditorFallback />}>
-            <BlockEditor
-              value={notesDraft ?? project.notes ?? ''}
-              onChange={setNotesDraft}
-              placeholder="Digite / pra escolher o tipo de bloco…"
-              minHeight={200}
-            />
-          </Suspense>
+      {currentPageId === null ? (
+        <div style={{ marginTop: 40, paddingTop: 28, borderTop: '1px solid var(--color-divider)' }}>
+          <Label>informações detalhadas</Label>
+          <div style={{ marginTop: 10 }}>
+            <Suspense fallback={<EditorFallback />}>
+              <BlockEditor
+                value={notesDraft ?? project.notes ?? ''}
+                onChange={setNotesDraft}
+                placeholder="Digite / pra escolher o tipo de bloco…"
+                minHeight={200}
+                pages={{
+                  pages: pagesMeta,
+                  onPageNavigate: setCurrentPageId,
+                  onCreatePage: () => handleCreatePage(null),
+                  cleanupPageIds: orphanCleanupIds,
+                  onCleanupDone: handleCleanupDone,
+                  isLoading: pagesLoading,
+                  fetchPreview: fetchPreviewForPage,
+                }}
+              />
+            </Suspense>
+          </div>
         </div>
-      </div>
+      ) : (
+        <PageView
+          pageId={currentPageId}
+          projectTitle={project.title}
+          pagesMeta={pagesMeta}
+          justCreated={pageJustCreated}
+          onJustCreatedClear={() => setPageJustCreated(null)}
+          onNavigate={setCurrentPageId}
+          onPageChanged={reloadPages}
+          onPageDeleted={handlePageDeleted}
+          onCreatePage={parentId => handleCreatePage(parentId)}
+          cleanupPageIds={orphanCleanupIds}
+          onCleanupDone={handleCleanupDone}
+          fetchPreview={fetchPreviewForPage}
+        />
+      )}
 
       {areaQuestCount > 0 && (
         <div style={{ marginTop: 20, paddingTop: 20, borderTop: '1px solid var(--color-divider)', fontSize: 11, color: 'var(--color-text-tertiary)' }}>
@@ -2580,7 +2783,7 @@ function ParcelaModal({ parcela, projectId, onClose, onSaved, onDeleted }: {
             <div style={{ display: 'flex', gap: 8 }}>
               <button type="button" onClick={onClose} style={modalGhost()}>CANCELAR</button>
               <button type="submit" disabled={busy} style={modalPrimary()}>
-                {busy ? 'SALVANDO…' : (isNew ? '✓ CRIAR' : '✓ SALVAR')}
+                {busy ? 'SALVANDO…' : (isNew ? 'CRIAR' : 'SALVAR')}
               </button>
             </div>
           </div>

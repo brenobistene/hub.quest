@@ -440,7 +440,7 @@ function WishlistRow({
           onClick={onEdit}
           style={{
             background: 'none', border: 'none', padding: 0, cursor: 'pointer',
-            textAlign: 'left', color: 'inherit',
+            textAlign: 'left',
             fontFamily: 'var(--font-display)',
             fontSize: 13, fontWeight: 600,
             color: status === 'desistido' ? 'var(--color-text-tertiary)' : 'var(--color-text-primary)',

@@ -9,6 +9,9 @@ import { ProfileEditModal } from '../components/ProfileEditModal'
 import { AnimatedNumber, SkeletonBlock } from '../components/ui/Motion'
 import { RitualNextCard } from '../components/RitualNextCard'
 import HealthDashboardCard from '../components/health/HealthDashboardCard'
+import LibraryDashboardCard from '../components/library/LibraryDashboardCard'
+import MindDashboardCard from '../components/mind/MindDashboardCard'
+import BuildDashboardCard from '../components/build/BuildDashboardCard'
 
 // ─── Tipos e constantes ────────────────────────────────────────────────────
 
@@ -1307,10 +1310,28 @@ export function DashboardView({ projects, quests, areas, profile, onProfileUpdat
         </div>
       </section>
 
+      {/* ─── /BUILD · RITUAIS DEVIDOS ─── Só aparece se há ritual atrasado
+          ou vencendo hoje. Nag conservador — Build é deliberado. */}
+      <section style={{ marginBottom: 32 }}>
+        <BuildDashboardCard />
+      </section>
+
+      {/* ─── MIND · CONFRONTAR ─── Hipóteses recorrentes que precisam de
+          confronto. Esconde se não tem nada a fazer. */}
+      <section style={{ marginBottom: 32 }}>
+        <MindDashboardCard />
+      </section>
+
       {/* ─── HUB.HEALTH ─── Card vitals do Hub Health (1 leitura por domínio
           + contagem de pendências). Clique leva pra /health/biomonitor. */}
       <section style={{ marginBottom: 32 }}>
         <HealthDashboardCard />
+      </section>
+
+      {/* ─── LIBRARY ─── Card vitals da biblioteca (em andamento, fila, done,
+          revisitas). Esconde quando library tá vazia. */}
+      <section style={{ marginBottom: 32 }}>
+        <LibraryDashboardCard />
       </section>
 
       {/* ─── FOOTER CAPTION ─── disclaimer técnico mono no rodapé do panel,

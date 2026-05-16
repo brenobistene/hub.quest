@@ -22,8 +22,14 @@ import { BIO, DISPLAY, colorForDomain } from '../../components/health/tokens'
 import { useNowHHMM } from '../../components/health/useNowHHMM'
 
 export default function HealthLayout() {
-  const { data: domains = [] } = useHealthDomains()
+  const { data: allDomains = [] } = useHealthDomains()
   const [settingsOpen, setSettingsOpen] = useState(false)
+
+  // Mind virou peer top-level (rota `/mind`) — o domínio `mind` ainda existe
+  // no banco por continuidade de dados, mas não aparece mais como tab/dashboard
+  // de Health. Filtrado pelo template `observacao_estruturada` (não pelo slug,
+  // pra cobrir variações).
+  const domains = allDomains.filter((d) => d.template !== 'observacao_estruturada')
 
   return (
     <div
@@ -107,7 +113,7 @@ function HeaderBand() {
             flexShrink: 0,
           }}
         >
-          HUB HEALTH
+          HEALTH
         </div>
         <div style={{ width: 1, height: 22, background: 'var(--color-border-strong)', flexShrink: 0 }} />
         <div
@@ -178,7 +184,7 @@ function TabBar({
       <button
         type="button"
         onClick={onOpenSettings}
-        title="Configurações do Hub Health"
+        title="Configurações do Health"
         className="hq-icon-btn-bare"
         style={{
           marginLeft: 'auto',

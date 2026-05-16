@@ -622,6 +622,9 @@ export interface BuildGoal {
   atualizada_em: string
   concluida_em: string | null
   abandonada_em: string | null
+  // Notes long-form (BlockNote JSON serializado). Diferente de `descricao`
+  // — descricao é hint curto (1-2 frases), notes é caderno completo.
+  notes: string | null
   areas: BuildGoalAreaLink[]
   // v2.1: vem populado no GET. Null pra Meta booleana.
   progress_resolved: BuildGoalProgressResolved | null
@@ -657,6 +660,8 @@ export type BuildGoalUpdate = Partial<{
   criterion_metric_item_id: number | null
   is_foundational: boolean
   requires_threshold_pct: number
+  // Notes long-form (BlockNote JSON). Aceita null pra limpar.
+  notes: string | null
 }>
 
 // Classificação de Projeto sem Meta (decisão #8 do PLAN). Drift = nem
@@ -854,6 +859,7 @@ export type HealthTemplate =
   | 'consumo_vontade'       // Vícios: item + quantidade + vontade
   | 'metrica_simples'       // Medidas Corporais: item + valor
   | 'evento_escala'         // Genérico: escala 1-5 (Humor, Energia, etc.)
+  | 'observacao_estruturada' // Mind: duração + intenção? + observação + hipótese? + tipo
 
 export interface HealthDomain {
   slug: string
@@ -953,13 +959,131 @@ export type HealthRecordUpdate = Partial<HealthRecordCreate>
 export interface HealthSettings {
   hora_lembrete_sono: string             // HH:MM, quando lembrete de sono dispara
   dashboard_card_visivel: boolean
+  mind_challenge_ativo: boolean
+  mind_challenge_min_aparicoes: number
+  mind_challenge_janela_dias: number
+  mind_suspender_por_dias: number
   atualizado_em: string
 }
 
 export type HealthSettingsUpdate = Partial<{
   hora_lembrete_sono: string
   dashboard_card_visivel: boolean
+  mind_challenge_ativo: boolean
+  mind_challenge_min_aparicoes: number
+  mind_challenge_janela_dias: number
+  mind_suspender_por_dias: number
 }>
+
+// ─── Mind — Observação Estruturada ────────────────────────────────────────
+
+export type MindTipo = 'rotina' | 'revelacao'
+export type MindHipoteseStatus = 'pending' | 'validated' | 'refuted' | 'suspended'
+
+export interface MindTag {
+  id: number
+  slug: string
+  nome: string
+  descricao: string | null
+  cor: string | null
+  arquivado: boolean
+  ordem: number
+  criado_em: string
+  atualizado_em: string
+}
+
+export interface MindTagCreate {
+  slug: string
+  nome: string
+  descricao?: string | null
+  cor?: string | null
+  ordem?: number
+}
+
+export type MindTagUpdate = Partial<{
+  nome: string
+  descricao: string | null
+  cor: string | null
+  arquivado: boolean
+  ordem: number
+}>
+
+export interface MindHipotese {
+  id: number
+  record_id: number
+  texto: string
+  status: MindHipoteseStatus
+  suspended_until: string | null
+  criado_em: string
+  atualizado_em: string
+  record_data: string | null
+  tags: string[]                          // slugs
+  aparicoes_recentes: number
+}
+
+export interface MindPayload {
+  duracao_min?: number
+  intencao?: string | null
+  observacao: string
+  hipotese?: string | null
+  tipo: MindTipo
+}
+
+export interface MindSessionTag {
+  id: number
+  slug: string
+  nome: string
+  cor: string | null
+}
+
+export interface MindSession {
+  id: number
+  data: string
+  horario: string | null
+  payload: MindPayload
+  notas: string | null
+  criado_em: string
+  atualizado_em: string
+  tags: MindSessionTag[]
+  hipotese: {
+    id: number
+    texto: string
+    status: MindHipoteseStatus
+    suspended_until: string | null
+    criado_em: string
+    atualizado_em: string
+  } | null
+}
+
+export interface MindSessionCreate {
+  data?: string | null
+  horario?: string | null
+  notas?: string | null
+  payload: MindPayload
+  tag_ids: number[]
+}
+
+export type MindSessionUpdate = Partial<{
+  data: string
+  horario: string | null
+  notas: string | null
+  payload: MindPayload
+  tag_ids: number[]
+}>
+
+export interface MindPadrao {
+  tag_slug: string
+  tag_nome: string
+  tag_cor: string | null
+  count: number
+  primeira: string
+  ultima: string
+}
+
+export interface MindChallenge {
+  hipotese: MindHipotese
+  tags_relacionadas: MindPadrao[]
+}
 
 // Métricas — cidadãs de primeira classe (decisão #4 do PLAN.md de Health).
 // Catálogo retornado por GET /api/health/metrics; valores via GET
@@ -1209,3 +1333,244 @@ export interface WishlistMatchGroup {
   item: WishlistItem
   candidates: WishlistTransactionCandidate[]
 }
+
+// ─── Nested Pages (caderno virtual dentro de Projetos) ────────────────────
+// Doc: docs/nested-pages/PLAN.md
+
+/** Metadado da page — devolvido pela listagem batch (sem content_json). */
+export interface ProjectPageMeta {
+  id: string
+  project_id: string
+  parent_page_id: string | null
+  title: string
+  sort_order: number
+  created_at: string | null
+  updated_at: string | null
+}
+
+/** Page completa, com content_json (BlockNote serializado). */
+export interface ProjectPage extends ProjectPageMeta {
+  content_json: string | null
+}
+
+export interface ProjectPageDescendant {
+  id: string
+  title: string
+  depth: number
+}
+
+export interface ProjectPageDescendantsResponse {
+  count: number
+  titles: string[]
+  descendants: ProjectPageDescendant[]
+}
+
+// ─── Library ──────────────────────────────────────────────────────────────
+// Doc: docs/library/PLAN.md. Módulo de input curado (livros, filmes, podcasts,
+// artigos, cursos). Filosofia: destilação > consumo.
+
+export type LibraryItemTipo =
+  | 'livro'
+  | 'filme'
+  | 'serie'
+  | 'podcast'
+  | 'artigo'
+  | 'video'
+  | 'curso'
+  | 'palestra'
+  | 'paper'
+  | 'outro'
+
+export type LibraryItemStatus = 'queue' | 'doing' | 'done' | 'abandoned'
+
+export type LibraryLinkTargetType =
+  | 'mind_hipotese'
+  | 'quest'
+  | 'build_principle'
+  | 'build_goal'
+
+export interface LibraryTag {
+  id: number
+  slug: string
+  nome: string
+  cor: string | null
+  arquivado: boolean
+  ordem: number
+  criado_em: string
+}
+
+export interface LibraryTagCreate {
+  slug: string
+  nome: string
+  cor?: string | null
+  ordem?: number
+}
+
+export type LibraryTagUpdate = Partial<{
+  nome: string
+  cor: string | null
+  arquivado: boolean
+  ordem: number
+}>
+
+export interface LibraryItemTagRef {
+  id: number
+  slug: string
+  nome: string
+  cor: string | null
+}
+
+export interface LibraryLink {
+  id: number
+  target_type: LibraryLinkTargetType
+  target_id: string
+  nota: string | null
+  criado_em: string
+}
+
+export interface LibraryItem {
+  id: number
+  tipo: LibraryItemTipo
+  titulo: string
+  autor: string | null
+  ano: number | null
+  status: LibraryItemStatus
+  data_inicio: string | null
+  data_fim: string | null
+  tese_central: string | null
+  o_que_ficou: string | null
+  abandoned_reason: string | null
+  origem: string | null
+  revisitar_em: string | null
+  notes_json: string | null
+  sort_order: number
+  saga_id: number | null
+  saga_ordem: number
+  tags: LibraryItemTagRef[]
+  links: LibraryLink[]
+  minutos_total: number
+  criado_em: string
+  atualizado_em: string
+}
+
+/** Versão enxuta da listagem — sem notes_json nem links. */
+export interface LibraryItemListEntry {
+  id: number
+  tipo: LibraryItemTipo
+  titulo: string
+  autor: string | null
+  ano: number | null
+  status: LibraryItemStatus
+  data_inicio: string | null
+  data_fim: string | null
+  revisitar_em: string | null
+  origem: string | null
+  sort_order: number
+  saga_id: number | null
+  saga_ordem: number
+  tags: LibraryItemTagRef[]
+  minutos_total: number
+  criado_em: string
+  atualizado_em: string
+}
+
+export interface LibraryItemCreate {
+  tipo: LibraryItemTipo
+  titulo: string
+  autor?: string | null
+  ano?: number | null
+  origem?: string | null
+  tag_ids?: number[]
+  saga_id?: number | null
+}
+
+export type LibraryItemUpdate = Partial<{
+  tipo: LibraryItemTipo
+  titulo: string
+  autor: string | null
+  ano: number | null
+  status: LibraryItemStatus
+  tese_central: string | null
+  o_que_ficou: string | null
+  abandoned_reason: string | null
+  origem: string | null
+  revisitar_em: string | null
+  notes_json: string | null
+  sort_order: number
+  tag_ids: number[]
+  saga_id: number | null
+  saga_ordem: number
+}>
+
+export interface LibrarySession {
+  id: number
+  item_id: number
+  session_num: number
+  started_at: string
+  ended_at: string | null
+  elapsed_seconds: number
+}
+
+export interface LibraryLinkCreate {
+  target_type: LibraryLinkTargetType
+  target_id: string
+  nota?: string | null
+}
+
+export interface LibraryTema {
+  tag_id: number
+  tag_slug: string
+  tag_nome: string
+  tag_cor: string | null
+  count_total: number
+  count_done: number
+  count_doing: number
+}
+
+export interface LibraryPending {
+  id: number
+  titulo: string
+  tipo: LibraryItemTipo
+  revisitar_em: string
+  dias_ate: number
+}
+
+export interface LibraryBacklink {
+  link_id: number
+  item_id: number
+  item_tipo: LibraryItemTipo
+  item_titulo: string
+  item_status: LibraryItemStatus
+  item_autor: string | null
+  nota: string | null
+  criado_em: string
+}
+
+// ─── Saga ────────────────────────────────────────────────────────────────
+// Agrupamento puramente visual de items (28 dias depois → 28 semanas →
+// 28 anos). Item pertence a 0 ou 1 saga, saga_ordem governa posição.
+
+export interface LibrarySaga {
+  id: number
+  nome: string
+  descricao: string | null
+  cor: string | null
+  ordem: number
+  items_count: number
+  criado_em: string
+  atualizado_em: string
+}
+
+export interface LibrarySagaCreate {
+  nome: string
+  descricao?: string | null
+  cor?: string | null
+  ordem?: number
+}
+
+export type LibrarySagaUpdate = Partial<{
+  nome: string
+  descricao: string | null
+  cor: string | null
+  ordem: number
+}>

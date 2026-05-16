@@ -1,4 +1,4 @@
-# Instalação manual do Hub Quest
+# Instalação manual do MAINFRAME
 
 Se você não puder ou não quiser usar o `setup.bat` (ex: outro sistema operacional, ou prefere visibilidade do que está sendo instalado), siga os passos abaixo.
 

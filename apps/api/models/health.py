@@ -142,9 +142,82 @@ class RecordUpdate(BaseModel):
 class SettingsOut(BaseModel):
     hora_lembrete_sono: str             # HH:MM, quando lembrete de sono dispara
     dashboard_card_visivel: bool
+    # Mind — adversarial challenge config
+    mind_challenge_ativo: bool = True
+    mind_challenge_min_aparicoes: int = 5
+    mind_challenge_janela_dias: int = 14
+    mind_suspender_por_dias: int = 14
     atualizado_em: str
 
 
 class SettingsUpdate(BaseModel):
     hora_lembrete_sono: Optional[str] = Field(None, pattern=r"^\d{2}:\d{2}$")
     dashboard_card_visivel: Optional[bool] = None
+    mind_challenge_ativo: Optional[bool] = None
+    mind_challenge_min_aparicoes: Optional[int] = Field(None, ge=2, le=50)
+    mind_challenge_janela_dias: Optional[int] = Field(None, ge=7, le=90)
+    mind_suspender_por_dias: Optional[int] = Field(None, ge=1, le=90)
+
+
+# ─── Mind — Observação Estruturada ────────────────────────────────────────
+
+class MindTagOut(BaseModel):
+    id: int
+    slug: str
+    nome: str
+    descricao: Optional[str] = None
+    cor: Optional[str] = None
+    arquivado: bool = False
+    ordem: int = 0
+    criado_em: str
+    atualizado_em: str
+
+
+class MindTagCreate(BaseModel):
+    slug: str = Field(..., min_length=1, max_length=50, pattern=r"^[a-z0-9_]+$")
+    nome: str = Field(..., min_length=1, max_length=80)
+    descricao: Optional[str] = Field(None, max_length=200)
+    cor: Optional[str] = Field(None, pattern=r"^#[0-9a-fA-F]{6}$")
+    ordem: int = 0
+
+
+class MindTagUpdate(BaseModel):
+    nome: Optional[str] = Field(None, min_length=1, max_length=80)
+    descricao: Optional[str] = Field(None, max_length=200)
+    cor: Optional[str] = Field(None, pattern=r"^#[0-9a-fA-F]{6}$")
+    arquivado: Optional[bool] = None
+    ordem: Optional[int] = None
+
+
+class MindHipoteseOut(BaseModel):
+    id: int
+    record_id: int
+    texto: str
+    status: str                                 # pending|validated|refuted|suspended
+    suspended_until: Optional[str] = None
+    criado_em: str
+    atualizado_em: str
+    # Derivados (calculados no router):
+    record_data: Optional[str] = None           # data da session que originou
+    tags: list[str] = []                        # slugs das tags da session
+    aparicoes_recentes: int = 0                 # qtas sessions com tags afins na janela
+
+
+class MindHipoteseUpdate(BaseModel):
+    status: str = Field(..., pattern=r"^(validated|refuted|suspended|pending)$")
+
+
+class MindPadraoOut(BaseModel):
+    """Padrão recorrente — uma tag que apareceu múltiplas vezes na janela."""
+    tag_slug: str
+    tag_nome: str
+    tag_cor: Optional[str] = None
+    count: int
+    primeira: str                               # data primeira aparição na janela
+    ultima: str                                 # data última aparição
+
+
+class MindChallengeOut(BaseModel):
+    """Hipótese pendente que merece ser confrontada (ativa challenge UI)."""
+    hipotese: MindHipoteseOut
+    tags_relacionadas: list[MindPadraoOut]

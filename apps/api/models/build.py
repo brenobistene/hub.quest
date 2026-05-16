@@ -128,6 +128,9 @@ class GoalOut(BaseModel):
     atualizada_em: str
     concluida_em: Optional[str] = None
     abandonada_em: Optional[str] = None
+    # Notes long-form (BlockNote JSON serializado). Diferente de `descricao`
+    # — descricao é hint curto (1-2 frases), notes é caderno completo.
+    notes: Optional[str] = None
     areas: list[GoalAreaLink]                         # vem populado no GET
     # v2.1: progresso resolvido (vem auto de Health se metric_slug setado)
     progress_resolved: Optional[GoalProgressResolved] = None
@@ -166,6 +169,8 @@ class GoalUpdate(BaseModel):
     criterion_metric_item_id: Optional[int] = None
     is_foundational: Optional[bool] = None
     requires_threshold_pct: Optional[int] = Field(None, ge=0, le=100)
+    # Notes long-form (BlockNote JSON). Aceita "" / null pra limpar.
+    notes: Optional[str] = None
 
 
 class GoalAreasUpdate(BaseModel):

@@ -60,6 +60,11 @@ def time_by_area(
             "WHERE DATE(started_at) >= ? AND DATE(started_at) <= ?",
             (from_, to_),
         ).fetchall()
+        library_rows = conn.execute(
+            "SELECT started_at, ended_at FROM library_session "
+            "WHERE DATE(started_at) >= ? AND DATE(started_at) <= ?",
+            (from_, to_),
+        ).fetchall()
         areas = conn.execute("SELECT slug, name, color FROM areas").fetchall()
 
     area_meta = {a["slug"]: {"name": a["name"], "color": a["color"]} for a in areas}
@@ -69,6 +74,7 @@ def time_by_area(
         by_bucket[key] = by_bucket.get(key, 0) + _minutes_between(r["started_at"], r["ended_at"])
     task_min = sum(_minutes_between(r["started_at"], r["ended_at"]) for r in task_rows)
     routine_min = sum(_minutes_between(r["started_at"], r["ended_at"]) for r in routine_rows)
+    library_min = sum(_minutes_between(r["started_at"], r["ended_at"]) for r in library_rows)
 
     items = []
     for slug, minutes in by_bucket.items():
@@ -84,6 +90,8 @@ def time_by_area(
         items.append({"kind": "task", "slug": "tasks", "label": "Tarefas", "color": None, "minutes": task_min})
     if routine_min > 0:
         items.append({"kind": "routine", "slug": "routines", "label": "Rotinas", "color": None, "minutes": routine_min})
+    if library_min > 0:
+        items.append({"kind": "library", "slug": "library", "label": "Library", "color": "#7fb8a8", "minutes": library_min})
 
     items.sort(key=lambda x: -x["minutes"])
     total = sum(x["minutes"] for x in items)
@@ -112,6 +120,7 @@ def time_weekly(weeks: int = Query(8, ge=1, le=52)):
             "quest": 0,
             "task": 0,
             "routine": 0,
+            "library": 0,
             "total_minutes": 0,
         })
 
@@ -119,7 +128,12 @@ def time_weekly(weeks: int = Query(8, ge=1, le=52)):
     end_iso = buckets[-1]["week_end"]
 
     with get_conn() as conn:
-        for table, key in [("quest_sessions", "quest"), ("task_sessions", "task"), ("routine_sessions", "routine")]:
+        for table, key in [
+            ("quest_sessions", "quest"),
+            ("task_sessions", "task"),
+            ("routine_sessions", "routine"),
+            ("library_session", "library"),
+        ]:
             rows = conn.execute(
                 f"SELECT started_at, ended_at FROM {table} "
                 "WHERE DATE(started_at) >= ? AND DATE(started_at) <= ?",

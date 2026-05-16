@@ -600,6 +600,94 @@ def _h_escala_7d(conn, ds, ii, sl): return _escala_media_window(conn, ds, ii, sl
 def _h_escala_30d(conn, ds, ii, sl): return _escala_media_window(conn, ds, ii, sl, 30)
 
 
+# ─── Handlers — Mind (template observacao_estruturada) ──────────────────
+
+def _mind_tempo_total_30d(conn, domain_slug: str, _: Optional[int], slug: str) -> dict:
+    row = conn.execute(
+        "SELECT SUM(CAST(json_extract(payload, '$.duracao_min') AS INTEGER)) AS total, "
+        "       MAX(atualizado_em) AS last_at "
+        "FROM health_record WHERE domain_slug = ? AND data >= ?",
+        (domain_slug, _days_ago_iso(29)),
+    ).fetchone()
+    if not row or row["total"] is None:
+        return _empty(slug, "int", "min")
+    return _ok(slug, "int", "min", int(row["total"]), row["last_at"])
+
+
+def _mind_sessoes_30d(conn, domain_slug: str, _: Optional[int], slug: str) -> dict:
+    row = conn.execute(
+        "SELECT COUNT(*) AS n, MAX(atualizado_em) AS last_at "
+        "FROM health_record WHERE domain_slug = ? AND data >= ?",
+        (domain_slug, _days_ago_iso(29)),
+    ).fetchone()
+    if not row or not row["n"]:
+        return _empty(slug, "int", None)
+    return _ok(slug, "int", None, int(row["n"]), row["last_at"])
+
+
+def _mind_dias_consecutivos(conn, domain_slug: str, _: Optional[int], slug: str) -> dict:
+    """Streak: dias consecutivos com pelo menos 1 session, começando de hoje
+    pra trás. Sessions de hoje OU ontem dão início; gap >1d quebra."""
+    rows = conn.execute(
+        "SELECT DISTINCT data FROM health_record WHERE domain_slug = ? "
+        "ORDER BY data DESC LIMIT 365",
+        (domain_slug,),
+    ).fetchall()
+    if not rows:
+        return _empty(slug, "int", "dias")
+    today = _today()
+    streak = 0
+    # Aceita início no hoje OU ontem (gracefulness do "ainda não meditei hoje")
+    expected = today
+    started = False
+    for r in rows:
+        try:
+            d = date.fromisoformat(r["data"])
+        except (ValueError, TypeError):
+            continue
+        if not started:
+            if d == today or d == today - timedelta(days=1):
+                started = True
+                expected = d
+            else:
+                break
+        if d == expected:
+            streak += 1
+            expected = expected - timedelta(days=1)
+        elif d < expected:
+            break
+    return _ok(slug, "int", "dias", streak,
+               conn.execute(
+                   "SELECT MAX(atualizado_em) AS m FROM health_record WHERE domain_slug = ?",
+                   (domain_slug,),
+               ).fetchone()["m"])
+
+
+def _mind_hipoteses_pendentes(conn, _domain_slug: str, _: Optional[int], slug: str) -> dict:
+    row = conn.execute(
+        "SELECT COUNT(*) AS n, MAX(atualizado_em) AS last_at "
+        "FROM health_mind_hipotese WHERE status = 'pending'"
+    ).fetchone()
+    if row is None:
+        return _empty(slug, "int", None)
+    return _ok(slug, "int", None, int(row["n"] or 0), row["last_at"])
+
+
+def _mind_tag_top_30d(conn, _domain_slug: str, _: Optional[int], slug: str) -> dict:
+    row = conn.execute(
+        "SELECT t.nome, COUNT(*) AS n, MAX(r.atualizado_em) AS last_at "
+        "FROM health_mind_record_tag rt "
+        "JOIN health_mind_tag t ON t.id = rt.tag_id "
+        "JOIN health_record r ON r.id = rt.record_id "
+        "WHERE r.data >= ? "
+        "GROUP BY t.id ORDER BY n DESC LIMIT 1",
+        (_days_ago_iso(29),),
+    ).fetchone()
+    if not row or not row["nome"]:
+        return _empty(slug, "string", None)
+    return _ok(slug, "string", None, f"{row['nome']} ({row['n']}x)", row["last_at"])
+
+
 STATS_BY_TEMPLATE: dict[str, list[StatDef]] = {
     "janela_qualidade": [
         StatDef("duracao_media_7d", "duração média 7d", "float", "h", False, _h_sono_7d),
@@ -635,6 +723,13 @@ STATS_BY_TEMPLATE: dict[str, list[StatDef]] = {
     "evento_escala": [
         StatDef("media_7d", "média 7d", "float", "1-5", False, _h_escala_7d),
         StatDef("media_30d", "média 30d", "float", "1-5", False, _h_escala_30d),
+    ],
+    "observacao_estruturada": [
+        StatDef("tempo_total_30d", "tempo total 30d", "int", "min", False, _mind_tempo_total_30d),
+        StatDef("sessoes_30d", "sessões 30d", "int", None, False, _mind_sessoes_30d),
+        StatDef("dias_consecutivos", "dias consecutivos com sessão", "int", "dias", False, _mind_dias_consecutivos),
+        StatDef("hipoteses_pendentes", "hipóteses pendentes", "int", None, False, _mind_hipoteses_pendentes),
+        StatDef("tag_top_30d", "tag mais frequente 30d", "string", None, False, _mind_tag_top_30d),
     ],
 }
 

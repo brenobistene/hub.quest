@@ -73,9 +73,9 @@ export function CommandPalette({
       { id: 'page:tarefas', type: 'page', title: 'Tarefas', subtitle: 'Caixa de tarefas', navigate: () => navigate('/tarefas') },
       { id: 'page:rotinas', type: 'page', title: 'Rotinas', subtitle: 'Hábitos', navigate: () => navigate('/rotinas') },
       { id: 'page:micro-dump', type: 'page', title: 'Dump', subtitle: 'Captura rápida', navigate: () => navigate('/micro-dump') },
-      { id: 'page:hub-finance', type: 'page', title: 'Hub Finance', subtitle: 'Finanças', navigate: () => navigate('/hub-finance') },
+      { id: 'page:hub-finance', type: 'page', title: 'Finance', subtitle: 'Finanças', navigate: () => navigate('/hub-finance') },
       { id: 'page:wishlist', type: 'page', title: 'Wishlist', subtitle: 'Lista de desejos', navigate: () => navigate('/hub-finance/wishlist') },
-      { id: 'page:health', type: 'page', title: 'Hub Health', subtitle: 'Saúde', navigate: () => navigate('/health') },
+      { id: 'page:health', type: 'page', title: 'Health', subtitle: 'Saúde', navigate: () => navigate('/health') },
       { id: 'page:build', type: 'page', title: '/Build', subtitle: 'Estratégia', navigate: () => navigate('/build') },
       // Ações — atalhos pra criar. Sufixo `+` ajuda o usuário a achar.
       { id: 'action:new-wishlist', type: 'action', title: '+ Item wishlist', subtitle: 'Adicionar à lista de desejos', navigate: () => navigate('/hub-finance/wishlist?new=1') },

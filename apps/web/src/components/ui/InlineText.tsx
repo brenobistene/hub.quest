@@ -3,24 +3,54 @@ import type { CSSProperties } from 'react'
 
 /**
  * Notion-style inline editing: click to edit, Enter to commit, Escape to
- * cancel, blur to commit. Whitespace-only input is ignored. Empty value
- * shows a subtle `—` placeholder.
+ * cancel, blur to commit. Whitespace-only input is ignored by default.
+ * Empty value shows a subtle `—` placeholder.
+ *
+ * Props:
+ *  - allowEmpty: aceita string vazia no commit. Útil quando consumidor
+ *    quer "limpar título" → backend normaliza pra default (ex: page title
+ *    com vazio → "Sem título"). Sem isso, draft vazio é descartado e
+ *    o valor original volta.
+ *  - autoEdit: inicia o componente em modo edit, com cursor já no input
+ *    e texto selecionado. Usado em "criar page" → abre direto pra digitar
+ *    o título.
  */
-export function InlineText({ value, onSave, style }: {
+export function InlineText({ value, onSave, style, allowEmpty, autoEdit, placeholder }: {
   value: string
   onSave: (v: string) => void
   style?: CSSProperties
+  allowEmpty?: boolean
+  autoEdit?: boolean
+  /** Placeholder usado quando value vazio (sobrescreve o "—" default). */
+  placeholder?: string
 }) {
-  const [editing, setEditing] = useState(false)
+  const [editing, setEditing] = useState(autoEdit ?? false)
   const [draft, setDraft] = useState(value)
   const ref = useRef<HTMLInputElement>(null)
 
-  useEffect(() => { if (editing) ref.current?.focus() }, [editing])
+  useEffect(() => {
+    if (editing) {
+      ref.current?.focus()
+      ref.current?.select()
+    }
+  }, [editing])
   useEffect(() => { setDraft(value) }, [value])
+
+  // autoEdit é "fire once" — quando consumidor flipa pra true, abre em edit.
+  // Quando flipa de volta, mantém o que tava (não fecha forçado).
+  useEffect(() => {
+    if (autoEdit) setEditing(true)
+  }, [autoEdit])
 
   function commit() {
     setEditing(false)
-    if (draft.trim() && draft !== value) onSave(draft.trim())
+    const trimmed = draft.trim()
+    if (allowEmpty) {
+      if (draft !== value) onSave(trimmed)
+      else setDraft(value)
+      return
+    }
+    if (trimmed && draft !== value) onSave(trimmed)
     else setDraft(value)
   }
 
@@ -51,7 +81,11 @@ export function InlineText({ value, onSave, style }: {
       style={{ cursor: 'text', ...style }}
       title="clicar pra editar"
     >
-      {value || <span style={{ color: 'var(--color-text-muted)', fontStyle: 'italic', opacity: 0.6 }}>—</span>}
+      {value || (
+        <span style={{ color: 'var(--color-text-muted)', fontStyle: 'italic', opacity: 0.6 }}>
+          {placeholder ?? '—'}
+        </span>
+      )}
     </span>
   )
 }

@@ -9,9 +9,12 @@ registro, premia constância ou pune ausência. Ver docs/hub-health/PLAN.md.
 from __future__ import annotations
 
 import json
+import sqlite3
+from datetime import date, timedelta
 from typing import Any, Optional
 
 from fastapi import APIRouter, HTTPException, Query
+from pydantic import BaseModel
 
 from db import get_conn
 from models.health import (
@@ -21,6 +24,13 @@ from models.health import (
     ItemCreate,
     ItemOut,
     ItemUpdate,
+    MindChallengeOut,
+    MindHipoteseOut,
+    MindHipoteseUpdate,
+    MindPadraoOut,
+    MindTagCreate,
+    MindTagOut,
+    MindTagUpdate,
     RecordCreate,
     RecordOut,
     RecordUpdate,
@@ -46,6 +56,7 @@ VALID_TEMPLATES = {
     "consumo_vontade",
     "metrica_simples",
     "evento_escala",
+    "observacao_estruturada",                          # Mind
 }
 
 
@@ -250,6 +261,30 @@ def _validate_payload(template: str, payload: dict[str, Any], item_id: Optional[
         if e is None:
             raise HTTPException(422, detail="escala obrigatória (int 1-5)")
         _validate_scale_1_5(e, "escala")
+
+    elif template == "observacao_estruturada":
+        # Payload: { duracao_min: int, observacao: str (obrigatório),
+        #            intencao?: str, hipotese?: str, tipo: 'rotina'|'revelacao' }
+        # Tags vão por endpoint separado (junction table).
+        dur = payload.get("duracao_min")
+        if dur is not None:
+            if not _is_int_like(dur) or _coerce_int(dur) < 1 or _coerce_int(dur) > 600:
+                raise HTTPException(422, detail="duracao_min deve ser int 1-600")
+        obs = payload.get("observacao")
+        if not isinstance(obs, str) or not obs.strip():
+            raise HTTPException(422, detail="observacao obrigatória (não-vazia)")
+        if len(obs) > 5000:
+            raise HTTPException(422, detail="observacao muito longa (máx 5000)")
+        for field in ("intencao", "hipotese"):
+            v = payload.get(field)
+            if v is not None:
+                if not isinstance(v, str):
+                    raise HTTPException(422, detail=f"{field} deve ser string")
+                if len(v) > 2000:
+                    raise HTTPException(422, detail=f"{field} muito longa (máx 2000)")
+        tipo = payload.get("tipo", "rotina")
+        if tipo not in ("rotina", "revelacao"):
+            raise HTTPException(422, detail="tipo deve ser 'rotina' ou 'revelacao'")
 
     else:
         raise HTTPException(422, detail=f"Template desconhecido: {template!r}")
@@ -742,8 +777,19 @@ def delete_record(record_id: int):
 # ─── Settings ─────────────────────────────────────────────────────────────
 
 SETTINGS_COLUMNS = (
-    "hora_lembrete_sono, dashboard_card_visivel, atualizado_em"
+    "hora_lembrete_sono, dashboard_card_visivel, "
+    "mind_challenge_ativo, mind_challenge_min_aparicoes, "
+    "mind_challenge_janela_dias, mind_suspender_por_dias, "
+    "atualizado_em"
 )
+
+
+def _hydrate_settings(row) -> dict:
+    return {
+        **dict(row),
+        "dashboard_card_visivel": bool(row["dashboard_card_visivel"]),
+        "mind_challenge_ativo": bool(row["mind_challenge_ativo"]),
+    }
 
 
 @router.get("/settings", response_model=SettingsOut)
@@ -758,10 +804,7 @@ def get_settings():
             row = conn.execute(
                 f"SELECT {SETTINGS_COLUMNS} FROM health_settings WHERE id = 1"
             ).fetchone()
-    return {
-        **dict(row),
-        "dashboard_card_visivel": bool(row["dashboard_card_visivel"]),
-    }
+    return _hydrate_settings(row)
 
 
 @router.patch("/settings", response_model=SettingsOut)
@@ -783,10 +826,7 @@ def update_settings(body: SettingsUpdate):
         row = conn.execute(
             f"SELECT {SETTINGS_COLUMNS} FROM health_settings WHERE id = 1"
         ).fetchone()
-    return {
-        **dict(row),
-        "dashboard_card_visivel": bool(row["dashboard_card_visivel"]),
-    }
+    return _hydrate_settings(row)
 
 
 # ─── Métricas (lazy on-read; ver services/health_metrics.py) ──────────────
@@ -976,3 +1016,496 @@ def migrate_refeicao_2modos(domain_slug: Optional[str] = None):
                 summary["records_deleted"] += len(ids_to_delete)
         conn.commit()
     return summary
+
+
+# ─── Mind — Observação Estruturada ────────────────────────────────────────
+
+MIND_TAG_COLUMNS = (
+    "id, slug, nome, descricao, cor, arquivado, ordem, criado_em, atualizado_em"
+)
+
+
+def _hydrate_mind_tag(row) -> dict:
+    return {**dict(row), "arquivado": bool(row["arquivado"])}
+
+
+@router.get("/mind/tags", response_model=list[MindTagOut])
+def list_mind_tags(include_archived: bool = False):
+    """Lista tags do catálogo Mind. Por default só ativas; toggle inclui
+    arquivadas pra UI de gerenciamento."""
+    with get_conn() as conn:
+        sql = f"SELECT {MIND_TAG_COLUMNS} FROM health_mind_tag"
+        if not include_archived:
+            sql += " WHERE arquivado = 0"
+        sql += " ORDER BY ordem ASC, nome ASC"
+        rows = conn.execute(sql).fetchall()
+    return [_hydrate_mind_tag(r) for r in rows]
+
+
+@router.post("/mind/tags", response_model=MindTagOut, status_code=201)
+def create_mind_tag(body: MindTagCreate):
+    """Cria uma tag customizada. Slug deve ser único + ascii-lowercase."""
+    with get_conn() as conn:
+        try:
+            conn.execute(
+                "INSERT INTO health_mind_tag(slug, nome, descricao, cor, ordem) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (body.slug, body.nome, body.descricao, body.cor, body.ordem),
+            )
+        except sqlite3.IntegrityError:
+            raise HTTPException(409, detail=f"Tag '{body.slug}' já existe")
+        conn.commit()
+        row = conn.execute(
+            f"SELECT {MIND_TAG_COLUMNS} FROM health_mind_tag WHERE slug = ?",
+            (body.slug,),
+        ).fetchone()
+    return _hydrate_mind_tag(row)
+
+
+@router.patch("/mind/tags/{tag_id}", response_model=MindTagOut)
+def update_mind_tag(tag_id: int, body: MindTagUpdate):
+    fields: dict = {}
+    for name in body.model_fields_set:
+        val = getattr(body, name)
+        fields[name] = int(val) if isinstance(val, bool) else val
+    if not fields:
+        raise HTTPException(400, detail="Nada a atualizar")
+    fields["atualizado_em"] = utcnow_iso_z()
+    set_clause = ", ".join(f"{k} = ?" for k in fields)
+    with get_conn() as conn:
+        cur = conn.execute(
+            f"UPDATE health_mind_tag SET {set_clause} WHERE id = ?",
+            [*fields.values(), tag_id],
+        )
+        if cur.rowcount == 0:
+            raise HTTPException(404, detail="Tag não encontrada")
+        conn.commit()
+        row = conn.execute(
+            f"SELECT {MIND_TAG_COLUMNS} FROM health_mind_tag WHERE id = ?",
+            (tag_id,),
+        ).fetchone()
+    return _hydrate_mind_tag(row)
+
+
+@router.delete("/mind/tags/{tag_id}", status_code=204)
+def delete_mind_tag(tag_id: int):
+    """Deleta tag definitiva. Junction CASCADE remove referências. Prefira
+    arquivar (PATCH) pra preservar histórico — só delete se foi erro de cadastro."""
+    with get_conn() as conn:
+        cur = conn.execute("DELETE FROM health_mind_tag WHERE id = ?", (tag_id,))
+        if cur.rowcount == 0:
+            raise HTTPException(404, detail="Tag não encontrada")
+        conn.commit()
+
+
+# ─── Mind Sessions (registros + tags + hipóteses atomicamente) ────────────
+
+class MindSessionCreate(BaseModel):
+    data: Optional[str] = None                  # YYYY-MM-DD; default today
+    horario: Optional[str] = None
+    notas: Optional[str] = None
+    payload: dict[str, Any]                     # observacao*, intencao?, hipotese?, duracao_min?, tipo
+    tag_ids: list[int] = []
+
+
+class MindSessionUpdate(BaseModel):
+    data: Optional[str] = None
+    horario: Optional[str] = None
+    notas: Optional[str] = None
+    payload: Optional[dict[str, Any]] = None
+    tag_ids: Optional[list[int]] = None
+
+
+@router.post("/mind/sessions", response_model=dict, status_code=201)
+def create_mind_session(body: MindSessionCreate):
+    """Cria session de Mind atomicamente: record + tags (junction) + hipótese
+    (entidade própria, status='pending'). Mais robusto que reusar o endpoint
+    genérico de record + 2 chamadas extras do client."""
+    payload = body.payload or {}
+    _validate_payload("observacao_estruturada", payload, None)
+    data_iso = body.data or date.today().isoformat()
+    horario = body.horario
+    notas = body.notas
+    with get_conn() as conn:
+        # Valida tag_ids
+        if body.tag_ids:
+            placeholders = ",".join("?" for _ in body.tag_ids)
+            existing = conn.execute(
+                f"SELECT id FROM health_mind_tag WHERE id IN ({placeholders})",
+                body.tag_ids,
+            ).fetchall()
+            existing_ids = {r["id"] for r in existing}
+            missing = [i for i in body.tag_ids if i not in existing_ids]
+            if missing:
+                raise HTTPException(422, detail=f"Tags inexistentes: {missing}")
+        # Insere record
+        cur = conn.execute(
+            "INSERT INTO health_record"
+            "(domain_slug, item_id, data, horario, payload, notas) "
+            "VALUES ('mind', NULL, ?, ?, ?, ?)",
+            (data_iso, horario, json.dumps(payload), notas),
+        )
+        record_id = cur.lastrowid
+        # Tags
+        for tag_id in body.tag_ids:
+            conn.execute(
+                "INSERT OR IGNORE INTO health_mind_record_tag(record_id, tag_id) "
+                "VALUES (?, ?)",
+                (record_id, tag_id),
+            )
+        # Hipótese
+        hipotese_texto = payload.get("hipotese")
+        if isinstance(hipotese_texto, str) and hipotese_texto.strip():
+            conn.execute(
+                "INSERT INTO health_mind_hipotese(record_id, texto, status) "
+                "VALUES (?, ?, 'pending')",
+                (record_id, hipotese_texto.strip()),
+            )
+        conn.commit()
+        return _fetch_mind_session(conn, record_id)
+
+
+@router.patch("/mind/sessions/{record_id}", response_model=dict)
+def update_mind_session(record_id: int, body: MindSessionUpdate):
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT id, payload FROM health_record WHERE id = ? AND domain_slug = 'mind'",
+            (record_id,),
+        ).fetchone()
+        if not row:
+            raise HTTPException(404, detail="Session de Mind não encontrada")
+        # Atualiza campos do record
+        record_fields: dict = {}
+        if body.data is not None:
+            record_fields["data"] = body.data
+        if body.horario is not None:
+            record_fields["horario"] = body.horario
+        if body.notas is not None:
+            record_fields["notas"] = body.notas
+        if body.payload is not None:
+            _validate_payload("observacao_estruturada", body.payload, None)
+            record_fields["payload"] = json.dumps(body.payload)
+        if record_fields:
+            record_fields["atualizado_em"] = utcnow_iso_z()
+            set_clause = ", ".join(f"{k} = ?" for k in record_fields)
+            conn.execute(
+                f"UPDATE health_record SET {set_clause} WHERE id = ?",
+                [*record_fields.values(), record_id],
+            )
+        # Atualiza tags se fornecido
+        if body.tag_ids is not None:
+            conn.execute(
+                "DELETE FROM health_mind_record_tag WHERE record_id = ?",
+                (record_id,),
+            )
+            for tag_id in body.tag_ids:
+                conn.execute(
+                    "INSERT OR IGNORE INTO health_mind_record_tag(record_id, tag_id) "
+                    "VALUES (?, ?)",
+                    (record_id, tag_id),
+                )
+        # Sincroniza hipótese se payload mudou
+        if body.payload is not None:
+            hipotese_texto = body.payload.get("hipotese")
+            existing_hip = conn.execute(
+                "SELECT id, texto FROM health_mind_hipotese WHERE record_id = ?",
+                (record_id,),
+            ).fetchone()
+            if isinstance(hipotese_texto, str) and hipotese_texto.strip():
+                if existing_hip:
+                    if existing_hip["texto"] != hipotese_texto.strip():
+                        conn.execute(
+                            "UPDATE health_mind_hipotese SET texto = ?, atualizado_em = ? "
+                            "WHERE id = ?",
+                            (hipotese_texto.strip(), utcnow_iso_z(), existing_hip["id"]),
+                        )
+                else:
+                    conn.execute(
+                        "INSERT INTO health_mind_hipotese(record_id, texto, status) "
+                        "VALUES (?, ?, 'pending')",
+                        (record_id, hipotese_texto.strip()),
+                    )
+            else:
+                # Hipótese removida: deleta entrada se existir
+                if existing_hip:
+                    conn.execute(
+                        "DELETE FROM health_mind_hipotese WHERE id = ?",
+                        (existing_hip["id"],),
+                    )
+        conn.commit()
+        return _fetch_mind_session(conn, record_id)
+
+
+@router.delete("/mind/sessions/{record_id}", status_code=204)
+def delete_mind_session(record_id: int):
+    with get_conn() as conn:
+        cur = conn.execute(
+            "DELETE FROM health_record WHERE id = ? AND domain_slug = 'mind'",
+            (record_id,),
+        )
+        if cur.rowcount == 0:
+            raise HTTPException(404, detail="Session de Mind não encontrada")
+        conn.commit()
+
+
+@router.get("/mind/sessions", response_model=list[dict])
+def list_mind_sessions(
+    from_: Optional[str] = Query(None, alias="from"),
+    to: Optional[str] = Query(None),
+    tag_slug: Optional[str] = None,
+    limit: int = 100,
+):
+    """Lista sessions de Mind com tags + hipótese inline. Filtros por
+    intervalo de data + tag opcionais."""
+    with get_conn() as conn:
+        sql = "SELECT id FROM health_record WHERE domain_slug = 'mind'"
+        params: list[Any] = []
+        if from_:
+            sql += " AND data >= ?"
+            params.append(from_)
+        if to:
+            sql += " AND data <= ?"
+            params.append(to)
+        if tag_slug:
+            sql += (
+                " AND id IN (SELECT rt.record_id FROM health_mind_record_tag rt "
+                "JOIN health_mind_tag t ON t.id = rt.tag_id WHERE t.slug = ?)"
+            )
+            params.append(tag_slug)
+        sql += " ORDER BY data DESC, COALESCE(horario, '99:99') DESC, id DESC LIMIT ?"
+        params.append(limit)
+        ids = [r["id"] for r in conn.execute(sql, params).fetchall()]
+        return [_fetch_mind_session(conn, rid) for rid in ids]
+
+
+def _fetch_mind_session(conn, record_id: int) -> dict:
+    """Hidrata 1 mind session com record + tags slugs + hipotese."""
+    rec = conn.execute(
+        f"SELECT {RECORD_COLUMNS} FROM health_record WHERE id = ?",
+        (record_id,),
+    ).fetchone()
+    if not rec:
+        raise HTTPException(404, detail="Session não encontrada")
+    tag_rows = conn.execute(
+        "SELECT t.id, t.slug, t.nome, t.cor "
+        "FROM health_mind_record_tag rt "
+        "JOIN health_mind_tag t ON t.id = rt.tag_id "
+        "WHERE rt.record_id = ? ORDER BY t.ordem ASC",
+        (record_id,),
+    ).fetchall()
+    hip_row = conn.execute(
+        "SELECT id, texto, status, suspended_until, criado_em, atualizado_em "
+        "FROM health_mind_hipotese WHERE record_id = ?",
+        (record_id,),
+    ).fetchone()
+    payload = json.loads(rec["payload"]) if rec["payload"] else {}
+    return {
+        "id": rec["id"],
+        "data": rec["data"],
+        "horario": rec["horario"],
+        "payload": payload,
+        "notas": rec["notas"],
+        "criado_em": rec["criado_em"],
+        "atualizado_em": rec["atualizado_em"],
+        "tags": [dict(t) for t in tag_rows],
+        "hipotese": dict(hip_row) if hip_row else None,
+    }
+
+
+# ─── Mind Hipóteses (status + adversarial challenge) ─────────────────────
+
+
+def _hydrate_mind_hipotese(conn, row) -> dict:
+    """Hipótese + tags da session origem + count de aparições recentes."""
+    # Tags da session origem
+    tag_rows = conn.execute(
+        "SELECT t.slug FROM health_mind_record_tag rt "
+        "JOIN health_mind_tag t ON t.id = rt.tag_id "
+        "WHERE rt.record_id = ?",
+        (row["record_id"],),
+    ).fetchall()
+    tag_slugs = [t["slug"] for t in tag_rows]
+    # Aparições recentes: count de sessions com ≥1 tag em comum nos últimos 14d
+    janela_iso = (date.today() - timedelta(days=14)).isoformat()
+    if tag_slugs:
+        placeholders = ",".join("?" for _ in tag_slugs)
+        count_row = conn.execute(
+            f"SELECT COUNT(DISTINCT rt.record_id) AS n "
+            f"FROM health_mind_record_tag rt "
+            f"JOIN health_mind_tag t ON t.id = rt.tag_id "
+            f"JOIN health_record r ON r.id = rt.record_id "
+            f"WHERE t.slug IN ({placeholders}) AND r.data >= ?",
+            (*tag_slugs, janela_iso),
+        ).fetchone()
+        aparicoes = count_row["n"] if count_row else 0
+    else:
+        aparicoes = 0
+    # Data da session origem
+    rec = conn.execute(
+        "SELECT data FROM health_record WHERE id = ?", (row["record_id"],)
+    ).fetchone()
+    return {
+        "id": row["id"],
+        "record_id": row["record_id"],
+        "texto": row["texto"],
+        "status": row["status"],
+        "suspended_until": row["suspended_until"],
+        "criado_em": row["criado_em"],
+        "atualizado_em": row["atualizado_em"],
+        "record_data": rec["data"] if rec else None,
+        "tags": tag_slugs,
+        "aparicoes_recentes": aparicoes,
+    }
+
+
+@router.get("/mind/hipoteses", response_model=list[MindHipoteseOut])
+def list_mind_hipoteses(status: Optional[str] = None):
+    """Lista hipóteses. Default: todas. Filtro `status=pending` pra UI de
+    pendências. Auto-reativa hipóteses suspendidas cujo `suspended_until` passou."""
+    with get_conn() as conn:
+        # Auto-reativa suspensas expiradas
+        conn.execute(
+            "UPDATE health_mind_hipotese SET status = 'pending', "
+            "suspended_until = NULL, atualizado_em = ? "
+            "WHERE status = 'suspended' AND suspended_until IS NOT NULL "
+            "  AND suspended_until <= ?",
+            (utcnow_iso_z(), date.today().isoformat()),
+        )
+        conn.commit()
+        sql = (
+            "SELECT id, record_id, texto, status, suspended_until, "
+            "       criado_em, atualizado_em FROM health_mind_hipotese"
+        )
+        params: list[Any] = []
+        if status:
+            sql += " WHERE status = ?"
+            params.append(status)
+        sql += " ORDER BY criado_em DESC"
+        rows = conn.execute(sql, params).fetchall()
+        return [_hydrate_mind_hipotese(conn, r) for r in rows]
+
+
+@router.patch("/mind/hipoteses/{hip_id}", response_model=MindHipoteseOut)
+def update_mind_hipotese(hip_id: int, body: MindHipoteseUpdate):
+    """Atualiza status. 'suspended' calcula `suspended_until` automaticamente
+    via setting `mind_suspender_por_dias` (default 14)."""
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT id FROM health_mind_hipotese WHERE id = ?", (hip_id,)
+        ).fetchone()
+        if not row:
+            raise HTTPException(404, detail="Hipótese não encontrada")
+        suspended_until = None
+        if body.status == "suspended":
+            settings_row = conn.execute(
+                "SELECT mind_suspender_por_dias FROM health_settings WHERE id = 1"
+            ).fetchone()
+            dias = settings_row["mind_suspender_por_dias"] if settings_row else 14
+            suspended_until = (date.today() + timedelta(days=dias)).isoformat()
+        conn.execute(
+            "UPDATE health_mind_hipotese SET status = ?, suspended_until = ?, "
+            "atualizado_em = ? WHERE id = ?",
+            (body.status, suspended_until, utcnow_iso_z(), hip_id),
+        )
+        conn.commit()
+        full = conn.execute(
+            "SELECT id, record_id, texto, status, suspended_until, "
+            "       criado_em, atualizado_em FROM health_mind_hipotese WHERE id = ?",
+            (hip_id,),
+        ).fetchone()
+        return _hydrate_mind_hipotese(conn, full)
+
+
+@router.get("/mind/challenges", response_model=list[MindChallengeOut])
+def list_mind_challenges():
+    """Lista hipóteses pendentes que disparam o adversarial challenge —
+    aquelas com tags em comum que apareceram >= min_aparicoes na janela."""
+    with get_conn() as conn:
+        settings_row = conn.execute(
+            "SELECT mind_challenge_ativo, mind_challenge_min_aparicoes, "
+            "       mind_challenge_janela_dias FROM health_settings WHERE id = 1"
+        ).fetchone()
+        if not settings_row or not settings_row["mind_challenge_ativo"]:
+            return []
+        min_aparicoes = settings_row["mind_challenge_min_aparicoes"]
+        janela_dias = settings_row["mind_challenge_janela_dias"]
+        janela_iso = (date.today() - timedelta(days=janela_dias)).isoformat()
+        # Hipóteses pending
+        hip_rows = conn.execute(
+            "SELECT id, record_id, texto, status, suspended_until, "
+            "       criado_em, atualizado_em FROM health_mind_hipotese "
+            "WHERE status = 'pending' ORDER BY criado_em DESC"
+        ).fetchall()
+        out: list[dict] = []
+        for hip in hip_rows:
+            # Tags da session origem
+            tag_rows = conn.execute(
+                "SELECT t.id, t.slug, t.nome, t.cor "
+                "FROM health_mind_record_tag rt "
+                "JOIN health_mind_tag t ON t.id = rt.tag_id "
+                "WHERE rt.record_id = ?",
+                (hip["record_id"],),
+            ).fetchall()
+            if not tag_rows:
+                continue
+            tag_ids = [t["id"] for t in tag_rows]
+            placeholders = ",".join("?" for _ in tag_ids)
+            # Padrões: contar aparições de cada tag na janela
+            padroes_rows = conn.execute(
+                f"SELECT t.slug, t.nome, t.cor, COUNT(*) AS n, "
+                f"       MIN(r.data) AS primeira, MAX(r.data) AS ultima "
+                f"FROM health_mind_record_tag rt "
+                f"JOIN health_mind_tag t ON t.id = rt.tag_id "
+                f"JOIN health_record r ON r.id = rt.record_id "
+                f"WHERE t.id IN ({placeholders}) AND r.data >= ? "
+                f"GROUP BY t.id HAVING COUNT(*) >= ? "
+                f"ORDER BY n DESC",
+                (*tag_ids, janela_iso, min_aparicoes),
+            ).fetchall()
+            if not padroes_rows:
+                continue
+            padroes = [
+                {
+                    "tag_slug": p["slug"],
+                    "tag_nome": p["nome"],
+                    "tag_cor": p["cor"],
+                    "count": p["n"],
+                    "primeira": p["primeira"],
+                    "ultima": p["ultima"],
+                }
+                for p in padroes_rows
+            ]
+            out.append({
+                "hipotese": _hydrate_mind_hipotese(conn, hip),
+                "tags_relacionadas": padroes,
+            })
+        return out
+
+
+@router.get("/mind/padroes", response_model=list[MindPadraoOut])
+def list_mind_padroes(dias: int = 30):
+    """Padrões recorrentes — agrupa tags na janela e retorna em ordem de freq."""
+    janela_iso = (date.today() - timedelta(days=dias)).isoformat()
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT t.slug, t.nome, t.cor, COUNT(*) AS n, "
+            "       MIN(r.data) AS primeira, MAX(r.data) AS ultima "
+            "FROM health_mind_record_tag rt "
+            "JOIN health_mind_tag t ON t.id = rt.tag_id "
+            "JOIN health_record r ON r.id = rt.record_id "
+            "WHERE r.data >= ? "
+            "GROUP BY t.id "
+            "ORDER BY n DESC, t.nome ASC",
+            (janela_iso,),
+        ).fetchall()
+        return [
+            {
+                "tag_slug": r["slug"],
+                "tag_nome": r["nome"],
+                "tag_cor": r["cor"],
+                "count": r["n"],
+                "primeira": r["primeira"],
+                "ultima": r["ultima"],
+            }
+            for r in rows
+        ]

@@ -3,9 +3,11 @@ import { useNavigate } from 'react-router-dom'
 import type { Area, Project } from '../types'
 import {
   createMicroTask, deleteMicroTask,
-  createTask, createRoutine,
+  createTask, createRoutine, createProject,
+  createLibraryItem,
 } from '../api'
 import { useMicroTasks, useAppInvalidator } from '../lib/app-queries'
+import type { LibraryItemTipo } from '../types'
 import { tabSync } from '../lib/tabsync'
 import { parseTimeToMinutes } from '../utils/datetime'
 import { PageShell, TechId } from '../components/ui/CyberShell'
@@ -15,12 +17,11 @@ import { alertDialog } from '../lib/dialog'
 
 /**
  * `/micro-dump` — inbox pra capturar ideias soltas sem triagem. Cada item
- * pode virar tarefa, rotina ou ideia arquivada (repassada pro root via
- * `onArchive`, que persiste em localStorage).
+ * pode virar tarefa, projeto, rotina, library item ou ideia arquivada
+ * (repassada pro root via `onArchive`, que persiste em localStorage).
  *
- * Promoção pra quest foi removida: no novo modelo toda quest precisa de
- * project_id + deliverable_id. Pra transformar uma ideia em quest, o
- * usuário captura aqui e depois cria no painel do projeto correspondente.
+ * Promoção pra quest direto do dump foi removida: toda quest precisa de
+ * project_id + deliverable_id. Promova pra projeto e edite lá dentro.
  */
 
 /** Label cyber-mono uppercase pra campos do modal. */
@@ -96,7 +97,7 @@ export function MicroDumpView({ areas, projects, onArchive }: { areas: Area[]; p
   const microTasks = microTasksQ.data ?? []
   const navigate = useNavigate()
   const [microTaskInput, setMicroTaskInput] = useState('')
-  const [modalMode, setModalMode] = useState<'tarefa' | 'quest' | 'rotina' | null>(null)
+  const [modalMode, setModalMode] = useState<'tarefa' | 'projeto' | 'rotina' | 'library' | null>(null)
   const [selectedMicroTask, setSelectedMicroTask] = useState<any | null>(null)
   const [formData, setFormData] = useState<any>({})
   // Buffer de texto dos inputs h:mm — permite digitação intermediária (ex:
@@ -365,12 +366,16 @@ export function MicroDumpView({ areas, projects, onArchive }: { areas: Area[]; p
                     onClick={() => { setSelectedMicroTask(task); setModalMode('tarefa'); setFormData({ title: task.title }); setDurationInput(''); setEstimatedInput('') }}
                   />
                   <ConvertButton
-                    label="→ QUEST"
-                    onClick={() => { setSelectedMicroTask(task); setModalMode('quest'); setFormData({ title: task.title, area_slug: areas[0]?.slug || '' }); setDurationInput(''); setEstimatedInput('') }}
+                    label="→ PROJETO"
+                    onClick={() => { setSelectedMicroTask(task); setModalMode('projeto'); setFormData({ title: task.title, area_slug: areas[0]?.slug || '' }); setDurationInput(''); setEstimatedInput('') }}
                   />
                   <ConvertButton
                     label="→ ROTINA"
                     onClick={() => { setSelectedMicroTask(task); setModalMode('rotina'); setFormData({ title: task.title }); setDurationInput(''); setEstimatedInput('') }}
+                  />
+                  <ConvertButton
+                    label="→ LIBRARY"
+                    onClick={() => { setSelectedMicroTask(task); setModalMode('library'); setFormData({ title: task.title, tipo: 'livro' as LibraryItemTipo, autor: '' }) }}
                   />
                   <ConvertButton
                     label="→ ARQUIVO"
@@ -454,7 +459,7 @@ export function MicroDumpView({ areas, projects, onArchive }: { areas: Area[]; p
                 }}
               />
               <span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
-              CONVERT.{modalMode === 'tarefa' ? 'TAREFA' : modalMode === 'quest' ? 'QUEST' : 'ROTINA'}
+              CONVERT.{modalMode === 'tarefa' ? 'TAREFA' : modalMode === 'projeto' ? 'PROJETO' : modalMode === 'library' ? 'LIBRARY' : 'ROTINA'}
             </div>
 
             <div style={{ marginBottom: 14 }}>
@@ -479,12 +484,12 @@ export function MicroDumpView({ areas, projects, onArchive }: { areas: Area[]; p
               />
             </div>
 
-            {modalMode === 'quest' && (
+            {modalMode === 'projeto' && (
               <>
                 <div style={{ marginBottom: 14 }}>
                   <label style={cyberFieldLabel}>
                     <span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
-                    ÁREA
+                    ÁREA <span style={{ color: 'var(--color-accent-light)' }}>*</span>
                   </label>
                   <select
                     value={formData.area_slug || ''}
@@ -506,29 +511,15 @@ export function MicroDumpView({ areas, projects, onArchive }: { areas: Area[]; p
                   </select>
                 </div>
 
-                <div style={{ marginBottom: 14 }}>
-                  <label style={cyberFieldLabel}>
-                    <span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
-                    PROJETO (OPCIONAL)
-                  </label>
-                  <select
-                    value={formData.parent_id || ''}
-                    onChange={e => setFormData({ ...formData, parent_id: e.target.value || undefined })}
-                    style={cyberInputFull}
-                    onFocus={e => {
-                      e.currentTarget.style.borderColor = 'var(--color-ice)'
-                      e.currentTarget.style.boxShadow = '0 0 10px rgba(143, 191, 211, 0.30)'
-                    }}
-                    onBlur={e => {
-                      e.currentTarget.style.borderColor = 'var(--color-border)'
-                      e.currentTarget.style.boxShadow = 'none'
-                    }}
-                  >
-                    <option value="">— NENHUM (QUEST INDEPENDENTE) —</option>
-                    {projects.filter(p => p.area_slug === formData.area_slug).map(p => (
-                      <option key={p.id} value={p.id}>{p.title}</option>
-                    ))}
-                  </select>
+                <div style={{
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: 9, fontWeight: 700,
+                  color: 'var(--color-text-muted)',
+                  letterSpacing: '0.18em', textTransform: 'uppercase',
+                  marginBottom: 14, lineHeight: 1.6,
+                }}>
+                  <span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
+                  PROJETO NASCE EM RASCUNHO · ENTREGÁVEIS E QUESTS VOCÊ EDITA NA PRÓXIMA TELA
                 </div>
               </>
             )}
@@ -707,6 +698,75 @@ export function MicroDumpView({ areas, projects, onArchive }: { areas: Area[]; p
               </>
             )}
 
+            {modalMode === 'library' && (
+              <>
+                <div style={{ marginBottom: 14 }}>
+                  <label style={cyberFieldLabel}>
+                    <span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
+                    TIPO
+                  </label>
+                  <select
+                    value={formData.tipo || 'livro'}
+                    onChange={e => setFormData({ ...formData, tipo: e.target.value as LibraryItemTipo })}
+                    onFocus={e => {
+                      e.currentTarget.style.borderColor = 'var(--color-ice)'
+                      e.currentTarget.style.boxShadow = '0 0 10px rgba(143, 191, 211, 0.30)'
+                    }}
+                    onBlur={e => {
+                      e.currentTarget.style.borderColor = 'var(--color-border)'
+                      e.currentTarget.style.boxShadow = 'none'
+                    }}
+                    style={cyberInputFull}
+                  >
+                    <option value="livro">LIVRO</option>
+                    <option value="filme">FILME</option>
+                    <option value="serie">SÉRIE</option>
+                    <option value="podcast">PODCAST</option>
+                    <option value="artigo">ARTIGO</option>
+                    <option value="video">VÍDEO</option>
+                    <option value="curso">CURSO</option>
+                    <option value="palestra">PALESTRA</option>
+                    <option value="paper">PAPER</option>
+                    <option value="outro">OUTRO</option>
+                  </select>
+                </div>
+
+                <div style={{ marginBottom: 14 }}>
+                  <label style={cyberFieldLabel}>
+                    <span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
+                    AUTOR / CRIADOR (OPCIONAL)
+                  </label>
+                  <input
+                    type="text"
+                    autoComplete="off"
+                    placeholder="ex: Nassim Taleb"
+                    value={formData.autor || ''}
+                    onChange={e => setFormData({ ...formData, autor: e.target.value })}
+                    onFocus={e => {
+                      e.currentTarget.style.borderColor = 'var(--color-ice)'
+                      e.currentTarget.style.boxShadow = '0 0 10px rgba(143, 191, 211, 0.30)'
+                    }}
+                    onBlur={e => {
+                      e.currentTarget.style.borderColor = 'var(--color-border)'
+                      e.currentTarget.style.boxShadow = 'none'
+                    }}
+                    style={cyberInputFull}
+                  />
+                </div>
+
+                <div style={{
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: 9, fontWeight: 700,
+                  color: 'var(--color-text-muted)',
+                  letterSpacing: '0.18em', textTransform: 'uppercase',
+                  marginBottom: 14,
+                }}>
+                  <span style={{ color: 'var(--color-ice)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
+                  VAI PRA FILA (STATUS QUEUE) · DESTILE DEPOIS NO DETAIL
+                </div>
+              </>
+            )}
+
             <div style={{ display: 'flex', gap: 10 }}>
               <button
                 onClick={async () => {
@@ -716,12 +776,26 @@ export function MicroDumpView({ areas, projects, onArchive }: { areas: Area[]; p
                       return
                     }
 
-                    if (modalMode === 'quest') {
-                      alertDialog({
-                        title: 'Criar quest',
-                        message: 'Pra criar quest: vá no projeto correspondente e use "+ nova quest" dentro de um entregável. Toda quest precisa de projeto + entregável.',
-                        variant: 'default',
+                    if (modalMode === 'projeto') {
+                      if (!formData.area_slug) {
+                        alertDialog({ title: 'Área obrigatória', message: 'Selecione a área onde o projeto vai viver.', variant: 'warning' })
+                        return
+                      }
+                      const proj = await createProject({
+                        title: formData.title,
+                        area_slug: formData.area_slug,
                       })
+                      appInv.projects(); tabSync.emit('quests')
+                      await consumeMicroTask(selectedMicroTask.id)
+                      setModalMode(null)
+                      setSelectedMicroTask(null)
+                      setFormData({})
+                      // Navega pra área do projeto e dispara evento pra abrir o
+                      // painel de detalhe direto (mesmo padrão da FreelasPage).
+                      navigate(`/areas/${formData.area_slug}`)
+                      window.dispatchEvent(
+                        new CustomEvent('hq-select-project', { detail: { projectId: proj.id } }),
+                      )
                       return
                     } else if (modalMode === 'tarefa') {
                       if ((formData.start_time && !formData.end_time) || (!formData.start_time && formData.end_time)) {
@@ -764,6 +838,17 @@ export function MicroDumpView({ areas, projects, onArchive }: { areas: Area[]; p
                       }
                       await createRoutine(routineData)
                       appInv.routines(); tabSync.emit('routines')
+                    } else if (modalMode === 'library') {
+                      // Promove microtask pra LibraryItem na fila (status=queue
+                      // default). Tipo + autor opcionais. React Query do
+                      // Library invalida via createLibraryItem direto na API
+                      // (sem useMutation aqui — capture page é fora do contexto
+                      // do Library, então invalidação não-crítica).
+                      await createLibraryItem({
+                        tipo: (formData.tipo as LibraryItemTipo) || 'outro',
+                        titulo: formData.title,
+                        autor: formData.autor?.trim() || null,
+                      })
                     }
 
                     await consumeMicroTask(selectedMicroTask.id)

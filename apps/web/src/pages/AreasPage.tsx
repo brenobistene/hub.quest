@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, Navigate, useNavigate, useParams } from 'react-router-dom'
-import { Archive, CheckCircle2, Trash2, ArchiveRestore } from 'lucide-react'
+import { Archive, CheckCircle2, Trash2, ArchiveRestore, ChevronDown, ChevronRight } from 'lucide-react'
 import type { Area, Project, Quest, Deliverable } from '../types'
 import { createArea, createProject, deleteProject, fetchDeliverables, fetchDeliverablesSummary, reportApiError } from '../api'
 import type { DateRange } from '../utils/dateRange'
@@ -800,7 +800,7 @@ function AreaDetailView({
               display: 'flex', alignItems: 'center', gap: 6,
               transition: 'all 0.15s',
             }}>
-              <span style={{ fontSize: 9 }}>{showDone ? '▼' : '▶'}</span>
+              {showDone ? <ChevronDown size={10} strokeWidth={2.2} /> : <ChevronRight size={10} strokeWidth={2.2} />}
               <span style={{ color: 'var(--color-success)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
               {doneInRange.length.toString().padStart(2, '0')} CONCLUÍDO{doneInRange.length !== 1 ? 'S' : ''}
             </button>
@@ -856,7 +856,7 @@ function AreaDetailView({
               display: 'flex', alignItems: 'center', gap: 6,
               transition: 'all 0.15s',
             }}>
-              <span style={{ fontSize: 9 }}>{showCancelled ? '▼' : '▶'}</span>
+              {showCancelled ? <ChevronDown size={10} strokeWidth={2.2} /> : <ChevronRight size={10} strokeWidth={2.2} />}
               <span style={{ color: 'var(--color-accent-primary)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
               {cancelledInRange.length.toString().padStart(2, '0')} CANCELADO{cancelledInRange.length !== 1 ? 'S' : ''}
             </button>
@@ -912,7 +912,7 @@ function AreaDetailView({
               display: 'flex', alignItems: 'center', gap: 6,
               transition: 'all 0.15s',
             }}>
-              <span style={{ fontSize: 9 }}>{showArchived ? '▼' : '▶'}</span>
+              {showArchived ? <ChevronDown size={10} strokeWidth={2.2} /> : <ChevronRight size={10} strokeWidth={2.2} />}
               <span style={{ color: 'var(--color-text-muted)', opacity: 0.85, marginRight: 4, letterSpacing: 0 }}>//</span>
               {archivedInRange.length.toString().padStart(2, '0')} ARQUIVADO{archivedInRange.length !== 1 ? 'S' : ''}
             </button>

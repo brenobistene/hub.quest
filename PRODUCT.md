@@ -14,7 +14,7 @@ Job-to-be-done: ter um painel de comando único pra orquestrar toda a vida pesso
 
 ## Product Purpose
 
-Hub Quest é o painel de controle pessoal do usuário. Substitui um stack de apps fragmentados (Notion, Trello, Todoist, planilha de gastos, app de hábitos) por um sistema único onde cada entidade tem propósito claro e não se mistura: Projeto contém Entregável contém Quest, Rotina é recorrente, Task é avulsa, Idea é backlog cru, Mind é observação cognitiva, Health é observação corporal, Finance é fluxo monetário, Library é input curado.
+MAINFRAME é o painel de controle pessoal do usuário. Substitui um stack de apps fragmentados (Notion, Trello, Todoist, planilha de gastos, app de hábitos) por um sistema único onde cada entidade tem propósito claro e não se mistura: Projeto contém Entregável contém Quest, Rotina é recorrente, Task é avulsa, Idea é backlog cru, Mind é observação cognitiva, Health é observação corporal, Finance é fluxo monetário, Library é input curado.
 
 Sucesso = o usuário acorda, abre o app, vê o que importa hoje em segundos, registra trabalho real durante o dia, e à noite sabe honestamente se avançou ou estagnou. Não há gamificação artificial, não há cobrança, não há fofura. O app é um instrumento.
 
@@ -26,17 +26,17 @@ DNA visual: REZZ (geometria limpa hipnótica, vermelho profundo sobre preto, ocu
 
 Emoção alvo: foco absoluto, sensação de comando, peso. Não ansiedade, não competição, não animação cute.
 
-A identidade é codificada na marca **EXEC** (logo: dot central + anéis quebrados + signature dot, oxblood sobre preto). Hub Quest é o nome do produto; EXEC é a identidade visual que o reveste.
+A identidade é codificada na marca **EXEC** (logo: dot central + anéis quebrados + signature dot, oxblood sobre preto). MAINFRAME é o nome do produto; EXEC é a identidade visual que o reveste.
 
 ## Anti-references
 
-Coisas que o Hub Quest explicitamente NÃO deve parecer:
+Coisas que o MAINFRAME explicitamente NÃO deve parecer:
 
 - **Emojis em UI / icons "fofos" / linguagem alegre.** Nada de "🎉 Você completou uma tarefa!". Trabalho real não precisa de festa.
 - **Gamificação (XP, levels, achievements, badges, streaks como troféu).** Streak counter existe como métrica honesta de consistência, não como ranking. Sem RPG, sem rankings, sem comparação social.
 - **SaaS dashboard clássico**: gradient hero + 4 cards iguais com ícone+heading+texto + line chart azul corporativo. A skill chama de "hero-metric template" e bane explicitamente.
 - **Notion-pastel-cheery aesthetic**: off-whites suaves, illustrations amigáveis, sidebar com emojis. Falta peso.
-- **Healthcare white+teal** ou **observability dark-blue** ou **fintech navy+gold** ou **crypto neon-on-black**: primeiros reflexos de categoria. Hub Quest não é nenhuma dessas categorias e não deve ser confundido com elas.
+- **Healthcare white+teal** ou **observability dark-blue** ou **fintech navy+gold** ou **crypto neon-on-black**: primeiros reflexos de categoria. MAINFRAME não é nenhuma dessas categorias e não deve ser confundido com elas.
 
 ## Design Principles
 

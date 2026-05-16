@@ -1,4 +1,4 @@
-"""Hub Quest API — entrypoint enxuto.
+"""MAINFRAME API · entrypoint enxuto.
 
 Responsabilidade desse arquivo: criar o app FastAPI, configurar CORS,
 registrar o startup (init DB + Google Calendar) e incluir os routers.
@@ -27,13 +27,16 @@ from routers import (
     deliverables,
     finance,
     health,
+    library,
     micro_tasks,
     profile,
+    project_pages,
     projects,
     quests,
     routines,
     status,
     tasks,
+    time_reports,
     wishlist,
 )
 from services.calendar_state import (
@@ -55,7 +58,7 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(
-    title="Hub Quest API",
+    title="MAINFRAME API",
     version=API_VERSION,
     docs_url="/swagger",
     redoc_url="/redoc",
@@ -75,6 +78,7 @@ app.add_middleware(
 app.include_router(status.router)  # healthcheck do servidor (/api/status)
 app.include_router(areas.router)
 app.include_router(projects.router)
+app.include_router(project_pages.router)  # Nested Pages (caderno virtual)
 app.include_router(deliverables.router)
 app.include_router(quests.router)
 app.include_router(routines.router)
@@ -87,6 +91,8 @@ app.include_router(finance.router)
 app.include_router(wishlist.router)  # Hub Finance · Wishlist (/api/finance/wishlist/*)
 app.include_router(build.router)
 app.include_router(health.router)  # Hub Health (/api/health/*)
+app.include_router(library.router)  # Library (/api/library/*)
+app.include_router(time_reports.router)  # Time reports (/api/time-reports/*)
 
 
 def _service_flags() -> dict:
@@ -196,7 +202,7 @@ def docs_page():
 <html lang="pt-br">
 <head>
 <meta charset="utf-8">
-<title>Hub Quest API — Docs</title>
+<title>MAINFRAME API · Docs</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
   :root {{
@@ -267,7 +273,7 @@ def docs_page():
 <div class="wrap">
   <header class="top">
     <div>
-      <h1>Hub Quest API<span class="dot">.</span></h1>
+      <h1>MAINFRAME API<span class="dot">.</span></h1>
       <div class="sub">Documentação de rotas — gerada em runtime</div>
     </div>
   </header>

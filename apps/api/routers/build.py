@@ -290,7 +290,7 @@ GOAL_COLUMNS = (
     "criterion_type, criterion_target_value, criterion_current_value, "
     "criterion_metric_slug, criterion_metric_item_id, is_foundational, "
     "requires_threshold_pct, criada_em, atualizada_em, concluida_em, "
-    "abandonada_em"
+    "abandonada_em, notes"
 )
 
 

@@ -4,7 +4,7 @@
  * Fase 1 (esta): nome, valor estimado, categoria, data-alvo, notas, links
  * múltiplos. Sem cronograma de reserva ainda (Fase 2).
  */
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { Plus, Trash2, X } from 'lucide-react'
 
 import {

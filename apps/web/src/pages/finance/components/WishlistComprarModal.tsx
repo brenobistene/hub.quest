@@ -314,7 +314,7 @@ function CandidateRow({
   const absValor = Math.abs(candidate.valor)
   const diff = absValor - valorAlvo
   const diffLabel = (() => {
-    if (Math.abs(diff) < 0.01) return '✓ exato'
+    if (Math.abs(diff) < 0.01) return '= exato'
     if (diff > 0) return `+${formatBRL(diff)}`
     return `-${formatBRL(-diff)}`
   })()

@@ -13,6 +13,9 @@ import type {
   BuildSprint, BuildSprintCreate, BuildSprintUpdate, BuildGoalDependency,
   BuildRitual, BuildRitualCadencia, BuildRitualUpdate, BuildRitualSession,
   BuildRitualSessionCreate, BuildRitualSessionUpdate, BuildRitualScheduleItem,
+  MindTag, MindTagCreate, MindTagUpdate,
+  MindSession, MindSessionCreate, MindSessionUpdate,
+  MindHipotese, MindChallenge, MindPadrao,
   BuildGuardrail, BuildGuardrailCreate, BuildGuardrailUpdate, BuildGuardrailEvaluation,
   HealthDomain, HealthDomainCreate, HealthDomainUpdate,
   HealthItem, HealthItemCreate, HealthItemUpdate,
@@ -31,6 +34,7 @@ import type {
   WishlistSummary, WishlistMonthReservas,
   WishlistTransactionCandidate, WishlistMatchGroup,
   WishlistReservaVincularBody, WishlistReservaMatchGroup,
+  ProjectPageMeta, ProjectPage, ProjectPageDescendantsResponse,
 } from './types'
 
 // URL base do backend. Default aponta pro backend local padrão; pode ser
@@ -45,8 +49,8 @@ export function reportApiError(context: string, err: unknown): void {
   console.warn(`[api] ${context} falhou:`, err)
 }
 
-export async function get<T>(path: string): Promise<T> {
-  const res = await fetch(`${BASE}${path}`)
+export async function get<T>(path: string, signal?: AbortSignal): Promise<T> {
+  const res = await fetch(`${BASE}${path}`, signal ? { signal } : undefined)
   if (!res.ok) throw new Error(`API error ${res.status}`)
   return res.json()
 }
@@ -121,6 +125,14 @@ export async function patchProject(id: string, patch: Partial<Project>): Promise
 export async function deleteProject(id: string): Promise<void> {
   const res = await fetch(`${BASE}/api/projects/${id}`, { method: 'DELETE' })
   if (!res.ok) throw new Error(`API error ${res.status}`)
+  // Limpa localStorage relacionado pra evitar lixo órfão. Hoje só temos
+  // estado de Nested Pages por projeto; futuras chaves `hq-*-{projectId}`
+  // entram aqui também. Try/catch porque storage pode estar bloqueado.
+  try {
+    localStorage.removeItem(`hq-page-state-${id}`)
+    // Build/CollapsibleSection persiste por (goalId, section) — não precisa
+    // limpar aqui (goal é entidade separada do projeto).
+  } catch {}
 }
 
 export const fetchAreas = () => get<Area[]>('/api/areas')
@@ -1540,6 +1552,74 @@ export const fetchHealthMetricValue = (slug: string, itemId?: number) => {
 export const fetchHealthPending = () =>
   get<HealthPendingItem[]>('/api/health/pending')
 
+// ─── Mind — Observação Estruturada ────────────────────────────────────────
+export const fetchMindTags = (includeArchived = false) =>
+  get<MindTag[]>(
+    `/api/health/mind/tags${includeArchived ? '?include_archived=true' : ''}`,
+  )
+
+export const createMindTag = (body: MindTagCreate) =>
+  jsonFetch<MindTag>('/api/health/mind/tags', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+
+export const updateMindTag = (id: number, patch: MindTagUpdate) =>
+  jsonFetch<MindTag>(`/api/health/mind/tags/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(patch),
+  })
+
+export const deleteMindTag = (id: number) =>
+  jsonFetch<void>(`/api/health/mind/tags/${id}`, { method: 'DELETE' })
+
+export const fetchMindSessions = (params?: {
+  from?: string
+  to?: string
+  tag_slug?: string
+  limit?: number
+}) => {
+  const qs: string[] = []
+  if (params?.from) qs.push(`from=${params.from}`)
+  if (params?.to) qs.push(`to=${params.to}`)
+  if (params?.tag_slug) qs.push(`tag_slug=${params.tag_slug}`)
+  if (params?.limit) qs.push(`limit=${params.limit}`)
+  const q = qs.length ? `?${qs.join('&')}` : ''
+  return get<MindSession[]>(`/api/health/mind/sessions${q}`)
+}
+
+export const createMindSession = (body: MindSessionCreate) =>
+  jsonFetch<MindSession>('/api/health/mind/sessions', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+
+export const updateMindSession = (id: number, patch: MindSessionUpdate) =>
+  jsonFetch<MindSession>(`/api/health/mind/sessions/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(patch),
+  })
+
+export const deleteMindSession = (id: number) =>
+  jsonFetch<void>(`/api/health/mind/sessions/${id}`, { method: 'DELETE' })
+
+export const fetchMindHipoteses = (status?: 'pending' | 'validated' | 'refuted' | 'suspended') =>
+  get<MindHipotese[]>(
+    `/api/health/mind/hipoteses${status ? `?status=${status}` : ''}`,
+  )
+
+export const updateMindHipotese = (id: number, status: MindHipotese['status']) =>
+  jsonFetch<MindHipotese>(`/api/health/mind/hipoteses/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ status }),
+  })
+
+export const fetchMindChallenges = () =>
+  get<MindChallenge[]>('/api/health/mind/challenges')
+
+export const fetchMindPadroes = (dias = 30) =>
+  get<MindPadrao[]>(`/api/health/mind/padroes?dias=${dias}`)
+
 // Admin — migração one-shot de registros legacy de alimentação pra formato agrupado
 export interface HealthMigrateRefeicaoSummary {
   domains_processed: number
@@ -1802,3 +1882,229 @@ export const fetchWishlistMatchSuggestionsReservas = (params?: {
     `/api/finance/wishlist/match-suggestions-reservas${qs ? `?${qs}` : ''}`,
   )
 }
+
+// ─── Nested Pages (caderno virtual estilo Notion dentro de Projetos) ─────
+// Doc: docs/nested-pages/PLAN.md
+//
+// API:
+//   fetchProjectPages    → lista flat (sem content) pra hidratar blocos `page`
+//   fetchPage            → page completa com content_json
+//   createPage           → cria page (default title "Sem título")
+//   updatePage           → patch parcial (title, content_json, sort, parent)
+//   deletePage           → hard delete recursivo (CASCADE no SQLite)
+//   fetchPageDescendants → preview pro modal de delete
+
+export const fetchProjectPages = (projectId: string) =>
+  get<ProjectPageMeta[]>(`/api/projects/${projectId}/pages`)
+
+export async function fetchPage(pageId: string, signal?: AbortSignal): Promise<ProjectPage> {
+  const res = await fetch(`${BASE}/api/pages/${pageId}`, { signal })
+  if (!res.ok) throw new Error(`API error ${res.status}`)
+  return res.json()
+}
+
+export async function createPage(
+  projectId: string,
+  body: { parent_page_id?: string | null; title?: string } = {},
+): Promise<ProjectPage> {
+  return jsonOrThrow<ProjectPage>(await fetch(
+    `${BASE}/api/projects/${projectId}/pages`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    },
+  ))
+}
+
+export async function updatePage(
+  pageId: string,
+  patch: {
+    title?: string
+    content_json?: string | null
+    sort_order?: number
+    parent_page_id?: string | null
+  },
+): Promise<ProjectPage> {
+  return jsonOrThrow<ProjectPage>(await fetch(`${BASE}/api/pages/${pageId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch),
+  }))
+}
+
+export async function deletePage(
+  pageId: string,
+): Promise<{ deleted_count: number; deleted_ids: string[] }> {
+  return jsonOrThrow<{ deleted_count: number; deleted_ids: string[] }>(await fetch(
+    `${BASE}/api/pages/${pageId}`,
+    { method: 'DELETE' },
+  ))
+}
+
+export async function fetchPageDescendants(
+  pageId: string,
+  signal?: AbortSignal,
+): Promise<ProjectPageDescendantsResponse> {
+  const res = await fetch(`${BASE}/api/pages/${pageId}/descendants-count`, { signal })
+  if (!res.ok) throw new Error(`API error ${res.status}`)
+  return res.json()
+}
+
+// ─── Library ───────────────────────────────────────────────────────────────
+// Endpoints documentados em docs/library/PLAN.md §4.
+
+import type {
+  LibraryItem,
+  LibraryItemCreate,
+  LibraryItemListEntry,
+  LibraryItemUpdate,
+  LibraryLink,
+  LibraryLinkCreate,
+  LibraryPending,
+  LibrarySession,
+  LibraryTag,
+  LibraryTagCreate,
+  LibraryTagUpdate,
+  LibraryTema,
+} from './types'
+
+// Tags
+export const fetchLibraryTags = (includeArchived = false) =>
+  get<LibraryTag[]>(
+    `/api/library/tags${includeArchived ? '?include_archived=true' : ''}`,
+  )
+
+export const createLibraryTag = (body: LibraryTagCreate) =>
+  jsonFetch<LibraryTag>('/api/library/tags', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+
+export const updateLibraryTag = (id: number, patch: LibraryTagUpdate) =>
+  jsonFetch<LibraryTag>(`/api/library/tags/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(patch),
+  })
+
+export const deleteLibraryTag = (id: number) =>
+  jsonFetch<void>(`/api/library/tags/${id}`, { method: 'DELETE' })
+
+// Items
+export interface LibraryItemsQuery {
+  status?: string
+  tipo?: string
+  tag_slug?: string
+  q?: string
+  limit?: number
+  offset?: number
+}
+
+export const fetchLibraryItems = (params?: LibraryItemsQuery) => {
+  const qs = new URLSearchParams()
+  if (params?.status) qs.set('status', params.status)
+  if (params?.tipo) qs.set('tipo', params.tipo)
+  if (params?.tag_slug) qs.set('tag_slug', params.tag_slug)
+  if (params?.q) qs.set('q', params.q)
+  if (params?.limit !== undefined) qs.set('limit', String(params.limit))
+  if (params?.offset !== undefined) qs.set('offset', String(params.offset))
+  const suffix = qs.toString() ? `?${qs.toString()}` : ''
+  return get<LibraryItemListEntry[]>(`/api/library/items${suffix}`)
+}
+
+export const fetchLibraryItem = (id: number) =>
+  get<LibraryItem>(`/api/library/items/${id}`)
+
+export const createLibraryItem = (body: LibraryItemCreate) =>
+  jsonFetch<LibraryItem>('/api/library/items', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+
+export const updateLibraryItem = (id: number, patch: LibraryItemUpdate) =>
+  jsonFetch<LibraryItem>(`/api/library/items/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(patch),
+  })
+
+export const deleteLibraryItem = (id: number) =>
+  jsonFetch<void>(`/api/library/items/${id}`, { method: 'DELETE' })
+
+// Sessions
+export const fetchLibrarySessions = (itemId: number) =>
+  get<LibrarySession[]>(`/api/library/items/${itemId}/sessions`)
+
+export const startLibrarySession = (itemId: number) =>
+  jsonFetch<LibrarySession>(`/api/library/items/${itemId}/sessions/start`, {
+    method: 'POST',
+  })
+
+export const pauseLibrarySession = (itemId: number) =>
+  jsonFetch<LibrarySession>(`/api/library/items/${itemId}/sessions/pause`, {
+    method: 'POST',
+  })
+
+export const resumeLibrarySession = (itemId: number) =>
+  jsonFetch<LibrarySession>(`/api/library/items/${itemId}/sessions/resume`, {
+    method: 'POST',
+  })
+
+export const stopLibrarySession = (itemId: number) =>
+  jsonFetch<LibrarySession>(`/api/library/items/${itemId}/sessions/stop`, {
+    method: 'POST',
+  })
+
+// Cross-links
+export const createLibraryLink = (itemId: number, body: LibraryLinkCreate) =>
+  jsonFetch<LibraryLink>(`/api/library/items/${itemId}/links`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+
+export const deleteLibraryLink = (linkId: number) =>
+  jsonFetch<void>(`/api/library/links/${linkId}`, { method: 'DELETE' })
+
+// Painéis agregados
+export const fetchLibraryPending = (janelaDias = 7) =>
+  get<LibraryPending[]>(`/api/library/pending?janela_dias=${janelaDias}`)
+
+export const fetchLibraryTemas = () =>
+  get<LibraryTema[]>('/api/library/temas')
+
+export const fetchLibraryBacklinks = (target_type: string, target_id: string) =>
+  get<import('./types').LibraryBacklink[]>(
+    `/api/library/backlinks?target_type=${encodeURIComponent(target_type)}&target_id=${encodeURIComponent(target_id)}`,
+  )
+
+// Sagas — agrupamento visual de items (sem mecânica de status/sessões)
+export const fetchLibrarySagas = () =>
+  get<import('./types').LibrarySaga[]>('/api/library/sagas')
+
+export const createLibrarySaga = (
+  body: import('./types').LibrarySagaCreate,
+) =>
+  jsonFetch<import('./types').LibrarySaga>('/api/library/sagas', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+
+export const updateLibrarySaga = (
+  id: number,
+  patch: import('./types').LibrarySagaUpdate,
+) =>
+  jsonFetch<import('./types').LibrarySaga>(`/api/library/sagas/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(patch),
+  })
+
+export const deleteLibrarySaga = (id: number) =>
+  jsonFetch<void>(`/api/library/sagas/${id}`, { method: 'DELETE' })
+
+export const reorderSagaItems = (sagaId: number, itemIds: number[]) =>
+  jsonFetch<LibraryItemListEntry[]>(
+    `/api/library/sagas/${sagaId}/reorder`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ item_ids: itemIds }),
+    },
+  )

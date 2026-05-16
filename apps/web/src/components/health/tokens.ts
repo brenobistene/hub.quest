@@ -116,19 +116,36 @@ export function formatBRDate(iso: string): string {
 }
 
 /**
- * Verifica se um registro é "ao vivo" — criado hoje, independente da `data`
- * semântica. Importante pra Sono noturno: registro feito de manhã hoje
- * tem `data = ontem` ("noite de"), mas `criado_em = hoje`. Antes a função
- * usava só `data` e o Sono nunca pulsava.
+ * Verifica se um registro é "ao vivo" — i.e. acabou de acontecer e merece
+ * pulsar visualmente. Semântica varia por template:
  *
- * Aceita timestamp ISO (`criado_em`) ou data simples (YYYY-MM-DD) como
- * fallback. Considera "ao vivo" se o dia local bate com hoje.
+ *  - **`janela_qualidade` (Sono noturno)**: usa `criado_em`. Registro feito
+ *    hoje de manhã tem `data = ontem` ("noite de"), mas representa rotina
+ *    noturna ainda recente — vale pulsar.
+ *  - **Demais templates** (Vícios, Exercício, Alimentação, etc): usa `data`.
+ *    Registro retroativo (inserido hoje com `data = dia 10`) **não pulsa**,
+ *    porque o evento real foi no dia 10 — não é "ao vivo" de hoje.
+ *
+ * O bug original (até 2026-05-16) usava sempre `criado_em`, fazendo todo
+ * registro retroativo pulsar como se fosse "agora" mesmo sendo de dias
+ * atrás. Casos de uso: Vícios (relembrar que esqueceu de marcar cigarro
+ * de ontem), Exercício (registrar treino do fim de semana retroativamente).
  */
-export function isLiveRecord(criadoEmOuData: string | null | undefined): boolean {
-  if (!criadoEmOuData) return false
+export function isLiveRecord(
+  record: {
+    criado_em?: string | null
+    data?: string | null
+  },
+  template?: string | null,
+): boolean {
+  const target =
+    template === 'janela_qualidade'
+      ? record.criado_em
+      : record.data
+  if (!target) return false
   const today = new Date().toISOString().slice(0, 10)
   // Aceita "YYYY-MM-DD HH:MM:SS", "YYYY-MM-DDTHH:MM:SSZ" ou só "YYYY-MM-DD"
-  return criadoEmOuData.slice(0, 10) === today
+  return target.slice(0, 10) === today
 }
 
 /**

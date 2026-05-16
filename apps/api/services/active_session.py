@@ -73,4 +73,23 @@ def find_active_session(
         if row:
             return {"type": "routine", "id": row["id"], "title": row["title"], "started_at": row["started_at"]}
 
+    # Library — sessões de leitura/estudo cronometradas
+    if exclude_type != "library":
+        row = conn.execute(
+            """SELECT ls.item_id AS id, li.titulo AS title, ls.started_at
+               FROM library_session ls JOIN library_item li ON ls.item_id = li.id
+               WHERE ls.ended_at IS NULL LIMIT 1"""
+        ).fetchone()
+        if row:
+            return {"type": "library", "id": row["id"], "title": row["title"], "started_at": row["started_at"]}
+    else:
+        row = conn.execute(
+            """SELECT ls.item_id AS id, li.titulo AS title, ls.started_at
+               FROM library_session ls JOIN library_item li ON ls.item_id = li.id
+               WHERE ls.ended_at IS NULL AND ls.item_id != ? LIMIT 1""",
+            (exclude_id,),
+        ).fetchone()
+        if row:
+            return {"type": "library", "id": row["id"], "title": row["title"], "started_at": row["started_at"]}
+
     return None

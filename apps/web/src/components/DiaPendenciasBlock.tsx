@@ -29,6 +29,7 @@ import { reportApiError } from '../api'
 import { colorForDomain } from './health/tokens'
 import { domainIconFor } from './health/domainIcon'
 import RegisterModal from './health/RegisterModal'
+import MindRegisterModal from './mind/MindRegisterModal'
 
 const CADENCIA_LABELS: Record<BuildRitualCadencia, string> = {
   semanal: 'Semanal',
@@ -252,7 +253,8 @@ export function DiaPendenciasBlock() {
         />
       ))}
 
-      {/* Health pendências (sem player, click abre RegisterModal) */}
+      {/* Health pendências (sem player, click abre o modal correto pra
+          template do domínio). Mind tem fluxo próprio (MindRegisterModal). */}
       {pending.map((p, idx) => (
         <HealthPendingRow
           key={`${p.domain_slug}-${p.tipo}-${idx}`}
@@ -262,14 +264,18 @@ export function DiaPendenciasBlock() {
         />
       ))}
 
-      {/* Modal de registro */}
-      {openHealthModal && (
+      {/* Modal de registro — roteia pelo template do domínio.
+          Mind precisa do MindRegisterModal (fluxo distinto), demais usam
+          o RegisterModal genérico. */}
+      {openHealthModal && openHealthModal.domain.template === 'observacao_estruturada' ? (
+        <MindRegisterModal onClose={() => setOpenHealthModal(null)} />
+      ) : openHealthModal ? (
         <RegisterModal
           domain={openHealthModal.domain}
           cor={openHealthModal.cor}
           onClose={() => setOpenHealthModal(null)}
         />
-      )}
+      ) : null}
     </div>
   )
 }

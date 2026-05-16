@@ -53,6 +53,20 @@ export default function RegisterModal({ domain, cor, onClose, existing }: Props)
   const [itemId, setItemId] = useState<number | null>(
     existing?.item_id ?? activeItems[0]?.id ?? null,
   )
+
+  // Sincroniza itemId quando activeItems é populado tardiamente (useState
+  // inicial rodou enquanto a query React-Query ainda estava em flight, então
+  // pegou `activeItems = []` → itemId ficou null). Sem isso, o <select>
+  // mostrava o primeiro item visualmente mas o state ficava null —
+  // resultado: REGISTRAR falhava com "exige item_id" e `isCigarroMode`
+  // (lookup por nome) caía pro formato antigo. Bug observado em Vícios.
+  // Só aplica na criação: em edit mode, itemId vem do `existing` e nunca
+  // deve ser overridden.
+  useEffect(() => {
+    if (!isEdit && itemId === null && activeItems.length > 0) {
+      setItemId(activeItems[0].id)
+    }
+  }, [activeItems, itemId, isEdit])
   const [data, setData] = useState<string>(() => existing?.data ?? '')
   const [horario, setHorario] = useState<string>(existing?.horario ?? '')
   const [notas, setNotas] = useState<string>(existing?.notas ?? '')
@@ -1145,6 +1159,7 @@ export default function RegisterModal({ domain, cor, onClose, existing }: Props)
               onChange={setEventos}
               hhmm={hhmm}
               cor={cor}
+              data={data}
               autoSaveStatus={autoSaveStatus}
               onRetry={() => runAutoSave(JSON.stringify(eventos))}
             />
@@ -1457,15 +1472,23 @@ type Refeicao = RefeicaoPlanned | RefeicaoFree
  *     gap (`→ 3h →`) — radar passivo do espaçamento sem cobrar nada.
  *   - Cada chip: horário editável inline + botão vontade (`v−`/`v3`) com
  *     popover de escala 1-5 + botão remover.
- *   - Adicionar: `AGORA · HH:MM` (primary) + atalhos relativos
- *     (`-30m`, `-1h`, `-2h`, `-3h`) + picker inline pra horário arbitrário
- *     que comita ao mudar (sem 2-step "abrir/confirmar").
+ *   - Adicionar (modo hoje): `AGORA · HH:MM` (primary) + atalhos relativos
+ *     (`-30m`, `-1h`, `-2h`, `-3h`) + picker inline pra horário arbitrário.
+ *   - Adicionar (modo retroativo): só o picker — atalhos baseados em
+ *     "agora" não fazem sentido pra registro de outro dia, então saem da
+ *     UI pra evitar confusão (registrar evento de hoje num record do dia
+ *     10 era o bug original).
+ *
+ * `data` (YYYY-MM-DD) determina se estamos editando hoje ou um dia
+ * retroativo. Quando ausente (criação nova sem data ainda escolhida),
+ * assume hoje pra exibir todos os atalhos.
  */
 function CigarroEventsEditor({
   eventos,
   onChange,
   hhmm,
   cor,
+  data,
   autoSaveStatus,
   onRetry,
 }: {
@@ -1473,9 +1496,15 @@ function CigarroEventsEditor({
   onChange: (next: CigarroEvent[]) => void
   hhmm: string
   cor: string
+  data?: string
   autoSaveStatus: 'idle' | 'saving' | 'saved' | 'error'
   onRetry: () => void
 }) {
+  // Detecta se o registro é retroativo (data ≠ hoje). Quando `data` está
+  // vazia (criação nova), assume hoje. Comparação por string YYYY-MM-DD
+  // evita problemas de timezone.
+  const today = new Date().toISOString().slice(0, 10)
+  const isRetroativo = !!data && data !== today
   const [activeVontadeIdx, setActiveVontadeIdx] = useState<number | null>(null)
 
   // Click-outside fecha o popover. O próprio popover faz stopPropagation no
@@ -1646,47 +1675,53 @@ function CigarroEventsEditor({
         </div>
       )}
 
-      {/* Linha 1: AGORA primary + relativos */}
-      <div
-        style={{
-          display: 'flex',
-          gap: 6,
-          flexWrap: 'wrap',
-          alignItems: 'center',
-          marginBottom: 6,
-        }}
-      >
-        <button
-          type="button"
-          onClick={() => addAt(hhmm)}
-          className="hq-btn hq-btn--primary"
-          style={{ fontSize: 11, padding: '7px 12px' }}
+      {/* Linha 1: AGORA primary + relativos.
+          Suprimida em registro retroativo (data ≠ hoje) — "agora" não
+          casa com a data sendo editada. Usuário usa o picker abaixo. */}
+      {!isRetroativo && (
+        <div
+          style={{
+            display: 'flex',
+            gap: 6,
+            flexWrap: 'wrap',
+            alignItems: 'center',
+            marginBottom: 6,
+          }}
         >
-          <Plus size={12} strokeWidth={2.5} />
-          AGORA · {hhmm}
-        </button>
-        {[30, 60, 120, 180].map((m) => (
           <button
-            key={m}
             type="button"
-            onClick={() => addRelative(m)}
-            className="hq-btn hq-btn--ghost"
-            style={{ fontSize: 11, padding: '7px 10px' }}
-            title={`Adicionar cigarro há ${m < 60 ? `${m}min` : `${m / 60}h`}`}
+            onClick={() => addAt(hhmm)}
+            className="hq-btn hq-btn--primary"
+            style={{ fontSize: 11, padding: '7px 12px' }}
           >
-            −{m < 60 ? `${m}m` : `${m / 60}h`}
+            <Plus size={12} strokeWidth={2.5} />
+            AGORA · {hhmm}
           </button>
-        ))}
-      </div>
+          {[30, 60, 120, 180].map((m) => (
+            <button
+              key={m}
+              type="button"
+              onClick={() => addRelative(m)}
+              className="hq-btn hq-btn--ghost"
+              style={{ fontSize: 11, padding: '7px 10px' }}
+              title={`Adicionar cigarro há ${m < 60 ? `${m}min` : `${m / 60}h`}`}
+            >
+              −{m < 60 ? `${m}m` : `${m / 60}h`}
+            </button>
+          ))}
+        </div>
+      )}
 
-      {/* Linha 2: picker inline — comita ao mudar (sem botão "adicionar") */}
+      {/* Linha 2: picker inline — comita ao mudar (sem botão "adicionar").
+          Em registro retroativo é a única forma de adicionar evento — label
+          muda pra refletir que estamos preenchendo dia anterior. */}
       <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 6 }}>
         <Clock size={11} color="var(--color-text-muted)" strokeWidth={2} />
         <span
           className="hq-tech-id"
           style={{ color: 'var(--color-text-muted)' }}
         >
-          OU HORÁRIO ESPECÍFICO
+          {isRetroativo ? 'HORÁRIO NESSE DIA' : 'OU HORÁRIO ESPECÍFICO'}
         </span>
         <input
           type="time"
@@ -2654,8 +2689,8 @@ function AutoSaveStatus({
     )
   }
   const map = {
-    saving: { label: '⋯ SALVANDO', color: 'var(--color-text-muted)' },
-    saved: { label: '✓ SALVO', color: 'var(--color-ice-light)' },
+    saving: { label: 'SALVANDO…', color: 'var(--color-text-muted)' },
+    saved: { label: 'SALVO', color: 'var(--color-ice-light)' },
   } as const
   const { label, color } = map[status]
   return (

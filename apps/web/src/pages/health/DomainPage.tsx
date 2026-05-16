@@ -43,7 +43,7 @@ import {
   useHealthItems,
   useHealthRecords,
 } from '../../lib/health-queries'
-import { AnimatedNumber, SkeletonBlock } from '../../components/ui/Motion'
+import { AnimatedNumber } from '../../components/ui/Motion'
 import type { HealthDomain, HealthItem, HealthRecord } from '../../types'
 
 export default function DomainPage() {
@@ -208,6 +208,7 @@ function DomainContent({ domain }: { domain: HealthDomain }) {
               record={r}
               items={items}
               domainSlug={domain.slug}
+              template={domain.template}
               cor={cor}
               onEdit={() => setEditing(r)}
             />
@@ -553,18 +554,23 @@ function RecordRow({
   record,
   items,
   domainSlug,
+  template,
   cor,
   onEdit,
 }: {
   record: HealthRecord
   items: HealthItem[]
   domainSlug: string
+  template: string
   cor: string
   onEdit: () => void
 }) {
   const del = useDeleteHealthRecord()
   const item = items.find((i) => i.id === record.item_id) ?? null
-  const live = isLiveRecord(record.criado_em)
+  // Pulse só pra registro do dia atual. Sono noturno (janela_qualidade) usa
+  // criado_em (caso especial: data=ontem mas evento ainda recente); demais
+  // usam `data`. Fix do bug: registro retroativo de Vícios não pulsa mais.
+  const live = isLiveRecord(record, template)
 
   return (
     <div

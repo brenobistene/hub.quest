@@ -125,10 +125,150 @@ export default function HealthSettingsModal({ onClose }: Props) {
         </div>
 
         <GlobalSettings />
+        <MindSettings />
         <DomainsSettings />
         <AdminSection />
       </div>
     </div>
+  )
+}
+
+// ─── Mind Settings ────────────────────────────────────────────────────────
+
+/**
+ * Settings do módulo Mind — adversarial challenge config.
+ * Permite ligar/desligar challenge e ajustar sensibilidade (min aparições,
+ * janela de detecção, dias de suspensão).
+ */
+function MindSettings() {
+  const { data: settings } = useHealthSettings()
+  if (!settings) return null
+  return <MindSettingsForm initial={settings} />
+}
+
+function MindSettingsForm({
+  initial,
+}: {
+  initial: {
+    mind_challenge_ativo: boolean
+    mind_challenge_min_aparicoes: number
+    mind_challenge_janela_dias: number
+    mind_suspender_por_dias: number
+  }
+}) {
+  const updateSettings = useUpdateHealthSettings()
+  const [ativo, setAtivo] = useState(initial.mind_challenge_ativo)
+  const [minAparicoes, setMinAparicoes] = useState(
+    String(initial.mind_challenge_min_aparicoes),
+  )
+  const [janela, setJanela] = useState(String(initial.mind_challenge_janela_dias))
+  const [suspender, setSuspender] = useState(String(initial.mind_suspender_por_dias))
+
+  function saveAparicoes() {
+    const n = Number(minAparicoes)
+    if (n >= 2 && n <= 50 && n !== initial.mind_challenge_min_aparicoes) {
+      updateSettings.mutate({ mind_challenge_min_aparicoes: n })
+    }
+  }
+  function saveJanela() {
+    const n = Number(janela)
+    if (n >= 7 && n <= 90 && n !== initial.mind_challenge_janela_dias) {
+      updateSettings.mutate({ mind_challenge_janela_dias: n })
+    }
+  }
+  function saveSuspender() {
+    const n = Number(suspender)
+    if (n >= 1 && n <= 90 && n !== initial.mind_suspender_por_dias) {
+      updateSettings.mutate({ mind_suspender_por_dias: n })
+    }
+  }
+
+  return (
+    <section
+      style={{
+        marginBottom: 24,
+        paddingBottom: 16,
+        borderBottom: '1px dashed var(--color-divider)',
+      }}
+    >
+      <SectionLabel>MIND · CHALLENGE</SectionLabel>
+      <Field label="ADVERSARIAL CHALLENGE">
+        <label
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            fontSize: 12,
+            fontFamily: BODY,
+            color: 'var(--color-text-primary)',
+            cursor: 'pointer',
+            padding: '8px 0',
+          }}
+        >
+          <input
+            type="checkbox"
+            checked={ativo}
+            onChange={(e) => {
+              setAtivo(e.target.checked)
+              updateSettings.mutate({ mind_challenge_ativo: e.target.checked })
+            }}
+            style={{ accentColor: '#9b88c4' }}
+          />
+          confrontar hipóteses recorrentes (auto)
+        </label>
+        <Hint>
+          Quando uma tag aparece muitas vezes na janela, app pergunta se você
+          ainda acredita na hipótese — força confronto com narrativa repetida.
+        </Hint>
+      </Field>
+      {ativo && (
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+            gap: 12,
+            marginTop: 4,
+          }}
+        >
+          <Field label="MIN APARIÇÕES (2-50)">
+            <input
+              type="number"
+              min={2}
+              max={50}
+              value={minAparicoes}
+              onChange={(e) => setMinAparicoes(e.target.value)}
+              onBlur={saveAparicoes}
+              style={inputStyle()}
+            />
+            <Hint>quantas vezes a tag precisa aparecer pra disparar</Hint>
+          </Field>
+          <Field label="JANELA (7-90 dias)">
+            <input
+              type="number"
+              min={7}
+              max={90}
+              value={janela}
+              onChange={(e) => setJanela(e.target.value)}
+              onBlur={saveJanela}
+              style={inputStyle()}
+            />
+            <Hint>período em que conta as aparições</Hint>
+          </Field>
+          <Field label="SUSPENDER POR (1-90 dias)">
+            <input
+              type="number"
+              min={1}
+              max={90}
+              value={suspender}
+              onChange={(e) => setSuspender(e.target.value)}
+              onBlur={saveSuspender}
+              style={inputStyle()}
+            />
+            <Hint>quando "suspender", reaparece após N dias</Hint>
+          </Field>
+        </div>
+      )}
+    </section>
   )
 }
 

@@ -55,7 +55,7 @@ export function CronogramaReservasEditor({
   const diff = valorEstimado != null ? totalPlanejado - valorEstimado : null
   const statusLabel = (() => {
     if (valorEstimado == null) return null
-    if (Math.abs(diff!) < 0.01) return { label: '✓ bate', color: 'var(--color-success)' }
+    if (Math.abs(diff!) < 0.01) return { label: '= bate', color: 'var(--color-success)' }
     if (diff! > 0) return { label: `↑ excede em ${formatBRL(diff!)}`, color: 'var(--color-warning)' }
     return { label: `↓ falta ${formatBRL(-diff!)}`, color: 'var(--color-text-tertiary)' }
   })()

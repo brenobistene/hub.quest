@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
   "generatedAt": "2026-05-16T15:00:29Z",
-  "title": "Design System: Hub Quest",
+  "title": "Design System: MAINFRAME",
   "extensions": {
     "colorMeta": {
       "accent-red-deep": {
@@ -155,7 +155,7 @@
   ],
   "narrative": {
     "northStar": "The Mission Control",
-    "overview": "Hub Quest é o console de uma operação pessoal. O usuário senta no console e lê telemetria da própria vida, executa, registra. Atmosfera Hell Is Us cinemática (fog azul cool, halo branco off-center, mancha oxblood) cruzada com estrutura HUD CP2077 (tech labels uppercase, IDs mono, hairlines de luz, chamfers diagonais). REZZ inspira economia hipnótica — vermelho contido nos pontos de comando. Densidade maximalista no atmosferismo, minimalismo nos elementos. O ambiente é o protagonista; componentes flutuam dentro dele.",
+    "overview": "MAINFRAME é o console de uma operação pessoal. O usuário senta no console e lê telemetria da própria vida, executa, registra. Atmosfera Hell Is Us cinemática (fog azul cool, halo branco off-center, mancha oxblood) cruzada com estrutura HUD CP2077 (tech labels uppercase, IDs mono, hairlines de luz, chamfers diagonais). REZZ inspira economia hipnótica — vermelho contido nos pontos de comando. Densidade maximalista no atmosferismo, minimalismo nos elementos. O ambiente é o protagonista; componentes flutuam dentro dele.",
     "keyCharacteristics": [
       "Atmosfera cinemática Hell Is Us + estrutura HUD CP2077",
       "Vermelho oxblood ritualístico, ice azul tech, warm soft no texto (nunca #fff/#000)",
@@ -186,7 +186,7 @@
       "Do usar Bitter italic só quando a UI 'fala' com o operador."
     ],
     "donts": [
-      "Don't usar border-left/right > 1px como accent colorido em cards/list/callouts (ban absoluto da skill — Hub Quest viola atualmente em RecordRow, hero cards, DomainPanel; refatorar).",
+      "Don't usar border-left/right > 1px como accent colorido em cards/list/callouts (ban absoluto da skill — MAINFRAME viola atualmente em RecordRow, hero cards, DomainPanel; refatorar).",
       "Don't usar emojis em UI ou icons cute. Lucide stroke-icon é o vocabulário.",
       "Don't gamificar (XP, levels, badges, achievements, streaks como troféu).",
       "Don't cair no template SaaS clássico (gradient hero + 4 cards iguais + line chart azul).",

@@ -150,7 +150,7 @@ export function DailyCheckInModal({
               icon={<CalendarIcon size={14} strokeWidth={2} />}
               accent="var(--color-ice-light)"
               title={`${upcomingBillsCount} ${upcomingBillsCount === 1 ? 'conta vencendo' : 'contas vencendo'} nos próximos 7 dias`}
-              subtitle="Confere o Hub Finance"
+              subtitle="Confere o Finance"
               onClick={() => { dismiss(); navigate('/hub-finance') }}
             />
           )}

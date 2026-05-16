@@ -1,6 +1,6 @@
 ---
-name: Hub Quest
-description: Single-user productivity hub with HUD-grade dark tactical identity (EXEC). Mission Control feel, Hell Is Us atmosphere, REZZ + Control DNA.
+name: MAINFRAME
+description: Single-user personal operating system with HUD-grade dark tactical identity (EXEC). Mission Control feel, Hell Is Us atmosphere, REZZ + Control DNA.
 colors:
   accent-red-deep: "#9f1239"
   accent-red-mid: "#be123c"
@@ -102,13 +102,13 @@ components:
     size: "8px"
 ---
 
-# Design System: Hub Quest
+# Design System: MAINFRAME
 
 ## 1. Overview
 
 **Creative North Star: "The Mission Control"**
 
-Hub Quest é o console de uma operação pessoal. O usuário não está usando um app; está sentado no console de uma operação de uma pessoa só, lendo telemetria da própria vida, executando, registrando. A atmosfera é Hell Is Us cinemática (fog azul cool, halo branco off-center, mancha oxblood top-left, vinheta inferior pesada) mas a estrutura é HUD CP2077 (tech labels uppercase com letter-spacing largo, IDs em mono, hairlines de luz, chamfers diagonais cortando cantos de cards). REZZ inspira a economia hipnótica: poucos elementos, peso visual onde importa, vermelho contido nos pontos de comando.
+MAINFRAME é o console de uma operação pessoal. O usuário não está usando um app; está sentado no console de uma operação de uma pessoa só, lendo telemetria da própria vida, executando, registrando. A atmosfera é Hell Is Us cinemática (fog azul cool, halo branco off-center, mancha oxblood top-left, vinheta inferior pesada) mas a estrutura é HUD CP2077 (tech labels uppercase com letter-spacing largo, IDs em mono, hairlines de luz, chamfers diagonais cortando cantos de cards). REZZ inspira a economia hipnótica: poucos elementos, peso visual onde importa, vermelho contido nos pontos de comando.
 
 O sistema rejeita explicitamente: emojis em UI, gamificação (XP, levels, badges, streaks-como-troféu), o template SaaS clássico (gradient hero + 4 cards iguais + line chart azul), Notion-pastel-cheery (off-whites suaves, illustrations amigáveis), e os reflexos de categoria (healthcare white-teal, observability dark-blue, fintech navy-gold, crypto neon-on-black). Trabalho real não precisa de festa, instrumento não precisa de fofura.
 
@@ -163,7 +163,7 @@ Paleta dark com warm-soft no texto e dois acentos contrastantes: oxblood pra com
 
 **The Ritualistic Red Rule.** Accent Red Deep (`#9f1239`) é tratado como reagente: usar quando o elemento precisa **comandar** o olho (botão primary, status atrasado, pulse ao vivo). Nunca como decoração de card, nunca em border-stripe colorida, nunca espalhado em mais de um terço da tela. Sua raridade é o que cria peso.
 
-**The No Pure Black/White Rule.** Hub Quest nunca usa `#000` ou `#fff`. Fundo é Near Black (`#0b0d12`) com tint azulado; texto é Warm Soft (`#ece8e3`) com tint warm. O contraste vem da escala, não dos extremos.
+**The No Pure Black/White Rule.** MAINFRAME nunca usa `#000` ou `#fff`. Fundo é Near Black (`#0b0d12`) com tint azulado; texto é Warm Soft (`#ece8e3`) com tint warm. O contraste vem da escala, não dos extremos.
 
 **The Two Accents Rule.** Apenas Oxblood (comando) e Cool Blue (tech) carregam saturação. Tudo mais é neutro (warm-soft pra texto, near-black pras superfícies). Adicionar um terceiro accent é falha de disciplina — fold em um dos dois.
 
@@ -279,7 +279,7 @@ Linha 1px gradiente no topo de hero cards. Ice (`hq-hairline-ice`) é o default;
 
 ### Don't:
 
-- **Don't** usar `border-left` ou `border-right` >1px como accent colorido em cards/lista/callouts. Reescrever com border completa, background tint, leading number/icon, ou nada. (Ban absoluto da skill — Hub Quest atualmente viola isso em RecordRow, hero cards e DomainPanel; refatorar.)
+- **Don't** usar `border-left` ou `border-right` >1px como accent colorido em cards/lista/callouts. Reescrever com border completa, background tint, leading number/icon, ou nada. (Ban absoluto da skill — MAINFRAME atualmente viola isso em RecordRow, hero cards e DomainPanel; refatorar.)
 - **Don't** usar emojis em UI ("🎉", "✨", "⚡", ícones cute). Lucide stroke-icon é o vocabulário.
 - **Don't** gamificar (XP, levels, badges, achievements, streaks como troféu). Streak counter é métrica de observação, não conquista.
 - **Don't** cair no template SaaS clássico: gradient hero + 4 cards iguais com ícone+heading+texto + line chart azul corporativo. Refatorar com estrutura diferente.
@@ -289,5 +289,5 @@ Linha 1px gradiente no topo de hero cards. Ice (`hq-hairline-ice`) é o default;
 - **Don't** introduzir um terceiro accent (verde-vibrante, roxo-vivido, etc). Paleta é Oxblood + Cool Blue + neutros warm-soft. Semantic (success/warning/error) usa dessaturado.
 - **Don't** animar propriedades de layout (`width`, `height`, `top`, `left`). Animar `transform` e `opacity`.
 - **Don't** usar `cubic-bezier(0.34, 1.56, 0.64, 1)` (`ease-spring` com bounce) fora de feedback de press/spring específico. Default é `ease-emphasis` ou `ease-smooth`, exponencial sem bounce.
-- **Don't** reproduzir reflexos de categoria: healthcare white+teal, observability dark-blue, fintech navy+gold, crypto neon-on-black. Hub Quest é Mission Control, não nenhum desses.
+- **Don't** reproduzir reflexos de categoria: healthcare white+teal, observability dark-blue, fintech navy+gold, crypto neon-on-black. MAINFRAME é Mission Control, não nenhum desses.
 - **Don't** usar `#` em comentários de copy ("Ó", "Olha"). Voz direta, factual, sem fofura.

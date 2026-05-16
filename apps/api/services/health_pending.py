@@ -222,6 +222,15 @@ def compute_pending(conn) -> list[dict]:
                     "dias": None,
                 })
 
+    # Coleta slugs que já receberam pelo menos um lembrete acima. Usado
+    # logo abaixo pra deduplicar: se o domínio tem lembrete ativo hoje, a
+    # ausência retroativa fica redundante (o lembrete já é a info útil de
+    # "ainda tem ação pra hoje"). Ausência só aparece em domínios SEM
+    # lembrete configurado ou em dias que o lembrete não dispara.
+    domains_with_reminder: set[str] = {
+        p["domain_slug"] for p in pending if p["tipo"] == "lembrete"
+    }
+
     # ─── Ausência (retroativo) ───────────────────────────────────────────
     for d in domains:
         slug = d["slug"]
@@ -232,6 +241,11 @@ def compute_pending(conn) -> list[dict]:
             continue                                  # sem âmbar configurado
         if template in TEMPLATES_SEM_AUSENCIA:
             # Vícios e Medidas: filosofia "sem cobrança"
+            continue
+        if slug in domains_with_reminder:
+            # Dedupe: já há lembrete pra esse domain hoje. Ausência seria
+            # redundante e poluiria a lista de pendências. Quando o lembrete
+            # do dia for resolvido (registrar), pendência some inteira.
             continue
 
         # Pra janela_qualidade (Sono), "registro relevante" = noturno (não cochilo)

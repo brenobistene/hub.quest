@@ -637,7 +637,7 @@ function ProjectCard({ projeto: p, hourlyStats }: {
         </div>
         <button
           onClick={openInHubQuest}
-          title="abrir projeto no Hub Quest"
+          title="abrir projeto no MAINFRAME"
           style={{
             background: 'rgba(8, 12, 18, 0.55)',
             border: '1px solid var(--color-border)',

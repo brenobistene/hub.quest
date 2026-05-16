@@ -528,7 +528,7 @@ function SessionEditForm({ session, onSave, onCancel }: {
             e.currentTarget.style.boxShadow = '0 0 10px rgba(94, 122, 82, 0.25)'
           }}
         >
-          <Check size={11} strokeWidth={2.4} /> {saving ? 'SALVANDO…' : '✓ SALVAR'}
+          <Check size={11} strokeWidth={2.4} /> {saving ? 'SALVANDO…' : 'SALVAR'}
         </button>
         <button
           onClick={onCancel}

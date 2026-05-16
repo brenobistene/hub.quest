@@ -1,6 +1,6 @@
 # Testing
 
-Suite de testes automatizados pro Hub Quest. Frontend e backend são independentes, cada um com seu próprio framework.
+Suite de testes automatizados pro MAINFRAME. Frontend e backend são independentes, cada um com seu próprio framework.
 
 ## Quick start
 

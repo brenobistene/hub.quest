@@ -143,7 +143,7 @@ function LayoutInner() {
           letterSpacing: '0.28em',
           flexShrink: 0,
         }}>
-          HUB.FINANCE
+          FINANCE
         </div>
 
         <div style={{ width: 1, height: 22, background: 'var(--color-border-strong)', flexShrink: 0 }} />

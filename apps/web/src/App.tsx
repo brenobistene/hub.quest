@@ -6,7 +6,7 @@ import { version as APP_VERSION } from '../package.json'
 /* Phosphor duotone — substitui os Lucide simples do sidebar pra dar
    peso visual + suporte a duotone (corpo cinza + accent ice quando
    ativo). Vibe Hell Is Us / Cron Calendar / Things 3. */
-import { Routes, Route, NavLink, Navigate, useNavigate, useLocation } from 'react-router-dom'
+import { Routes, Route, NavLink, Navigate, useNavigate, useLocation, useParams } from 'react-router-dom'
 import {
   fetchActiveSession,
   patchQuest, patchProject,
@@ -53,6 +53,12 @@ const BuildPage       = lazy(() => import('./pages/BuildPage'))
 const HealthLayout    = lazy(() => import('./pages/health/HealthLayout'))
 const BiomonitorPage  = lazy(() => import('./pages/health/BiomonitorPage'))
 const DomainPage      = lazy(() => import('./pages/health/DomainPage'))
+const MindPage           = lazy(() => import('./pages/mind/MindPage'))
+const MindTagPage        = lazy(() => import('./pages/mind/MindTagPage'))
+const MindHipotesesPage  = lazy(() => import('./pages/mind/MindHipotesesPage'))
+const LibraryPage        = lazy(() => import('./pages/library/LibraryPage'))
+const LibraryItemPage    = lazy(() => import('./pages/library/LibraryItemPage'))
+const LibraryTemasPage   = lazy(() => import('./pages/library/LibraryTemasPage'))
 import { useRituals } from './lib/build-queries'
 import { useHealthPending } from './lib/health-queries'
 
@@ -87,6 +93,8 @@ const NAV_SECTIONS: NavSection[] = [
     label: 'STRATEGY',
     items: [
       { path: '/build',       label: '/Build',      abbr: 'BLD' },
+      { path: '/mind',        label: 'Mind',        abbr: 'MND' },
+      { path: '/library',     label: 'Library',     abbr: 'LIB' },
     ],
   },
   {
@@ -100,13 +108,13 @@ const NAV_SECTIONS: NavSection[] = [
   {
     label: 'FINANCE',
     items: [
-      { path: '/hub-finance', label: 'Hub Finance', abbr: 'FIN' },
+      { path: '/hub-finance', label: 'Finance', abbr: 'FIN' },
     ],
   },
   {
     label: 'HEALTH',
     items: [
-      { path: '/health',      label: 'Hub Health',  abbr: 'HLT' },
+      { path: '/health',      label: 'Health',  abbr: 'HLT' },
     ],
   },
   {
@@ -116,6 +124,13 @@ const NAV_SECTIONS: NavSection[] = [
     ],
   },
 ]
+
+/** Redirect de `/health/mind/tag/:slug` legado pra `/mind/tag/:slug` —
+ *  preserva bookmarks de tags antigas após Mind virar peer top-level. */
+function MindTagLegacyRedirect() {
+  const { slug } = useParams<{ slug: string }>()
+  return <Navigate to={`/mind/tag/${slug ?? ''}`} replace />
+}
 
 export default function App() {
   const navigate = useNavigate()
@@ -637,7 +652,7 @@ export default function App() {
           {/* MONOGRAMA HQ — só tipografia cyber, sem frame envolta.
               Display font Rajdhani uppercase com text-shadow ice glow. */}
           <div
-            aria-label="Hub Quest"
+            aria-label="MAINFRAME"
             style={{
               flexShrink: 0,
               fontFamily: 'var(--font-display)',
@@ -650,7 +665,7 @@ export default function App() {
               padding: sidebarCollapsed ? 0 : '0 4px',
             }}
           >
-            HQ
+            MF
           </div>
 
           {!sidebarCollapsed && (
@@ -669,7 +684,7 @@ export default function App() {
                   fontWeight: 700,
                   lineHeight: 1,
                 }}>
-                  HUB.QUEST
+                  MAINFRAME
                 </span>
                 <span
                   className="hq-tech-id"
@@ -1366,11 +1381,30 @@ export default function App() {
           <Route path="/rotinas" element={<RoutinesView />} />
           <Route path="/tarefas" element={<TasksView activeSession={activeSession} onSessionUpdate={onSessionUpdate} sessionUpdateTrigger={sessionUpdateTrigger} />} />
           <Route path="/build" element={<BuildPage />} />
+          {/* Library — módulo de input curado (livros, filmes, podcasts…).
+              Doc: docs/library/PLAN.md. Filosofia: destilação > consumo. */}
+          <Route path="/library" element={<LibraryPage />} />
+          <Route path="/library/temas" element={<LibraryTemasPage />} />
+          <Route path="/library/item/:id" element={<LibraryItemPage />} />
+          {/* Mind — promovido a peer top-level (saiu de /health/mind).
+              Filosofia: Mind é instrumentação cognitiva (observação→hipótese
+              →validação), não monitoramento de estado corporal. Junto com
+              Library e /Build forma a camada de "pensar". Doc: ARCHITECTURE
+              §3 (entidades). */}
+          <Route path="/mind" element={<MindPage />} />
+          <Route path="/mind/hipoteses" element={<MindHipotesesPage />} />
+          <Route path="/mind/tag/:slug" element={<MindTagPage />} />
           {/* Hub Health — layout com tab bar (biomonitor + 1 tab por domínio).
-              `/health` redireciona pra `/health/biomonitor`. */}
+              `/health` redireciona pra `/health/biomonitor`. Mind foi
+              promovido pra top-level; rotas antigas redirecionam (preserva
+              bookmarks). */}
           <Route path="/health" element={<HealthLayout />}>
             <Route index element={<Navigate to="biomonitor" replace />} />
             <Route path="biomonitor" element={<BiomonitorPage />} />
+            {/* Redirects das rotas legadas — Mind agora vive em /mind. */}
+            <Route path="mind" element={<Navigate to="/mind" replace />} />
+            <Route path="mind/hipoteses" element={<Navigate to="/mind/hipoteses" replace />} />
+            <Route path="mind/tag/:slug" element={<MindTagLegacyRedirect />} />
             <Route path=":slug" element={<DomainPage />} />
           </Route>
           {/* Hub Finance — layout com sub-rotas (visão geral, lançamentos, etc).

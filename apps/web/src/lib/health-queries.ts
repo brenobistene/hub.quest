@@ -26,6 +26,9 @@ import {
   fetchHealthRecords,
   fetchHealthSettings,
   migrateRefeicao2modos,
+  fetchMindTags, createMindTag, updateMindTag, deleteMindTag,
+  fetchMindSessions, createMindSession, updateMindSession, deleteMindSession,
+  fetchMindHipoteses, updateMindHipotese, fetchMindChallenges, fetchMindPadroes,
   unarchiveHealthItem,
   updateHealthDomain,
   updateHealthItem,
@@ -41,6 +44,8 @@ import type {
   HealthRecordCreate,
   HealthRecordUpdate,
   HealthSettingsUpdate,
+  MindTagUpdate,
+  MindSessionUpdate,
 } from '../types'
 
 export const healthKeys = {
@@ -57,6 +62,15 @@ export const healthKeys = {
   metricValue: (slug: string, itemId?: number) =>
     [...healthKeys.all, 'metric-value', slug, itemId ?? null] as const,
   pending: () => [...healthKeys.all, 'pending'] as const,
+  // Mind
+  mindTags: (includeArchived = false) =>
+    [...healthKeys.all, 'mind', 'tags', { includeArchived }] as const,
+  mindSessions: (params?: { from?: string; to?: string; tag_slug?: string; limit?: number }) =>
+    [...healthKeys.all, 'mind', 'sessions', params ?? {}] as const,
+  mindHipoteses: (status?: string) =>
+    [...healthKeys.all, 'mind', 'hipoteses', status ?? 'all'] as const,
+  mindChallenges: () => [...healthKeys.all, 'mind', 'challenges'] as const,
+  mindPadroes: (dias: number) => [...healthKeys.all, 'mind', 'padroes', dias] as const,
 }
 
 // ─── Domínios ─────────────────────────────────────────────────────────────
@@ -311,5 +325,116 @@ export function useMigrateRefeicao2modos() {
       qc.invalidateQueries({ queryKey: [...healthKeys.all, 'metric-value'] })
       qc.invalidateQueries({ queryKey: healthKeys.pending() })
     },
+  })
+}
+
+// ─── Mind ─────────────────────────────────────────────────────────────────
+
+function invalidateMindFanout(qc: ReturnType<typeof useQueryClient>) {
+  qc.invalidateQueries({ queryKey: [...healthKeys.all, 'mind'] })
+  qc.invalidateQueries({ queryKey: [...healthKeys.all, 'records', 'mind'] })
+  qc.invalidateQueries({ queryKey: [...healthKeys.all, 'metric-value'] })
+  qc.invalidateQueries({ queryKey: healthKeys.pending() })
+}
+
+export function useMindTags(includeArchived = false) {
+  return useQuery({
+    queryKey: healthKeys.mindTags(includeArchived),
+    queryFn: () => fetchMindTags(includeArchived),
+    staleTime: 5 * 60 * 1000,
+  })
+}
+
+export function useCreateMindTag() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: createMindTag,
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: [...healthKeys.all, 'mind', 'tags'] }),
+  })
+}
+
+export function useUpdateMindTag() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, patch }: { id: number; patch: MindTagUpdate }) =>
+      updateMindTag(id, patch),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: [...healthKeys.all, 'mind', 'tags'] }),
+  })
+}
+
+export function useDeleteMindTag() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: number) => deleteMindTag(id),
+    onSuccess: () => invalidateMindFanout(qc),
+  })
+}
+
+export function useMindSessions(params?: {
+  from?: string
+  to?: string
+  tag_slug?: string
+  limit?: number
+}) {
+  return useQuery({
+    queryKey: healthKeys.mindSessions(params),
+    queryFn: () => fetchMindSessions(params),
+  })
+}
+
+export function useCreateMindSession() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: createMindSession,
+    onSuccess: () => invalidateMindFanout(qc),
+  })
+}
+
+export function useUpdateMindSession() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, patch }: { id: number; patch: MindSessionUpdate }) =>
+      updateMindSession(id, patch),
+    onSuccess: () => invalidateMindFanout(qc),
+  })
+}
+
+export function useDeleteMindSession() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: number) => deleteMindSession(id),
+    onSuccess: () => invalidateMindFanout(qc),
+  })
+}
+
+export function useMindHipoteses(status?: 'pending' | 'validated' | 'refuted' | 'suspended') {
+  return useQuery({
+    queryKey: healthKeys.mindHipoteses(status),
+    queryFn: () => fetchMindHipoteses(status),
+  })
+}
+
+export function useUpdateMindHipotese() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, status }: { id: number; status: 'pending' | 'validated' | 'refuted' | 'suspended' }) =>
+      updateMindHipotese(id, status),
+    onSuccess: () => invalidateMindFanout(qc),
+  })
+}
+
+export function useMindChallenges() {
+  return useQuery({
+    queryKey: healthKeys.mindChallenges(),
+    queryFn: fetchMindChallenges,
+  })
+}
+
+export function useMindPadroes(dias = 30) {
+  return useQuery({
+    queryKey: healthKeys.mindPadroes(dias),
+    queryFn: () => fetchMindPadroes(dias),
   })
 }

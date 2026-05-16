@@ -784,14 +784,192 @@ def init_db() -> None:
             lembrete_horas_apos_acordar     INTEGER NOT NULL DEFAULT 4,
             hora_lembrete_sono              TEXT NOT NULL DEFAULT '10:00',
             dashboard_card_visivel          INTEGER NOT NULL DEFAULT 1,
+            mind_challenge_ativo            INTEGER NOT NULL DEFAULT 1,
+            mind_challenge_min_aparicoes    INTEGER NOT NULL DEFAULT 5,
+            mind_challenge_janela_dias      INTEGER NOT NULL DEFAULT 14,
+            mind_suspender_por_dias         INTEGER NOT NULL DEFAULT 14,
             atualizado_em                   TEXT DEFAULT (datetime('now'))
         );
+
+        -- ─── Mind — Observação Estruturada ────────────────────────────────
+        -- Tags são catálogo personalizável (não array no payload) pra dar
+        -- agrupamento confiável: queries SQL diretas via junction table.
+        CREATE TABLE IF NOT EXISTS health_mind_tag (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            slug          TEXT NOT NULL UNIQUE,
+            nome          TEXT NOT NULL,
+            descricao     TEXT,
+            cor           TEXT,
+            arquivado     INTEGER NOT NULL DEFAULT 0,
+            ordem         INTEGER NOT NULL DEFAULT 0,
+            criado_em     TEXT DEFAULT (datetime('now')),
+            atualizado_em TEXT DEFAULT (datetime('now'))
+        );
+
+        -- Junction N:N record↔tag. Record é health_record com domain_slug='mind'.
+        CREATE TABLE IF NOT EXISTS health_mind_record_tag (
+            record_id INTEGER NOT NULL REFERENCES health_record(id) ON DELETE CASCADE,
+            tag_id    INTEGER NOT NULL REFERENCES health_mind_tag(id) ON DELETE CASCADE,
+            PRIMARY KEY (record_id, tag_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_health_mind_record_tag_tag
+            ON health_mind_record_tag(tag_id);
+
+        -- Hipóteses como entidade própria — permite status (pending/validated/
+        -- refuted/suspended) e o adversarial challenge sem reprocessar payload.
+        -- Criada quando user preenche `hipotese` no payload da session.
+        -- `suspended_until`: ISO date. Quando expirar, status volta a 'pending'.
+        CREATE TABLE IF NOT EXISTS health_mind_hipotese (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            record_id       INTEGER NOT NULL REFERENCES health_record(id) ON DELETE CASCADE,
+            texto           TEXT NOT NULL,
+            status          TEXT NOT NULL DEFAULT 'pending'
+                            CHECK (status IN ('pending','validated','refuted','suspended')),
+            suspended_until TEXT,
+            criado_em       TEXT DEFAULT (datetime('now')),
+            atualizado_em   TEXT DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_health_mind_hipotese_status
+            ON health_mind_hipotese(status);
+        CREATE INDEX IF NOT EXISTS idx_health_mind_hipotese_record
+            ON health_mind_hipotese(record_id);
+
+        -- Nested Pages (caderno virtual estilo Notion dentro de Projetos).
+        -- Doc: docs/nested-pages/PLAN.md. Cada projeto tem `notes` (página raiz)
+        -- e N páginas em árvore: parent_page_id NULL = filha direta da raiz,
+        -- senão filha de outra page. Cascade em ambas as FKs.
+        CREATE TABLE IF NOT EXISTS project_pages (
+            id              TEXT PRIMARY KEY,
+            project_id      TEXT NOT NULL
+                            REFERENCES projects(id) ON DELETE CASCADE,
+            parent_page_id  TEXT
+                            REFERENCES project_pages(id) ON DELETE CASCADE,
+            title           TEXT NOT NULL DEFAULT 'Sem título',
+            content_json    TEXT,
+            sort_order      INTEGER NOT NULL DEFAULT 0,
+            created_at      TEXT DEFAULT (datetime('now')),
+            updated_at      TEXT DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_project_pages_project
+            ON project_pages(project_id);
+        CREATE INDEX IF NOT EXISTS idx_project_pages_parent
+            ON project_pages(parent_page_id);
+
+        -- ─── Library ──────────────────────────────────────────────────────
+        -- Módulo de input curado (livros, filmes, podcasts, artigos, cursos…).
+        -- Doc completa: docs/library/PLAN.md. Filosofia: destilação > consumo —
+        -- item só é "fechado" (status='done') quando tem tese_central +
+        -- o_que_ficou preenchidos. Sem rating estrela, sem progress bar.
+
+        -- Saga: agrupamento puramente visual de items (ex: "28 dias depois"
+        -- → "28 semanas depois" → "28 anos depois"). Sem mecânica — não força
+        -- status, não bloqueia delete. Item pertence a 0 ou 1 saga; `saga_ordem`
+        -- governa ordem dentro do grupo (drag-and-drop no frontend).
+        CREATE TABLE IF NOT EXISTS library_saga (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            nome       TEXT NOT NULL,
+            descricao  TEXT,
+            cor        TEXT,
+            ordem      INTEGER NOT NULL DEFAULT 0,
+            criado_em  TEXT DEFAULT (datetime('now')),
+            atualizado_em TEXT DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_library_saga_ordem ON library_saga(ordem);
+
+        -- Item principal: uma obra/conteúdo registrado.
+        CREATE TABLE IF NOT EXISTS library_item (
+            id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+            tipo                TEXT NOT NULL,                       -- livro/filme/serie/podcast/artigo/video/curso/palestra/paper/outro
+            titulo              TEXT NOT NULL,
+            autor               TEXT,
+            ano                 INTEGER,
+            status              TEXT NOT NULL DEFAULT 'queue',       -- queue/doing/done/abandoned
+            data_inicio         TEXT,                                -- YYYY-MM-DD (seta ao virar doing)
+            data_fim            TEXT,                                -- YYYY-MM-DD (seta ao virar done/abandoned)
+            tese_central        TEXT,                                -- obrigatório p/ done (validado no backend)
+            o_que_ficou         TEXT,                                -- obrigatório p/ done
+            abandoned_reason    TEXT,                                -- obrigatório p/ abandoned
+            origem              TEXT,                                -- quem indicou / onde achou (livre)
+            revisitar_em        TEXT,                                -- YYYY-MM-DD opcional
+            notes_json          TEXT,                                -- BlockNote JSON (notas inline)
+            sort_order          INTEGER NOT NULL DEFAULT 0,
+            saga_id             INTEGER REFERENCES library_saga(id) ON DELETE SET NULL,
+            saga_ordem          INTEGER NOT NULL DEFAULT 0,
+            criado_em           TEXT DEFAULT (datetime('now')),
+            atualizado_em       TEXT DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_library_item_status
+            ON library_item(status, sort_order);
+        CREATE INDEX IF NOT EXISTS idx_library_item_revisitar
+            ON library_item(revisitar_em) WHERE revisitar_em IS NOT NULL;
+        -- Index idx_library_item_saga é criado FORA do executescript pra
+        -- garantir que as colunas saga_* já existem (em DBs migrados via
+        -- ALTER TABLE — _try_add_column lá embaixo).
+
+        -- Tags livres pra agrupamento por tema. Mesma estrutura das tags do
+        -- Mind — vocabulário emerge do uso, não fixado em código.
+        CREATE TABLE IF NOT EXISTS library_tag (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            slug        TEXT NOT NULL UNIQUE,
+            nome        TEXT NOT NULL,
+            cor         TEXT,
+            arquivado   INTEGER NOT NULL DEFAULT 0,
+            ordem       INTEGER NOT NULL DEFAULT 0,
+            criado_em   TEXT DEFAULT (datetime('now'))
+        );
+
+        -- M:N item ↔ tag.
+        CREATE TABLE IF NOT EXISTS library_item_tag (
+            item_id  INTEGER NOT NULL REFERENCES library_item(id) ON DELETE CASCADE,
+            tag_id   INTEGER NOT NULL REFERENCES library_tag(id)  ON DELETE CASCADE,
+            PRIMARY KEY(item_id, tag_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_library_item_tag_tag
+            ON library_item_tag(tag_id);
+
+        -- Sessões cronometradas por item (mesmo padrão de quest/task/routine).
+        -- Regra global "uma ativa por vez" reforçada via active_session.py.
+        CREATE TABLE IF NOT EXISTS library_session (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            item_id      INTEGER NOT NULL REFERENCES library_item(id) ON DELETE CASCADE,
+            session_num  INTEGER NOT NULL,
+            started_at   TEXT NOT NULL,                              -- ISO com Z (UTC)
+            ended_at     TEXT,                                        -- null = rodando ou pausada
+            UNIQUE(item_id, session_num)
+        );
+        CREATE INDEX IF NOT EXISTS idx_library_session_item
+            ON library_session(item_id, session_num);
+
+        -- Cross-links polimórficos pra outros módulos. target_type pode ser
+        -- 'mind_hipotese' | 'quest' | 'build_principle' | 'build_goal'.
+        -- Não usa FK por causa do polimorfismo — links órfãos viram problema
+        -- pequeno se entidade target for deletada (limpeza futura, se virar
+        -- atrito).
+        CREATE TABLE IF NOT EXISTS library_link (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            item_id      INTEGER NOT NULL REFERENCES library_item(id) ON DELETE CASCADE,
+            target_type  TEXT NOT NULL,
+            target_id    TEXT NOT NULL,                              -- TEXT porque quest.id é uuid
+            nota         TEXT,
+            criado_em    TEXT DEFAULT (datetime('now')),
+            UNIQUE(item_id, target_type, target_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_library_link_target
+            ON library_link(target_type, target_id);
+        CREATE INDEX IF NOT EXISTS idx_library_link_item
+            ON library_link(item_id);
         """)
 
         # /Build — coluna criterion_current_value: progresso digitado manualmente
         # em v1 (pré-Health). Em v2, quando Meta aponta pra metric_slug, esse
         # valor passa a ser puxado automaticamente do Hub Health.
         _try_add_column(conn, "ALTER TABLE build_goal ADD COLUMN criterion_current_value REAL")
+
+        # /Build — coluna `notes` long-form pra Meta (BlockNote JSON). Diferente
+        # de `descricao` (1-2 frases curtas, hint de propósito). `notes` é o
+        # caderno da Meta: razões profundas, links, raciocínio, status detalhado.
+        # Editado via BlockEditor no card de Meta (collapse fechado por default).
+        _try_add_column(conn, "ALTER TABLE build_goal ADD COLUMN notes TEXT")
 
         # Hub Health — coluna `hora_lembrete_sono` (HH:MM) substituindo a antiga
         # `lembrete_horas_apos_acordar` (INT) que tinha semântica confusa.
@@ -815,6 +993,12 @@ def init_db() -> None:
         # quebra streak.
         _try_add_column(conn, "ALTER TABLE build_ritual_session ADD COLUMN skipped INTEGER NOT NULL DEFAULT 0")
         _try_add_column(conn, "ALTER TABLE build_ritual_session ADD COLUMN skip_reason TEXT")
+
+        # Hub Health Mind — settings do adversarial challenge.
+        _try_add_column(conn, "ALTER TABLE health_settings ADD COLUMN mind_challenge_ativo INTEGER NOT NULL DEFAULT 1")
+        _try_add_column(conn, "ALTER TABLE health_settings ADD COLUMN mind_challenge_min_aparicoes INTEGER NOT NULL DEFAULT 5")
+        _try_add_column(conn, "ALTER TABLE health_settings ADD COLUMN mind_challenge_janela_dias INTEGER NOT NULL DEFAULT 14")
+        _try_add_column(conn, "ALTER TABLE health_settings ADD COLUMN mind_suspender_por_dias INTEGER NOT NULL DEFAULT 14")
 
         # Garante que existe 1 linha de profile. Nome default é piada — o usuário
         # edita pelo ProfileEditModal no primeiro uso. INSERT OR IGNORE =
@@ -908,11 +1092,15 @@ def init_db() -> None:
         # Domínios cadastráveis (slug, template, ausência threshold, etc).
         health_domain_seeds = [
             # (slug, nome, cor, icone, template, usa_itens, lembrete_ativo, ausencia_dias, ordem)
-            ("sono",          "Sono",              None, "moon",     "janela_qualidade", 0, 1, 2,    1),
-            ("exercicio",     "Exercício",         None, "dumbbell", "atividade_tipo",   1, 1, 7,    2),
-            ("alimentacao",   "Alimentação",       None, "utensils", "refeicao_2modos",  1, 1, 1,    3),
-            ("vicios",        "Vícios",            None, "alert-triangle", "consumo_vontade", 1, 0, None, 4),
-            ("medidas",       "Medidas Corporais", None, "scale",    "metrica_simples",  1, 0, None, 5),
+            ("sono",          "Sono",              None,     "moon",     "janela_qualidade", 0, 1, 2,    1),
+            ("exercicio",     "Exercício",         None,     "dumbbell", "atividade_tipo",   1, 1, 7,    2),
+            ("alimentacao",   "Alimentação",       None,     "utensils", "refeicao_2modos",  1, 1, 1,    3),
+            ("vicios",        "Vícios",            None,     "alert-triangle", "consumo_vontade", 1, 0, None, 4),
+            ("medidas",       "Medidas Corporais", None,     "scale",    "metrica_simples",  1, 0, None, 5),
+            # Mind: observação estruturada. Roxo dessaturado pra preencher matiz
+            # livre na palette. lembrete=1 + ausencia=2 (alinha com sono — mesma
+            # frequência diária). usa_itens=0 (observação não é por categoria).
+            ("mind",          "Mind",              "#9b88c4", "eye",     "observacao_estruturada", 0, 1, 2, 6),
         ]
         for slug, nome, cor, icone, template, usa_itens, lembrete, ausencia, ordem in health_domain_seeds:
             conn.execute(
@@ -961,6 +1149,32 @@ def init_db() -> None:
         conn.execute(
             "INSERT OR IGNORE INTO health_settings(id) VALUES (1)"
         )
+
+        # Mind — tags default (vocabulário operacional pra observação).
+        # Usuário pode arquivar/criar próprios. INSERT OR IGNORE preserva edições.
+        # Tags propositalmente neutras filosoficamente — operam como
+        # categorias de padrão observável, não rótulos terapêuticos.
+        mind_tag_seeds = [
+            # (slug, nome, descricao, cor, ordem)
+            ("rigidez",    "Rigidez",   "dificuldade de iniciar ou mudar",       None, 1),
+            ("hesitacao",  "Hesitação", "negociar/postergar a ação",             None, 2),
+            ("fadiga",     "Fadiga",    "esgotamento físico ou mental",          None, 3),
+            ("foco",       "Foco",      "clareza/concentração",                  None, 4),
+            ("presenca",   "Presença",  "atenção plena no momento",              None, 5),
+            ("evitacao",   "Evitação",  "fuga consciente ou não de algo",        None, 6),
+            ("impeto",     "Ímpeto",    "energia/vontade ativa",                 None, 7),
+            ("ruido",      "Ruído",     "pensamento desorganizado",              None, 8),
+            ("silencio",   "Silêncio",  "vazio observado, neutro",               None, 9),
+            ("centro",     "Centro",    "alinhamento interno",                   None, 10),
+            ("distorcao",  "Distorção", "viés/projeção identificada",            None, 11),
+            ("clareza",    "Clareza",   "insight ou compreensão direta",         None, 12),
+        ]
+        for slug, nome, descricao, cor_tag, ordem in mind_tag_seeds:
+            conn.execute(
+                "INSERT OR IGNORE INTO health_mind_tag"
+                "(slug, nome, descricao, cor, ordem) VALUES (?, ?, ?, ?, ?)",
+                (slug, nome, descricao, cor_tag, ordem),
+            )
 
         # Seed de áreas — só em instalação nova. Usamos `INSERT OR IGNORE`
         # antes, o que recriava áreas deletadas a cada boot. Agora: se a
@@ -1236,6 +1450,25 @@ def init_db() -> None:
         # removemos os quests-projeto. Detecção: presença de `quest_id` em
         # deliverables antes de rodar o CREATE TABLE IF NOT EXISTS deste init.
         _try_add_column(conn, "ALTER TABLE quests ADD COLUMN project_id TEXT")
+
+        # Library — sagas: agrupamento puramente visual (28 dias depois →
+        # 28 semanas depois → 28 anos depois). SQLite NÃO aceita REFERENCES
+        # em ALTER TABLE ADD COLUMN — apenas em CREATE TABLE. Pra DBs já
+        # criados antes desta migration, a coluna existe mas SEM FK. Order
+        # ON DELETE SET NULL é aplicada no router (delete_saga seta NULL
+        # explicitamente) pra cobrir o caso de DBs migrados.
+        _try_add_column(conn, "ALTER TABLE library_item ADD COLUMN saga_id INTEGER")
+        _try_add_column(conn, "ALTER TABLE library_item ADD COLUMN saga_ordem INTEGER NOT NULL DEFAULT 0")
+        # Agora que as colunas existem (tanto em DBs novos via CREATE TABLE
+        # quanto em DBs migrados via ALTER TABLE), cria o índice composto.
+        try:
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_library_item_saga "
+                "ON library_item(saga_id, saga_ordem)"
+            )
+            conn.commit()
+        except sqlite3.OperationalError:
+            pass
 
         if needs_project_split:
             conn.execute("PRAGMA foreign_keys=OFF")

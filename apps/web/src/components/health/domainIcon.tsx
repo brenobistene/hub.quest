@@ -25,6 +25,7 @@ const FALLBACK_BY_TEMPLATE: Record<string, IconComponent> = {
   consumo_vontade: Lucide.AlertTriangle,
   metrica_simples: Lucide.Scale,
   evento_escala: Lucide.Smile,
+  observacao_estruturada: Lucide.Eye,
 }
 
 /**

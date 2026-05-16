@@ -1,4 +1,4 @@
-# Hub Quest
+# MAINFRAME
 
 App pessoal de produtividade single-user — organiza projetos, tarefas, rotinas e sessões de tempo por áreas da vida. Roda 100% local, sem deploy, sem autenticação, sem nuvem.
 
@@ -60,8 +60,8 @@ Hierarquia: **Área → Projeto → Entregável → Quest**. Cada nível tem sua
    - Verifica e instala **Python 3.12**, **Node.js LTS** e **Git** via `winget` (se ainda não tiverem)
    - Roda `pip install -r requirements.txt` no backend
    - Roda `npm install` no frontend
-   - Cria um atalho **Hub Quest** no Desktop com ícone customizado
-3. Quando terminar, duplo clique em **Hub Quest** no Desktop pra abrir o app.
+   - Cria um atalho **MAINFRAME** no Desktop com ícone customizado
+3. Quando terminar, duplo clique em **MAINFRAME** no Desktop pra abrir o app.
 
 > Se o `setup.bat` reclamar de "comando não reconhecido" logo depois de instalar Python ou Node, **feche e reabra o terminal** — o Windows só vê os PATHs novos em sessões novas. Rode o `setup.bat` de novo.
 
@@ -71,7 +71,7 @@ Se preferir comando por comando, estiver em Windows 10, macOS ou Linux, ou quise
 
 ### Rodando o app
 
-**Windows (recomendado):** duplo clique no atalho **Hub Quest** do Desktop, ou no `start-hub.bat` da raiz. Sobe backend + frontend em duas abas do Windows Terminal e abre o Chrome em `http://localhost:5174/`.
+**Windows (recomendado):** duplo clique no atalho **MAINFRAME** do Desktop, ou no `start-hub.bat` da raiz. Sobe backend + frontend em duas abas do Windows Terminal e abre o Chrome em `http://localhost:5174/`.
 
 **Manual (qualquer SO):** dois terminais:
 
