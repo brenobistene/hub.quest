@@ -1,28 +1,102 @@
 # MAINFRAME
 
-App pessoal de produtividade single-user — organiza projetos, tarefas, rotinas e sessões de tempo por áreas da vida. Roda 100% local, sem deploy, sem autenticação, sem nuvem.
+Painel pessoal de produtividade single-user — substitui Notion + To-do + planilha + calendário + 5 outros apps por uma cockpit própria. Cobre projetos, finanças, saúde, leitura, pensamentos, metas estratégicas e tempo de execução, tudo amarrado por áreas de vida. Roda 100% local, sem deploy, sem autenticação, sem nuvem.
 
-É um sistema feito pra quem quer ter o próprio painel de controle em vez de espalhar trabalho entre Notion, To-do, planilha, calendário e quatro apps diferentes. Tudo num lugar só, cada entidade com seu propósito claro.
+É um sistema feito pra quem quer o próprio painel de controle em vez de espalhar trabalho entre múltiplas ferramentas. Cada entidade tem propósito e UI próprias — nenhuma é "tabela genérica reutilizada".
 
 ---
 
 ## O que tem dentro
 
-**Dashboard** — visão geral da semana/mês. Status híbrido dos projetos (tudo em dia / em risco / atrasado), quanto você precisa trabalhar hoje pra se manter em dia, e o item mais urgente.
+### Operação diária
 
-**Dia** — planejamento do dia atual. Arrasta quests, tarefas e rotinas pros períodos (manhã / tarde / noite). Timer de sessão por item, banner flutuante enquanto uma sessão está ativa, busca textual no drawer de planejar.
+**Dashboard** — visão geral. Perfil + frase do dia, status híbrido dos projetos (em dia / em risco / atrasado), próximo ritual estratégico, item mais urgente, horas necessárias hoje.
 
-**Calendário** — visões de dia, semana, mês e ano. Eventos sobrepostos exibidos lado a lado (estilo Google Calendar), altura proporcional à duração real, marcas de meia hora no zoom. Deadlines de projetos e entregáveis distribuídos nas datas. Blocos improdutivos configuráveis.
+**EXEC** — planejamento do dia atual (rota `/exec`, antes era `/dia`). Arrasta quests, tarefas, rotinas e rituais pros 3 períodos (manhã / tarde / noite). Timer por item com banner flutuante quando há sessão ativa, drawer com busca textual, fallback de chips M/T/N pra touch.
 
-**Quests** — lista agrupada dos projetos por área, com suas subtarefas. Entregáveis drag-and-drop reordenáveis, inline editing, descrição em editor estilo Notion (headings, bullets, checklists, divider).
+**Calendário** — visões dia / semana / mês / ano. Eventos sobrepostos lado a lado (estilo Google Calendar), altura proporcional à duração, blocos improdutivos configuráveis, rituais como blocos com legenda RTL/EXC/MND, deadlines de projetos e entregáveis distribuídos.
 
-**Áreas** — áreas de vida totalmente editáveis. Cada área tem cor própria que pinta os elementos relacionados no app todo. Cards de projeto com barra de progresso (% de entregáveis concluídos), botões de finalizar / arquivar / excluir.
-
-**Tarefas** — to-dos soltos não amarrados a projetos. Agendáveis por data e hora.
+**Tarefas** — to-dos pontuais não amarrados a projeto. Agendáveis por data e hora com prioridade.
 
 **Rotinas** — hábitos recorrentes (diário, dias úteis, semanal, mensal). Geram sessões no calendário automaticamente.
 
-**Micro Dump** — inbox pra ideias soltas que não viraram nada ainda. Promove pra tarefa, quest ou rotina.
+**Micro Dump** — inbox de ideias soltas. Promove pra tarefa, quest, rotina ou arquiva.
+
+**Time Reports** — analytics de tempo gasto agregado por área, projeto ou período.
+
+### Quests & Áreas
+
+**Hierarquia Área → Projeto → Entregável → Quest.** Cada nível tem tabela e UI próprias:
+
+- **Áreas** — 5 áreas de vida editáveis com cor que pinta o app inteiro. Cards de projeto com barra de progresso.
+- **Projetos** — container estratégico (deadline, prioridade, notes BlockNote rich-text, valor acordado, cliente, arquivamento).
+- **Entregáveis** — agrupadores de quests com deadline própria. Auto-fecham quando todas as quests filhas terminam.
+- **Quests** — unidade granular de trabalho. Sempre amarrada a projeto + entregável. Herda deadline.
+- **Project Pages** — sub-páginas BlockNote dentro de projetos (estilo "caderno de matéria" do Notion).
+
+### Hub Finance
+
+Gestão financeira pessoal completa:
+
+- Visão geral com saldo total multi-moeda (BRL + USD/outras via cotação manual + auto-fetch)
+- Lançamentos (receita / despesa / estorno / transferência)
+- Carteira (contas correntes, crédito, wallet, Wise)
+- Categorias customizáveis com regras de auto-categorização por padrão de descrição
+- Dívidas com cronograma flexível de parcelas (faculdade, financiamento)
+- Contas fixas recorrentes (luz, internet, salário) com status mensal pago / pendente
+- Freelas com R$/hora estimado vs. real, valor acordado, parcelas a receber, vínculo a cliente
+- Wishlist com reservas mensais, simulação de compra e vínculo a transações reais
+- Faturas de cartão de crédito com reconciliação automática (auto-link de pagamento)
+- Import CSV Nubank com deduplicação e auto-link de parcelas por CPF/CNPJ
+- Compromissos do mês (visão consolidada: contas fixas + dívidas + faturas + freelas)
+
+### Build — Sistema de Metas de Vida
+
+Camada estratégica acima do operacional:
+
+- **Propósito** (texto livre) + **Princípios negativos** (anti-metas — o que você NÃO faz)
+- **Visão de 3 anos** versionada (histórico de revisões com motivo de arquivamento)
+- **Metas** trimestrais / anuais com critério numérico ou booleano
+- **Sprints** (sub-unidades de meta anual)
+- **Dependências entre metas** com validação anti-ciclo (DFS)
+- **Guardrails** ancorados em métricas do Hub Health (ex: "não cair pra menos de 6h de sono")
+- **Rituais** semanal / mensal / trimestral / anual com schedule próprio e tracking de execução
+- **Cascade view** — propósito → visão → metas → sprints → projetos → quests
+- **Drift detection** — destaque pra projetos sem meta vinculada (alinhamento estratégico)
+
+### Hub Health — Biomonitor
+
+Tracker de saúde pessoal modular:
+
+- Visão geral biomonitor em grid responsivo dos domínios ativos
+- Domínios pré-templados: Sono, Exercício, Alimentação, Vícios, Janela de qualidade, etc.
+- Registros diários com payload customizável por template
+- Heatmap 30 dias + sparkline de tendência
+- Métricas calculadas por domínio (média 7d, consumo médio diário, streak, etc.)
+- Itens cadastráveis dentro dos domínios (cigarros, alimentos, exercícios)
+- Trackers especiais (ex: "tempo sem fumar" calculado em tempo real)
+- Pendências detectadas (sem registro hoje, lembretes ativos)
+
+### Mind
+
+Diário estruturado de pensamentos e hipóteses:
+
+- Registros datados com tags
+- Promoção de pensamento → hipótese → tese
+- Página por tag agregando todos os registros relacionados
+
+### Library
+
+Caderno de leitura e estudo:
+
+- Items (livros, artigos, vídeos, papers) com status de progresso
+- Temas pra categorização cruzada
+- Cross-link picker pra amarrar items entre si e a projetos
+- Métrica de densidade de leitura (minutos / dia)
+
+### Sessões globais
+
+Banner flutuante quando uma sessão (quest / tarefa / rotina) está ativa. Apenas **uma sessão por vez** em todo o sistema (validado no backend com HTTP 409 em conflito). Edição manual retroativa, finalização cross-midnight, refetch automático em delete/edit.
 
 ---
 
