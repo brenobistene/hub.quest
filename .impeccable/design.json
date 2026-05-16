@@ -1,0 +1,202 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-05-16T15:00:29Z",
+  "title": "Design System: Hub Quest",
+  "extensions": {
+    "colorMeta": {
+      "accent-red-deep": {
+        "role": "primary",
+        "displayName": "Accent Red Deep (Oxblood)",
+        "canonical": "oklch(43.6% 0.143 9.8)",
+        "tonalRamp": ["#4c0519", "#7a0e2e", "#9f1239", "#be123c", "#fb7185"],
+        "ritual": "Comando primário. Botão primary, status crítico, pulse ao vivo. Parcimônia ritualística — máximo um terço da tela."
+      },
+      "accent-red-vivid": {
+        "role": "destructive",
+        "displayName": "Accent Red Vivid",
+        "canonical": "oklch(58.6% 0.236 27.6)",
+        "purpose": "Error puro / alarme. Fora do regime ritualístico do oxblood."
+      },
+      "cool-blue": {
+        "role": "secondary",
+        "displayName": "Cool Blue (Aurora Ice)",
+        "canonical": "oklch(76.7% 0.067 226)",
+        "tonalRamp": ["#283239", "#536e7a", "#8fbfd3", "#cfe2ea", "#d4dadc"],
+        "purpose": "Acento estrutural / tech. Hairlines, tech labels ativos, focus rings, glows estruturais."
+      },
+      "near-black": {
+        "role": "neutral",
+        "displayName": "Near Black (Bluish Carbon)",
+        "canonical": "oklch(15.1% 0.012 254)",
+        "tonalRamp": ["#0b0d12", "#131519", "#1c1f25", "#221f23"],
+        "purpose": "Background base e superfícies. Tint azulado sutil — nunca #000."
+      },
+      "warm-soft": {
+        "role": "neutral",
+        "displayName": "Warm Soft (Off-White)",
+        "canonical": "oklch(92.4% 0.008 60)",
+        "tonalRamp": ["#585350", "#7c7570", "#b8b0a8", "#ece8e3"],
+        "purpose": "Texto. Tint warm sutil — nunca #fff."
+      },
+      "muted-green": {
+        "role": "success",
+        "displayName": "Muted Leaf Green",
+        "canonical": "oklch(50.7% 0.057 135)",
+        "purpose": "Status 'em dia', completed, vitals nominal. Dessaturado, nunca grita."
+      },
+      "gold-dim": {
+        "role": "warning",
+        "displayName": "Gold Dim",
+        "canonical": "oklch(64.4% 0.108 70)",
+        "purpose": "Warning, lembrete pendente, drift detected. Atenção sem alarme."
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display (Rajdhani)",
+        "purpose": "Hero headlines (veredicts), nomes de seção, comando visual. Tall + condensed, +0.015em letter-spacing baseline; uppercase + 0.02-0.22em em uso real."
+      },
+      "body": {
+        "displayName": "Body (Chakra Petch)",
+        "purpose": "Prosa funcional, descrições, modal content. Geométrica com cortes técnicos."
+      },
+      "mono": {
+        "displayName": "Mono (JetBrains Mono)",
+        "purpose": "Dados, números, IDs técnicos, código. tabular-nums obrigatório — dois dígitos ocupam mesma largura."
+      },
+      "serif": {
+        "displayName": "Serif Italic (Bitter)",
+        "purpose": "Reservada. Frases-marca, empty states líricos, micro-narrativa. Quando a UI 'fala' com o operador."
+      },
+      "tech-label": {
+        "displayName": "Tech Label",
+        "purpose": "Headers de seção HUD-style. Prefixo `//` em ice + label uppercase + letter-spacing largo."
+      },
+      "tech-id": {
+        "displayName": "Tech ID",
+        "purpose": "Metadata técnico. Timestamps, IDs, micro-hints."
+      }
+    },
+    "shadows": [
+      { "name": "shadow-sm", "value": "0 2px 8px rgba(0,0,0,0.18)", "purpose": "Elevação leve de chip ativo." },
+      { "name": "shadow-md", "value": "0 6px 22px rgba(0,0,0,0.32)", "purpose": "Dropdown / popover." },
+      { "name": "shadow-lg", "value": "0 14px 40px rgba(0,0,0,0.45)", "purpose": "Menu flutuante elevado." },
+      { "name": "shadow-xl", "value": "0 24px 60px rgba(0,0,0,0.55)", "purpose": "Hero element raro." },
+      { "name": "shadow-modal", "value": "0 20px 80px rgba(0,0,0,0.6), 0 4px 16px rgba(0,0,0,0.4)", "purpose": "Backdrop de modal." },
+      { "name": "shadow-chrome-inner", "value": "inset 0 1px 0 rgba(255,255,255,0.18), inset 0 -1px 0 rgba(0,0,0,0.3)", "purpose": "Inset chrome em superfícies metálicas." },
+      { "name": "glow-accent", "value": "0 0 0 1px rgba(159,18,57,0.4), 0 0 24px rgba(159,18,57,0.25)", "purpose": "Focus state oxblood." },
+      { "name": "glow-ice", "value": "0 0 0 1px rgba(143,191,211,0.4), 0 0 24px rgba(143,191,211,0.30)", "purpose": "Focus / hover ice — botões ghost, inputs em foco." },
+      { "name": "glow-success", "value": "0 0 0 1px rgba(122,154,138,0.4), 0 0 24px rgba(122,154,138,0.20)", "purpose": "Focus success." },
+      { "name": "focus-ring", "value": "0 0 0 2px var(--color-bg-primary), 0 0 0 3px var(--color-ice)", "purpose": "Focus visible global (a11y)." }
+    ],
+    "motion": [
+      { "name": "motion-instant", "value": "80ms", "purpose": "Hover/press feedback imediato." },
+      { "name": "motion-fast", "value": "150ms", "purpose": "Transições rápidas (border, color)." },
+      { "name": "motion-base", "value": "220ms", "purpose": "Default pra fade/transform de cards/sections." },
+      { "name": "motion-slow", "value": "350ms", "purpose": "Entrada de página, transição entre rotas." },
+      { "name": "motion-modal", "value": "280ms", "purpose": "Entrada/saída de modal." },
+      { "name": "ease-smooth", "value": "cubic-bezier(0.4, 0, 0.2, 1)", "purpose": "Default. Material standard." },
+      { "name": "ease-spring", "value": "cubic-bezier(0.34, 1.56, 0.64, 1)", "purpose": "Spring com leve overshoot. Reservado pra feedback de press/spring específico — não default. Banido em transitions globais (vira bounce ruim)." },
+      { "name": "ease-emphasis", "value": "cubic-bezier(0.2, 0, 0, 1)", "purpose": "Entrada de hero elements. Curva mais agressiva, foco no fim." }
+    ],
+    "breakpoints": [
+      { "name": "mobile", "value": "640px", "purpose": "Sidebar vira drawer. Touch targets ≥40px." },
+      { "name": "tablet", "value": "1024px", "purpose": "Layout 2-col estreita pra 1." },
+      { "name": "desktop", "value": "1280px+", "purpose": "Layout otimizado primário." }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Comando primário oxblood. Hover translate-y -1px + color shift pra accent-red-mid.",
+      "html": "<button class=\"hq-btn--primary\">REGISTRAR</button>",
+      "css": ".hq-btn--primary { background: #9f1239; color: #ece8e3; padding: 7px 14px; font-family: 'Rajdhani', sans-serif; font-size: 11px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; border: none; border-radius: 6px; cursor: pointer; transition: background 220ms cubic-bezier(0.4,0,0.2,1), transform 220ms cubic-bezier(0.4,0,0.2,1); display: inline-flex; align-items: center; gap: 6px; } .hq-btn--primary:hover { background: #be123c; transform: translateY(-1px); }"
+    },
+    {
+      "name": "Ghost Button",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "Ação secundária. Border ice, texto ice-light. Glow ice no hover.",
+      "html": "<button class=\"hq-btn--ghost\">ITENS</button>",
+      "css": ".hq-btn--ghost { background: transparent; color: #cfe2ea; padding: 7px 12px; font-family: 'Rajdhani', sans-serif; font-size: 11px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; border: 1px solid #536e7a; border-radius: 6px; cursor: pointer; transition: all 220ms cubic-bezier(0.4,0,0.2,1); display: inline-flex; align-items: center; gap: 6px; } .hq-btn--ghost:hover { background: rgba(143,191,211,0.14); border-color: #8fbfd3; box-shadow: 0 0 12px rgba(143,191,211,0.25); }"
+    },
+    {
+      "name": "Glass Card",
+      "kind": "card",
+      "refersTo": "card-glass",
+      "description": "Container ambiente com glass + grain + chamfer diagonal bottom-left.",
+      "html": "<div class=\"hq-glass hq-grain hq-chamfer-bl\"><div class=\"label\">// BIO.STATUS</div><h2>VITALS NOMINAL</h2></div>",
+      "css": ".hq-glass { background: rgba(28,31,37,0.55); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); border: 1px solid rgba(236,232,227,0.06); padding: 14px 18px; position: relative; } .hq-chamfer-bl { clip-path: polygon(0 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%); border-radius: 0; } .hq-grain::after { content: ''; position: absolute; inset: 0; pointer-events: none; opacity: 0.08; mix-blend-mode: overlay; background-image: url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='280' height='280'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.95' numOctaves='3'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>\"); } .hq-glass .label { font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 700; letter-spacing: 0.28em; color: #8fbfd3; margin-bottom: 8px; } .hq-glass h2 { font-family: 'Rajdhani', sans-serif; font-size: 38px; font-weight: 700; letter-spacing: 0.02em; color: #5e7a52; text-shadow: 0 0 24px rgba(110,167,122,0.35); text-transform: uppercase; line-height: 1; margin: 0; }"
+    },
+    {
+      "name": "Tech Label",
+      "kind": "custom",
+      "description": "Label HUD-style com prefixo `//` ice + texto uppercase letter-spacing largo.",
+      "html": "<span class=\"hq-tech-label\">PROJECT.MATRIX · 12</span>",
+      "css": ".hq-tech-label { font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 700; letter-spacing: 0.28em; text-transform: uppercase; color: #ece8e3; display: inline-flex; align-items: center; gap: 6px; } .hq-tech-label::before { content: '//'; color: rgba(143,191,211,0.85); letter-spacing: 0; }"
+    },
+    {
+      "name": "Pulse Square (Live)",
+      "kind": "custom",
+      "refersTo": "pulse-square",
+      "description": "Quadrado oxblood 8x8 pulsando 1.6s. Signal 'ao vivo / acontecendo agora'.",
+      "html": "<span class=\"hq-pulse-square\"></span>",
+      "css": ".hq-pulse-square { display: inline-block; width: 8px; height: 8px; background: #9f1239; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.18); animation: hq-pulse-square 1.6s cubic-bezier(0.4,0,0.2,1) infinite; flex-shrink: 0; } @keyframes hq-pulse-square { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.55; transform: scale(0.85); } } @media (prefers-reduced-motion: reduce) { .hq-pulse-square { animation: none; } }"
+    },
+    {
+      "name": "Hairline Ice",
+      "kind": "custom",
+      "description": "Linha 1px gradiente ice no topo de hero cards. Assinatura HUD.",
+      "html": "<div class=\"hq-hairline-ice\"></div>",
+      "css": ".hq-hairline-ice { height: 1px; background: linear-gradient(90deg, transparent 0%, #8fbfd3 20%, #cfe2ea 50%, #8fbfd3 80%, transparent 100%); box-shadow: 0 0 8px rgba(143,191,211,0.45); }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Mission Control",
+    "overview": "Hub Quest é o console de uma operação pessoal. O usuário senta no console e lê telemetria da própria vida, executa, registra. Atmosfera Hell Is Us cinemática (fog azul cool, halo branco off-center, mancha oxblood) cruzada com estrutura HUD CP2077 (tech labels uppercase, IDs mono, hairlines de luz, chamfers diagonais). REZZ inspira economia hipnótica — vermelho contido nos pontos de comando. Densidade maximalista no atmosferismo, minimalismo nos elementos. O ambiente é o protagonista; componentes flutuam dentro dele.",
+    "keyCharacteristics": [
+      "Atmosfera cinemática Hell Is Us + estrutura HUD CP2077",
+      "Vermelho oxblood ritualístico, ice azul tech, warm soft no texto (nunca #fff/#000)",
+      "Tipografia tripla: Rajdhani display + Chakra Petch body + JetBrains Mono dados",
+      "Chamfer diagonais e hairlines ice como assinatura geométrica",
+      "Glass + grain + glow como vocabulário ambiente",
+      "Pulse-square oxblood como signal 'live' — não pisca emoji, pisca sigilo"
+    ],
+    "rules": [
+      { "name": "The Ritualistic Red Rule", "body": "Accent Red Deep (#9f1239) é reagente. Comando, status crítico, pulse ao vivo. Nunca decoração. Sua raridade é o peso.", "section": "colors" },
+      { "name": "The No Pure Black/White Rule", "body": "Nunca #000 ou #fff. Fundo Near Black (#0b0d12) tintado azul, texto Warm Soft (#ece8e3) tintado warm.", "section": "colors" },
+      { "name": "The Two Accents Rule", "body": "Oxblood (comando) + Cool Blue (tech) são os únicos saturados. Tudo mais é neutro warm-soft + near-black. Terceiro accent é falha.", "section": "colors" },
+      { "name": "The Mono For Numbers Rule", "body": "Todo número que muda usa JetBrains Mono + tabular-nums. Dois dígitos sempre ocupam mesma largura.", "section": "typography" },
+      { "name": "The Uppercase Letter-Spacing Rule", "body": "ALL CAPS sempre com letter-spacing aumentado (mínimo 0.04em, ideal 0.18-0.28em). Caps sem tracking é grito sem ar.", "section": "typography" },
+      { "name": "The Serif Reserved Rule", "body": "Bitter italic só em momentos onde a UI 'fala' com o operador. Empty state, frase-marca. Nunca em label funcional.", "section": "typography" },
+      { "name": "The Glass-Over-Shadow Rule", "body": "Peso visual: primeiro hq-glass + hq-grain + hq-chamfer-bl. Sombra é último recurso, e nunca colorida.", "section": "elevation" },
+      { "name": "The Atmosphere-Is-Layer-Zero Rule", "body": "Body grain + 7 radial-gradients já dão profundidade. Não competir com blur/glow em cada componente. Glow é signal, não textura.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do usar Near Black (#0b0d12) e Warm Soft (#ece8e3) como extremos. Nunca #000 ou #fff.",
+      "Do reservar Accent Red Deep (#9f1239) pra comando ritualístico. Botão primary, status crítico, pulse ao vivo. Nunca decoração de card.",
+      "Do usar mono + tabular-nums em todo número que muda.",
+      "Do envolver hero cards em hq-glass + hq-grain + hq-chamfer-bl antes de pensar em box-shadow.",
+      "Do combinar hq-tech-label (com //) com section headers HUD.",
+      "Do respeitar prefers-reduced-motion via useReducedMotion em Motion.tsx.",
+      "Do usar AnimatedNumber em stats scoreboard (duration 0.7).",
+      "Do variar spacing pra criar ritmo.",
+      "Do usar Bitter italic só quando a UI 'fala' com o operador."
+    ],
+    "donts": [
+      "Don't usar border-left/right > 1px como accent colorido em cards/list/callouts (ban absoluto da skill — Hub Quest viola atualmente em RecordRow, hero cards, DomainPanel; refatorar).",
+      "Don't usar emojis em UI ou icons cute. Lucide stroke-icon é o vocabulário.",
+      "Don't gamificar (XP, levels, badges, achievements, streaks como troféu).",
+      "Don't cair no template SaaS clássico (gradient hero + 4 cards iguais + line chart azul).",
+      "Don't usar gradient text (background-clip: text). Cor sólida, ênfase via weight/size.",
+      "Don't abusar de glassmorphism. Use hq-glass com propósito, não em tudo.",
+      "Don't usar em dashes (—) ou -- em copy.",
+      "Don't introduzir terceiro accent. Paleta é Oxblood + Cool Blue + neutros.",
+      "Don't animar propriedades de layout (width/height/top/left). Use transform e opacity.",
+      "Don't usar ease-spring (bounce) fora de feedback de press específico.",
+      "Don't reproduzir reflexos de categoria (healthcare white-teal, observability dark-blue, fintech navy-gold, crypto neon-on-black)."
+    ]
+  }
+}

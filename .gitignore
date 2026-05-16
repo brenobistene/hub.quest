@@ -60,3 +60,5 @@ apps/web/public/*.personal.*
 !README.md
 !INSTALL.md
 !TESTING.md
+!PRODUCT.md
+!DESIGN.md
