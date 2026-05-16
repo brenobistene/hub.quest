@@ -12,8 +12,11 @@ import { getAllBlockRangesForDay } from '../utils/blocks'
 import { Card } from '../components/ui/Primitives'
 import { alertDialog } from '../lib/dialog'
 import { RitualNextCard } from '../components/RitualNextCard'
-import { useRitualSchedule } from '../lib/build-queries'
-import type { BuildRitualCadencia } from '../types'
+import { CalendarLegend } from '../components/CalendarLegend'
+import { useRitualSchedule, useRituals } from '../lib/build-queries'
+import { useDiaPendencias } from '../lib/dia-queries'
+import { loadDayPeriods, periodRangesMinFrom } from '../utils/dayPeriods'
+import type { BuildRitual, BuildRitualCadencia } from '../types'
 
 const MONTH_NAMES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
                      'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro']
@@ -113,6 +116,61 @@ function routineMatchesDay(r: Routine, jsDay: number): boolean {
 }
 
 /**
+ * Resolve em qual minuto do dia um item (ritual/health-item/mind) deve
+ * aparecer no timeline.
+ *
+ * Prioridade:
+ *  1. `horario_sugerido` ("HH:MM") se preenchido
+ *  2. dayPlan do dia (localStorage `hq-day-plan-${dateIso}`): início do
+ *     período onde o item foi alocado
+ *  3. null = não renderizar como block (mantém só marker no header)
+ *
+ * Retorna `{ startMin, endMin }` em minutos desde meia-noite do dia,
+ * usando `duracaoMin` pra calcular endMin. Se duracaoMin <= 0, usa 30
+ * como mínimo razoável pra dar presença visual.
+ */
+function resolveItemSlot(
+  itemId: string,
+  dateIso: string,
+  horarioSugerido: string | null | undefined,
+  duracaoMin: number,
+): { startMin: number; endMin: number } | null {
+  const dur = Math.max(15, duracaoMin || 30)
+
+  // 1. horario_sugerido direto
+  if (horarioSugerido && /^\d{2}:\d{2}$/.test(horarioSugerido)) {
+    const [h, m] = horarioSugerido.split(':').map(Number)
+    const start = h * 60 + m
+    return { startMin: start, endMin: start + dur }
+  }
+
+  // 2. dayPlan do dia — lê localStorage diretamente (sem hook pra
+  //    funcionar em qualquer dateIso, inclusive dias futuros sem hook).
+  try {
+    const raw = localStorage.getItem(`hq-day-plan-${dateIso}`)
+    if (!raw) return null
+    const plan = JSON.parse(raw) as {
+      morning?: string[]
+      afternoon?: string[]
+      evening?: string[]
+    }
+    const periods = loadDayPeriods()
+    const ranges = periodRangesMinFrom(periods)
+    if (plan.morning?.includes(itemId)) {
+      return { startMin: ranges.morning[0], endMin: ranges.morning[0] + dur }
+    }
+    if (plan.afternoon?.includes(itemId)) {
+      return { startMin: ranges.afternoon[0], endMin: ranges.afternoon[0] + dur }
+    }
+    if (plan.evening?.includes(itemId)) {
+      return { startMin: ranges.evening[0], endMin: ranges.evening[0] + dur }
+    }
+  } catch { /* ignore */ }
+
+  return null
+}
+
+/**
  * `/calendario` — visão dia/semana/mês/ano. O modo "dia" e "semana" renderizam
  * um timeline 24h com sessões de quests (via `fetchSessions`), rotinas com
  * horário fixo, e blocos improdutivos (`hq-unproductive-blocks`, cross-midnight
@@ -182,6 +240,24 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger, on
     }
     return map
   }, [ritualSchedule])
+
+  // Rituais com metadados (cadência, nome, duração) pra resolver em blocks
+  // no timeline. ritualSchedule só dá as datas; rituals dá o detalhe.
+  const { data: rituals = [] } = useRituals()
+  const ritualByCadencia = useMemo(() => {
+    const map = new Map<BuildRitualCadencia, BuildRitual>()
+    for (const r of rituals) map.set(r.cadencia, r)
+    return map
+  }, [rituals])
+
+  // Pendências do dia visualizado (health items + mind). Hook recebe a data
+  // do calendário (não só hoje), permitindo blocks futuros se houver
+  // `horario_sugerido` ou dayPlan setado.
+  const dateIsoTmp = (() => {
+    const d = currentDate
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  })()
+  const { data: dayPendencias = [] } = useDiaPendencias(dateIsoTmp)
 
   useEffect(() => {
     const update = () => setCurrentTime(new Date())
@@ -342,9 +418,34 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger, on
       evs.push({ id: `r:${routine.id}`, startMin: sMin, endMin: eMin })
     })
 
+    // Rituais — só viram block se alocados via dayPlan (não têm
+    // horario_sugerido próprio). Markers no header continuam pros não
+    // alocados (renderizados em mês/semana view).
+    const ritualCadenciasNoDia = ritualsByDate.get(dateIso) ?? []
+    for (const cadencia of ritualCadenciasNoDia) {
+      const ritual = ritualByCadencia.get(cadencia)
+      if (!ritual) continue
+      const itemId = `ritual:${cadencia}`
+      const slot = resolveItemSlot(itemId, dateIso, null, ritual.duracao_alvo_min)
+      if (slot) evs.push({ id: itemId, startMin: slot.startMin, endMin: slot.endMin })
+    }
+
+    // Health items + Mind — usam horario_sugerido (vem do backend) com
+    // fallback pra dayPlan. Pendências não-feitas do dia ainda em
+    // `dayPendencias` (já filtra por `done` no backend via dia.py).
+    for (const p of dayPendencias) {
+      const slot = resolveItemSlot(
+        p.pendencia_id,
+        dateIso,
+        p.horario_sugerido,
+        p.duracao_min ?? 0,
+      )
+      if (slot) evs.push({ id: `pen:${p.pendencia_id}`, startMin: slot.startMin, endMin: slot.endMin })
+    }
+
     return computeEventLayout(evs)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [quests, tasks, routines, allSessions, allTaskSessions, allRoutineSessions, dateIso])
+  }, [quests, tasks, routines, allSessions, allTaskSessions, allRoutineSessions, dateIso, ritualsByDate, ritualByCadencia, dayPendencias])
 
   return (
     <div style={{ color: 'var(--color-text-primary)' }}>
@@ -1337,6 +1438,117 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger, on
                         )}
                       </div>
                     </Fragment>
+                  )
+                })}
+
+                {/* Rituais alocados — só renderiza quando resolveItemSlot
+                    devolve slot (via dayPlan). Sem horario_sugerido próprio. */}
+                {(ritualsByDate.get(dateIso) ?? []).map((cadencia) => {
+                  const ritual = ritualByCadencia.get(cadencia)
+                  if (!ritual) return null
+                  const itemId = `ritual:${cadencia}`
+                  const slot = resolveItemSlot(itemId, dateIso, null, ritual.duracao_alvo_min)
+                  if (!slot) return null
+                  const topPercent = 20 + (slot.startMin / 60) * 60 * timelineZoom
+                  const heightPercent = ((slot.endMin - slot.startMin) / 60) * 60 * timelineZoom
+                  const lay = dayEventLayout.get(itemId) ?? { col: 0, cols: 1 }
+                  const lane = laneStyle(lay.col, lay.cols)
+                  const ritualName = ritual.nome || `Ritual ${cadencia}`
+                  const accent = '#dc2531' // Neomilitarism red
+                  return (
+                    <div
+                      key={itemId}
+                      title={`${ritualName} · ritual ${cadencia} · ${ritual.duracao_alvo_min}min`}
+                      style={{
+                        position: 'absolute',
+                        left: lane.left,
+                        width: lane.width,
+                        top: `${topPercent}px`,
+                        height: `${heightPercent}px`,
+                        background: `linear-gradient(135deg, ${accent}1a 0%, transparent 60%), rgba(8, 12, 18, 0.55)`,
+                        border: `1px solid ${accent}`,
+                        clipPath: 'polygon(0 0, calc(100% - 6px) 0, 100% 6px, 100% 100%, 6px 100%, 0 calc(100% - 6px))',
+                        padding: '4px 6px',
+                        overflow: 'hidden',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        justifyContent: 'space-between',
+                        opacity: 0.95,
+                        boxShadow: `0 0 8px ${accent}40`,
+                      }}
+                    >
+                      <div style={{
+                        fontSize: 9, fontWeight: 600, lineHeight: 1.1,
+                        color: 'var(--color-text-primary)',
+                        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                      }}>
+                        {ritualName}
+                      </div>
+                      <div style={{
+                        fontFamily: 'var(--font-mono)',
+                        fontSize: 8, fontWeight: 700,
+                        color: accent,
+                        letterSpacing: '0.08em',
+                      }}>
+                        RTL · {cadencia.toUpperCase()}
+                      </div>
+                    </div>
+                  )
+                })}
+
+                {/* Pendências (Health items + Mind) — usam horario_sugerido
+                    ou dayPlan period. Mind = roxo, health = cor do domain. */}
+                {dayPendencias.map((p) => {
+                  const slot = resolveItemSlot(
+                    p.pendencia_id,
+                    dateIso,
+                    p.horario_sugerido,
+                    p.duracao_min ?? 0,
+                  )
+                  if (!slot) return null
+                  const topPercent = 20 + (slot.startMin / 60) * 60 * timelineZoom
+                  const heightPercent = ((slot.endMin - slot.startMin) / 60) * 60 * timelineZoom
+                  const lay = dayEventLayout.get(`pen:${p.pendencia_id}`) ?? { col: 0, cols: 1 }
+                  const lane = laneStyle(lay.col, lay.cols)
+                  const accent = p.cor || (p.origem === 'mind' ? '#9b88c4' : 'var(--color-ice)')
+                  const code = p.origem === 'mind' ? 'MND' : 'EXC'
+                  return (
+                    <div
+                      key={`pen:${p.pendencia_id}`}
+                      title={`${p.titulo} · ${p.origem === 'mind' ? 'mind' : 'exercício'} · ${p.duracao_min || '?'}min`}
+                      style={{
+                        position: 'absolute',
+                        left: lane.left,
+                        width: lane.width,
+                        top: `${topPercent}px`,
+                        height: `${heightPercent}px`,
+                        background: `linear-gradient(135deg, ${accent}1a 0%, transparent 60%), rgba(8, 12, 18, 0.55)`,
+                        border: `1px solid ${accent}`,
+                        clipPath: 'polygon(0 0, calc(100% - 6px) 0, 100% 6px, 100% 100%, 6px 100%, 0 calc(100% - 6px))',
+                        padding: '4px 6px',
+                        overflow: 'hidden',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        justifyContent: 'space-between',
+                        opacity: 0.9,
+                      }}
+                    >
+                      <div style={{
+                        fontSize: 9, fontWeight: 600, lineHeight: 1.1,
+                        color: 'var(--color-text-primary)',
+                        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                      }}>
+                        {p.titulo}
+                      </div>
+                      <div style={{
+                        fontFamily: 'var(--font-mono)',
+                        fontSize: 8, fontWeight: 700,
+                        color: accent,
+                        letterSpacing: '0.08em',
+                      }}>
+                        {code}
+                      </div>
+                    </div>
                   )
                 })}
               </div>
@@ -3022,6 +3234,8 @@ export function CalendarView({ projects, quests, areas, sessionUpdateTrigger, on
           `}</style>
         </div>
       )}
+
+      <CalendarLegend />
 
       {sessionModal && (() => {
         const sessMap = sessionModal.kind === 'quest'
